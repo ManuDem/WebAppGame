@@ -1,0 +1,177 @@
+[
+    {
+        "id": "emp_01",
+        "name": "Lo Stagista Sfruttato",
+        "type": "employee",
+        "cost": 1,
+        "description": "Lavora 24/7 ma non sa cosa fa. Ti fornisce 1 PA bonus il prossimo turno.",
+        "effect": {
+            "action": "produce",
+            "amount": 1,
+            "resource": "pa"
+        }
+    },
+    {
+        "id": "emp_02",
+        "name": "Il PR Fuffarolo",
+        "type": "employee",
+        "cost": 2,
+        "description": "Vende ghiaccio agli eschimesi. Protegge un tuo dipendente dal prossimo attacco.",
+        "effect": {
+            "action": "protect",
+            "target": "employee",
+            "amount": 1
+        }
+    },
+    {
+        "id": "emp_03",
+        "name": "Il C-Level Assente",
+        "type": "employee",
+        "cost": 3,
+        "description": "Nessuno sa cosa faccia realmente in azienda. Conta doppio per l'obiettivo di Monopolio Umano.",
+        "effect": {
+            "action": "passive_bonus",
+            "target": "win_condition",
+            "multiplier": 2
+        }
+    },
+    {
+        "id": "emp_04",
+        "name": "Manager Micro-Gestore",
+        "type": "employee",
+        "cost": 2,
+        "description": "Controlla anche la pausa bagno. Rende le tue prossime azioni Magheggio più economiche di 1 PA.",
+        "effect": {
+            "action": "discount_cost",
+            "target": "trick",
+            "amount": 1
+        }
+    },
+    {
+        "id": "emp_05",
+        "name": "Tecnico IT Esausto",
+        "type": "employee",
+        "cost": 2,
+        "description": "Ha riparato il Wi-Fi per la millesima volta. Pesca 2 carte extra quando viene assunto.",
+        "effect": {
+            "action": "draw_cards",
+            "amount": 2
+        }
+    },
+    {
+        "id": "trk_01",
+        "name": "Falso in Bilancio",
+        "type": "trick",
+        "cost": 2,
+        "description": "Ruba 2 PA a un avversario per il suo prossimo turno.",
+        "effect": {
+            "action": "steal_pa",
+            "target": "opponent",
+            "amount": 2
+        }
+    },
+    {
+        "id": "trk_02",
+        "name": "Rubare l'Idea",
+        "type": "trick",
+        "cost": 1,
+        "description": "Pesca 1 carta a caso dalla mano di un avversario.",
+        "effect": {
+            "action": "steal_card",
+            "target": "opponent_hand",
+            "amount": 1
+        }
+    },
+    {
+        "id": "trk_03",
+        "name": "Taglio del Budget",
+        "type": "trick",
+        "cost": 2,
+        "description": "Costringe un avversario a scartare 2 carte.",
+        "effect": {
+            "action": "discard",
+            "target": "opponent",
+            "amount": 2
+        }
+    },
+    {
+        "id": "trk_04",
+        "name": "Riunione Fiume Inutile",
+        "type": "trick",
+        "cost": 1,
+        "description": "Un avversario scarta 1 carta a caso, tu ne peschi 1.",
+        "effect": {
+            "action": "trade_random",
+            "target": "opponent"
+        }
+    },
+    {
+        "id": "crs_01",
+        "name": "Ispezione della Finanza",
+        "type": "crisis",
+        "cost": 2,
+        "description": "Pena se non risolta: Tutti perdono 2 carte. Premio: +1 VP.",
+        "effect": {
+            "action": "crisis_resolve",
+            "penalty": "discard_2",
+            "reward": "vp_1"
+        }
+    },
+    {
+        "id": "crs_02",
+        "name": "Server In Fiamme",
+        "type": "crisis",
+        "cost": 2,
+        "description": "Pena se non risolta: Tutti perdono il loro IT Manager. Premio: +1 VP.",
+        "effect": {
+            "action": "crisis_resolve",
+            "penalty": "lose_employee",
+            "reward": "vp_1"
+        }
+    },
+    {
+        "id": "crs_03",
+        "name": "Crollo in Borsa",
+        "type": "crisis",
+        "cost": 2,
+        "description": "Pena se non risolta: Nessuno può giocare Magheggi nel prossimo turno. Premio: +1 VP.",
+        "effect": {
+            "action": "crisis_resolve",
+            "penalty": "lock_tricks",
+            "reward": "vp_1"
+        }
+    },
+    {
+        "id": "rea_01",
+        "name": "Scaricabarile",
+        "type": "reaction",
+        "cost": 1,
+        "description": "Quando sei bersagliato da un Magheggio, scegli un altro bersaglio valido invece di te.",
+        "effect": {
+            "action": "redirect_effect",
+            "target": "another_opponent"
+        }
+    },
+    {
+        "id": "rea_02",
+        "name": "NDA Esclusivo",
+        "type": "reaction",
+        "cost": 2,
+        "description": "Gioca per annullare l'assunzione di un dipendente avversario e prenderlo in mano tua.",
+        "effect": {
+            "action": "steal_played_card",
+            "target": "self"
+        }
+    },
+    {
+        "id": "rea_03",
+        "name": "\"Non è di mia competenza\"",
+        "type": "reaction",
+        "cost": 1,
+        "description": "Annulla l'effetto di una singola carta giocata (Magheggio o Reazione).",
+        "effect": {
+            "action": "cancel_effect",
+            "target": "played_card"
+        }
+    }
+]
