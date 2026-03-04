@@ -86,13 +86,13 @@ const runTests = async () => {
             room.state.players.get("player_1")!.hand.push(createCard(`emp_${i}`, "emp_01", CardType.EMPLOYEE));
         }
 
-        // Play 5 employees
-        for (let i = 1; i <= 5; i++) {
+        // Play 4 employees
+        for (let i = 1; i <= 4; i++) {
             (room as any)["handlePlayEmployee"](client1, { cardId: `emp_${i}` });
             if (room.clock && typeof (room.clock as any).tick === "function") {
                 (room.clock as any).tick(5100);
             }
-            assert.strictEqual(room.state.phase, i < 5 ? GamePhase.PLAYER_TURN : GamePhase.GAME_OVER, `Fase dopo dipendente ${i}`);
+            assert.strictEqual(room.state.phase, i < 4 ? GamePhase.PLAYER_TURN : GamePhase.GAME_OVER, `Fase dopo dipendente ${i}`);
         }
 
         assert.strictEqual(room.state.winnerId, "player_1", "WinnerId deve essere player_1");
@@ -110,7 +110,7 @@ const runTests = async () => {
         room.state.centralCrises.push(createCard("crs_inst_2", "crs_02", CardType.IMPREVISTO));
         room.state.centralCrises.push(createCard("crs_inst_3", "crs_03", CardType.IMPREVISTO));
 
-        for (let i = 1; i <= 3; i++) {
+        for (let i = 1; i <= 2; i++) {
             (room as any)["handleSolveCrisis"](client1_2, { crisisId: `crs_inst_${i}` });
             if (room.clock && typeof (room.clock as any).tick === "function") {
                 (room.clock as any).tick(5100);
