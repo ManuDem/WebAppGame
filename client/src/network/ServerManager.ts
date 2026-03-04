@@ -67,8 +67,8 @@ export class ServerManager {
         this.room?.send(ClientMessages.PLAY_MAGIC, { cardId });
     }
 
-    public solveCrisis(cardId: string, targetCrisisId: string) {
-        this.room?.send(ClientMessages.SOLVE_CRISIS, { cardId, targetCrisisId });
+    public solveCrisis(_cardId: string, crisisId: string) {
+        this.room?.send(ClientMessages.SOLVE_CRISIS, { crisisId });
     }
 
     public endTurn() {

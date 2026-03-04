@@ -1,6 +1,6 @@
 # CodexGPT - Project Memory Operativa
 
-Ultimo aggiornamento: 2026-03-04
+Ultimo aggiornamento: 2026-03-04 (refactor grafico frontend)
 Workspace: `C:\Users\manud\Desktop\WebApp Game`
 
 ## 1) Obiettivo del file
@@ -50,6 +50,13 @@ Regola operativa:
   - boot/login/game scene
   - connessione Colyseus via `ServerManager`
   - base HUD/azioni + `VisualEventQueue`
+  - refactor grafico completo su:
+    - `client/src/main.ts` (scale RESIZE)
+    - `client/src/scenes/BootScene.ts` (loading screen responsive + animazioni)
+    - `client/src/scenes/LoginScene.ts` (menu/login responsive + animazioni)
+    - `client/src/scenes/GameScene.ts` (layout top/center/bottom ridisegnato, leggibilita e motion)
+    - `client/src/gameobjects/CardGameObject.ts` (restyle carte + interaction polish)
+    - `client/src/network/ServerManager.ts` (payload `SOLVE_CRISIS` allineato)
 
 ## 5) Organizzazione codice (mappa veloce)
 - `client/`
@@ -74,33 +81,31 @@ Regola operativa:
   - specifiche e linee guida architetturali
 
 ## 6) TODO principali (priorita)
-1. Allineare mismatch tra client/server/documentazione sui payload e naming.
-2. Hardening reaction flow (edge case disconnessioni, consistenza cleanup, logica stack).
-3. Consolidare visual contracts in `GameScene` con coverage eventi.
-4. Stabilizzare suite test end-to-end/server.
-5. Rifinire win conditions e punteggi in modo coerente con GDD.
+1. Hardening reaction flow (edge case disconnessioni, consistenza cleanup, logica stack).
+2. Rifinire visual contracts avanzati in `GameScene` (eventi VFX secondari, micro-pause, polish finale).
+3. Stabilizzare suite test end-to-end/server.
+4. Rifinire win conditions e punteggi in modo coerente con GDD.
 
 ## 7) Fix da fare (stato attuale noto)
-1. Mismatch payload `SOLVE_CRISIS`:
-   - client (`ServerManager.solveCrisis`) invia `{ cardId, targetCrisisId }`
-   - server (`handleSolveCrisis`) legge `crisisId`
-   - da unificare su un solo contratto in `SharedTypes.ts` + client + server.
-
-2. Incoerenza commento vs comportamento `PLAY_MAGIC`:
+1. Incoerenza commento vs comportamento `PLAY_MAGIC`:
    - in `OfficeRoom` commento dice "immediate (no Reaction Window)"
    - implementazione reale apre `REACTION_WINDOW`
    - va allineato (codice o commento/spec, ma in modo unico).
 
-3. Test non completamente verdi da root:
+2. Test non completamente verdi da root:
    - parte test passa (`DeckManager`, `CardEffectParser`)
    - suite room/integrazione falliscono per:
      - modulo mancante `zod` (dipendenza indiretta colyseus testing)
      - errore decorator/runtime schema in alcune suite server
    - serve piano di fix test infra e compatibilita ts/jest/decorator.
 
-4. Alcuni `any` e cast restano in backend:
+3. Alcuni `any` e cast restano in backend:
    - soprattutto in `OfficeRoom.ts` e punti schema interop
    - ridurre dove possibile per robustezza type-safe.
+
+4. Verifica build frontend:
+   - `client tsc --noEmit` (tsconfig client) risulta verde
+   - build Vite in questo ambiente puo fallire con `spawn EPERM` (limite runtime sandbox/esbuild)
 
 ## 8) Regole di ingaggio tecniche (da rispettare sempre)
 - Server e source of truth: nessuna logica definitiva lato client
@@ -129,3 +134,9 @@ Regola operativa:
   - creato questo file memory operativo
   - consolidata panoramica progetto da documentazione + codice reale
   - registrati mismatch e criticita tecniche principali da fixare
+- 2026-03-04 (sessione refactor grafico):
+  - completato refactor grafico responsive su Boot/Login/Game/Card UI
+  - migliorata leggibilita (palette/contrasti/gerarchie tipografiche) e motion UI
+  - introdotto layout dinamico con `Phaser.Scale.RESIZE`
+  - allineato payload client `SOLVE_CRISIS` a `crisisId`
+  - verifica tecnica: compilazione client (`tsc --noEmit`) OK
