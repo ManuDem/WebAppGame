@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { CardType, ICardData } from '../../../shared/SharedTypes';
+import { APP_FONT_FAMILY } from '../ui/Typography';
 
 interface CardPalette {
     body: number;
@@ -10,11 +11,16 @@ interface CardPalette {
     label: string;
 }
 
-const FONT_TITLE = 'Sora, Trebuchet MS, sans-serif';
-const FONT_META = 'Barlow Condensed, Tahoma, sans-serif';
+const FONT_TITLE = APP_FONT_FAMILY;
+const FONT_META = APP_FONT_FAMILY;
+const TEXT_RESOLUTION = Math.max(2, Math.min((window.devicePixelRatio || 1) * 1.5, 4));
 
-const CARD_W = 114;
-const CARD_H = 164;
+const CARD_W = 128;
+const CARD_H = 182;
+const ART_X = -CARD_W * 0.5 + 9;
+const ART_Y = -CARD_H * 0.5 + 62;
+const ART_W = CARD_W - 18;
+const ART_H = 56;
 
 const PALETTES: Record<CardType, CardPalette> = {
     [CardType.EMPLOYEE]: {
@@ -60,6 +66,8 @@ export class CardGameObject extends Phaser.GameObjects.Container {
 
     private shadow!: Phaser.GameObjects.Graphics;
     private frame!: Phaser.GameObjects.Graphics;
+    private artSheen?: Phaser.GameObjects.Rectangle;
+    private artSheenTween?: Phaser.Tweens.Tween;
 
     constructor(scene: Phaser.Scene, x: number, y: number, data: ICardData) {
         super(scene, x, y);
@@ -92,72 +100,113 @@ export class CardGameObject extends Phaser.GameObjects.Container {
         this.frame.fillRoundedRect(-CARD_W / 2, -CARD_H / 2, CARD_W, CARD_H, 14);
 
         this.frame.fillStyle(palette.topBand, 1);
-        this.frame.fillRoundedRect(-CARD_W / 2, -CARD_H / 2, CARD_W, 30, { tl: 14, tr: 14, bl: 0, br: 0 });
+        this.frame.fillRoundedRect(-CARD_W / 2, -CARD_H / 2, CARD_W, 32, { tl: 14, tr: 14, bl: 0, br: 0 });
 
-        this.frame.lineStyle(1.6, palette.border, 0.92);
+        this.frame.lineStyle(1.8, palette.border, 0.96);
         this.frame.strokeRoundedRect(-CARD_W / 2, -CARD_H / 2, CARD_W, CARD_H, 14);
 
         this.frame.lineStyle(1, palette.border, 0.2);
         this.frame.beginPath();
-        this.frame.moveTo(-CARD_W / 2 + 8, -CARD_H / 2 + 38);
-        this.frame.lineTo(CARD_W / 2 - 8, -CARD_H / 2 + 38);
+        this.frame.moveTo(-CARD_W / 2 + 8, -CARD_H / 2 + 40);
+        this.frame.lineTo(CARD_W / 2 - 8, -CARD_H / 2 + 40);
         this.frame.strokePath();
+
+        this.frame.fillStyle(0xffffff, 0.04);
+        this.frame.fillRoundedRect(-CARD_W / 2 + 4, -CARD_H / 2 + 4, CARD_W - 8, 24, { tl: 10, tr: 10, bl: 0, br: 0 });
 
         this.add(this.frame);
 
-        const titleText = this.scene.add.text(0, -CARD_H / 2 + 15, (this.cardData.name ?? this.cardData.templateId).slice(0, 22), {
+        const titleText = this.scene.add.text(0, -CARD_H / 2 + 16, (this.cardData.name ?? this.cardData.templateId).slice(0, 22), {
             fontFamily: FONT_TITLE,
-            fontSize: '11px',
-            color: '#edf7ff',
+            fontSize: '13px',
+            color: '#f4fbff',
             fontStyle: '700',
             align: 'center',
             wordWrap: { width: CARD_W - 20 },
-        }).setOrigin(0.5);
+        }).setOrigin(0.5).setResolution(TEXT_RESOLUTION);
         this.add(titleText);
 
-        const templateText = this.scene.add.text(0, -CARD_H / 2 + 49, this.cardData.templateId, {
+        const templateText = this.scene.add.text(0, -CARD_H / 2 + 52, this.cardData.templateId, {
             fontFamily: FONT_META,
-            fontSize: '9px',
+            fontSize: '10px',
             color: palette.accentText,
             fontStyle: '700',
             align: 'center',
-        }).setOrigin(0.5);
+        }).setOrigin(0.5).setResolution(TEXT_RESOLUTION);
         this.add(templateText);
 
+        const typeChip = this.scene.add.graphics();
+        typeChip.fillStyle(this.shiftColor(palette.badge, 12), 1);
+        typeChip.fillRoundedRect(-CARD_W / 2 + 8, -CARD_H / 2 + 8, 18, 18, 6);
+        typeChip.lineStyle(1, this.shiftColor(palette.border, 18), 0.9);
+        typeChip.strokeRoundedRect(-CARD_W / 2 + 8, -CARD_H / 2 + 8, 18, 18, 6);
+        this.add(typeChip);
+
+        const typeChipText = this.scene.add.text(-CARD_W / 2 + 17, -CARD_H / 2 + 17, palette.label[0], {
+            fontFamily: FONT_META,
+            fontSize: '11px',
+            color: '#f8fcff',
+            fontStyle: '700',
+        }).setOrigin(0.5).setResolution(TEXT_RESOLUTION);
+        this.add(typeChipText);
+
+        const art = this.drawUniqueArtwork(palette);
+        this.add(art);
+
+        this.artSheen = this.scene.add.rectangle(
+            ART_X - 18,
+            ART_Y + ART_H * 0.5,
+            Math.max(18, ART_W * 0.18),
+            ART_H + 6,
+            0xffffff,
+            0.14,
+        )
+            .setAngle(-18)
+            .setVisible(false)
+            .setBlendMode(Phaser.BlendModes.SCREEN);
+        this.add(this.artSheen);
+
+        const descPanel = this.scene.add.graphics();
+        descPanel.fillStyle(0x0b121b, 0.58);
+        descPanel.fillRoundedRect(-CARD_W / 2 + 8, 22, CARD_W - 16, 48, 7);
+        descPanel.lineStyle(1, 0x88b5d9, 0.22);
+        descPanel.strokeRoundedRect(-CARD_W / 2 + 8, 22, CARD_W - 16, 48, 7);
+        this.add(descPanel);
+
         const desc = this.cardData.description
-            ? (this.cardData.description.length > 78
-                ? `${this.cardData.description.slice(0, 75)}...`
+            ? (this.cardData.description.length > 64
+                ? `${this.cardData.description.slice(0, 61)}...`
                 : this.cardData.description)
             : '';
 
-        const descText = this.scene.add.text(0, 8, desc, {
+        const descText = this.scene.add.text(0, 46, desc, {
             fontFamily: FONT_TITLE,
-            fontSize: '10px',
-            color: '#d6e6f2',
+            fontSize: '12px',
+            color: '#deedf8',
             align: 'center',
-            wordWrap: { width: CARD_W - 18 },
-            lineSpacing: 1,
-        }).setOrigin(0.5, 0.5);
+            wordWrap: { width: CARD_W - 22 },
+            lineSpacing: 3,
+        }).setOrigin(0.5, 0.5).setResolution(TEXT_RESOLUTION);
         this.add(descText);
 
         const footer = this.scene.add.graphics();
         footer.fillStyle(palette.badge, 1);
-        footer.fillRoundedRect(-CARD_W / 2, CARD_H / 2 - 22, CARD_W, 22, { tl: 0, tr: 0, bl: 12, br: 12 });
+        footer.fillRoundedRect(-CARD_W / 2, CARD_H / 2 - 24, CARD_W, 24, { tl: 0, tr: 0, bl: 12, br: 12 });
         this.add(footer);
 
-        const typeText = this.scene.add.text(0, CARD_H / 2 - 11, palette.label, {
+        const typeText = this.scene.add.text(0, CARD_H / 2 - 12, palette.label, {
             fontFamily: FONT_META,
-            fontSize: '10px',
+            fontSize: '11px',
             color: '#f2f8ff',
             fontStyle: '700',
             letterSpacing: 1.2,
-        }).setOrigin(0.5);
+        }).setOrigin(0.5).setResolution(TEXT_RESOLUTION);
         this.add(typeText);
 
         if (this.cardData.costPA !== undefined) {
             const bubble = this.scene.add.graphics();
-            const cx = CARD_W / 2 - 14;
-            const cy = -CARD_H / 2 + 14;
+            const cx = CARD_W / 2 - 15;
+            const cy = -CARD_H / 2 + 15;
             bubble.fillStyle(0x0d1621, 1);
             bubble.fillCircle(cx, cy, 12);
             bubble.lineStyle(1.6, palette.border, 1);
@@ -166,10 +215,10 @@ export class CardGameObject extends Phaser.GameObjects.Container {
 
             const costText = this.scene.add.text(cx, cy, `${this.cardData.costPA}`, {
                 fontFamily: FONT_META,
-                fontSize: '13px',
+                fontSize: '14px',
                 color: '#ecf7ff',
                 fontStyle: '700',
-            }).setOrigin(0.5);
+            }).setOrigin(0.5).setResolution(TEXT_RESOLUTION);
             this.add(costText);
         }
 
@@ -178,9 +227,114 @@ export class CardGameObject extends Phaser.GameObjects.Container {
         this.scene.input.setDraggable(this as unknown as Phaser.GameObjects.GameObject);
     }
 
+    private drawUniqueArtwork(palette: CardPalette): Phaser.GameObjects.Graphics {
+        const art = this.scene.add.graphics();
+
+        const seedSource = `${this.cardData.templateId}|${this.cardData.type}|${this.cardData.name ?? ''}`;
+        let seed = this.hashSeed(seedSource);
+        const rand = () => {
+            seed = (seed * 1664525 + 1013904223) >>> 0;
+            return seed / 4294967296;
+        };
+
+        art.fillStyle(this.shiftColor(palette.body, 14), 1);
+        art.fillRoundedRect(ART_X, ART_Y, ART_W, ART_H, 8);
+        art.lineStyle(1, this.shiftColor(palette.border, 16), 0.95);
+        art.strokeRoundedRect(ART_X, ART_Y, ART_W, ART_H, 8);
+
+        const stripeCount = 4 + Math.floor(rand() * 4);
+        for (let i = 0; i < stripeCount; i++) {
+            const stripeY = ART_Y + 3 + ((ART_H - 8) / Math.max(1, stripeCount - 1)) * i;
+            art.fillStyle(this.shiftColor(palette.topBand, Math.floor(rand() * 24)), 0.22 + rand() * 0.18);
+            art.fillRect(ART_X + 3, stripeY, ART_W - 6, 3 + Math.floor(rand() * 2));
+        }
+
+        const motifCount = 5 + Math.floor(rand() * 3);
+        for (let i = 0; i < motifCount; i++) {
+            const cx = ART_X + 8 + rand() * (ART_W - 16);
+            const cy = ART_Y + 8 + rand() * (ART_H - 16);
+            const size = 4 + rand() * 9;
+            const motifColor = this.shiftColor(palette.border, -8 + Math.floor(rand() * 36));
+            const shape = Math.floor(rand() * 3);
+
+            art.fillStyle(motifColor, 0.68);
+            if (shape === 0) {
+                art.fillCircle(cx, cy, size * 0.5);
+            } else if (shape === 1) {
+                art.fillTriangle(
+                    cx,
+                    cy - size * 0.6,
+                    cx + size * 0.6,
+                    cy + size * 0.6,
+                    cx - size * 0.6,
+                    cy + size * 0.6,
+                );
+            } else {
+                art.fillRect(cx - size * 0.55, cy - size * 0.55, size * 1.1, size * 1.1);
+            }
+        }
+
+        art.lineStyle(1, 0xffffff, 0.16);
+        art.beginPath();
+        art.moveTo(ART_X + 6, ART_Y + 8);
+        art.lineTo(ART_X + ART_W - 10, ART_Y + ART_H - 10);
+        art.strokePath();
+
+        return art;
+    }
+
+    private playArtSheen() {
+        if (!this.artSheen) return;
+        if (this.artSheenTween) this.artSheenTween.stop();
+
+        this.artSheen
+            .setVisible(true)
+            .setAlpha(0)
+            .setPosition(ART_X - 14, ART_Y + ART_H * 0.5);
+
+        this.artSheenTween = this.scene.tweens.add({
+            targets: this.artSheen,
+            x: ART_X + ART_W + 14,
+            alpha: { from: 0.02, to: 0.18 },
+            duration: 320,
+            ease: 'Sine.Out',
+            onComplete: () => {
+                if (!this.artSheen) return;
+                this.scene.tweens.add({
+                    targets: this.artSheen,
+                    alpha: 0,
+                    duration: 120,
+                    onComplete: () => this.artSheen?.setVisible(false),
+                });
+            },
+        });
+    }
+
+    private hashSeed(text: string): number {
+        let hash = 2166136261;
+        for (let i = 0; i < text.length; i++) {
+            hash ^= text.charCodeAt(i);
+            hash = Math.imul(hash, 16777619);
+        }
+        return hash >>> 0;
+    }
+
+    private shiftColor(color: number, amount: number): number {
+        const r = Phaser.Math.Clamp(((color >> 16) & 0xff) + amount, 0, 255);
+        const g = Phaser.Math.Clamp(((color >> 8) & 0xff) + amount, 0, 255);
+        const b = Phaser.Math.Clamp((color & 0xff) + amount, 0, 255);
+        return (r << 16) | (g << 8) | b;
+    }
+
     private setupInput() {
+        this.on('pointerdown', () => {
+            this.setData('dragStarted', false);
+        });
+
         this.on('pointerover', () => {
             if (this.getData('dragging')) return;
+            this.scene.tweens.killTweensOf(this);
+            this.playArtSheen();
             this.scene.tweens.add({
                 targets: this,
                 y: this.homeY - 14,
@@ -194,6 +348,7 @@ export class CardGameObject extends Phaser.GameObjects.Container {
 
         this.on('pointerout', () => {
             if (this.getData('dragging')) return;
+            this.scene.tweens.killTweensOf(this);
             this.scene.tweens.add({
                 targets: this,
                 y: this.homeY,
@@ -207,7 +362,9 @@ export class CardGameObject extends Phaser.GameObjects.Container {
 
         this.on('dragstart', () => {
             this.setData('dragging', true);
+            this.setData('dragStarted', true);
             this.setDepth(3000);
+            this.scene.tweens.killTweensOf(this);
             this.scene.tweens.add({
                 targets: this,
                 scaleX: 1.1,
@@ -220,11 +377,13 @@ export class CardGameObject extends Phaser.GameObjects.Container {
         this.on('drag', (_pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => {
             this.x = dragX;
             this.y = dragY;
+            this.angle = Phaser.Math.Clamp((dragX - this.homeX) * 0.045, -12, 12);
         });
 
         this.on('dragend', (_pointer: Phaser.Input.Pointer, dropped: boolean) => {
             this.setData('dragging', false);
             this.setDepth(this.homeDepth);
+            this.scene.tweens.killTweensOf(this);
 
             if (!dropped) {
                 this.scene.tweens.add({

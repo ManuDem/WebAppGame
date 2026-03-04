@@ -1,142 +1,124 @@
-# CodexGPT - Project Memory Operativa
+# CodexGPT - Memoria Operativa Progetto
 
-Ultimo aggiornamento: 2026-03-04 (refactor grafico frontend)
+Ultimo aggiornamento: 2026-03-04  
 Workspace: `C:\Users\manud\Desktop\WebApp Game`
 
-## 1) Obiettivo del file
-Questo documento e la memoria di lavoro sintetica per Codex.
-Serve a:
-- capire rapidamente cosa e stato gia fatto
-- capire cosa manca
-- orientarsi nella struttura del progetto
-- tenere traccia dei fix prioritari
+## 1) Scopo
+Questo file e la memoria operativa da consultare:
+- a inizio sessione
+- durante task lunghi
+- a fine sessione (aggiornando stato reale, bug e test)
 
-Regola operativa:
-- consultare questo file a inizio task
-- ricontrollarlo durante task lunghi
-- aggiornarlo a fine task quando cambia lo stato reale del progetto
+Obiettivo: sapere subito cosa e fatto, cosa manca e dove intervenire.
 
-## 2) Snapshot progetto
-- Nome: LUCrAre: SEMPRE
-- Tipo: Web card game multiplayer, server-authoritative
+## 2) Snapshot rapido
+- Progetto: `LUCrAre: SEMPRE`
+- Tipo: web card game multiplayer, server authoritative
 - Stack:
-  - Backend: Node.js + TypeScript + Colyseus
-  - Frontend: Phaser 3 + TypeScript + Vite
-  - Shared: contratti di rete, deck manager, parser effetti
-  - Test: Jest + suite server/root
+  - client: Phaser 3 + TypeScript + Vite
+  - server: Colyseus + Express + TypeScript
+  - shared: tipi/contratti + deck + parser effetti
+  - test: Jest (root + server)
 
-## 3) Stato avanzamento (alto livello)
-- FASE 1 (architettura dati/contratti): completata
-- FASE 2 (lobby/core loop turni+pesca): completata
-- FASE 3 (effetti carte data-driven): funzionale, ancora iterabile
-- FASE 4 (reaction window + stack): avanzata, da hardenizzare
-- FASE 5 (visual contracts/polish frontend): in corso
+## 3) Regole correnti in codice
+- Lobby con codice stanza a 4 cifre
+- Modalita ingresso: Host / Partecipa
+- Player range: 2-10
+- Start match: solo host, almeno 2 connessi, tutti i connessi ready
+- Mano iniziale: 3 carte
+- AP turno: 3
+- Draw cost: 1 AP
+- Reaction window: 5000 ms
+- Win semplificata: 4 dipendenti in company o 2 crisi risolte
+- Rejoin in partita avviata: consentito solo con nome CEO gia esistente
 
-## 4) Cosa e gia stato svolto
-- Contratti condivisi in `shared/SharedTypes.ts` con:
-  - `GamePhase`, `ClientMessages`, `ServerEvents`
-  - payload principali
-  - `IPendingAction`, `IGameState`, DSL effetti carta
-- Backend room principale in `server/src/rooms/OfficeRoom.ts`:
-  - auth/join/leave con validazione `ceoName`
-  - avvio partita, ordine turni, AP, draw, end turn
-  - reaction window con timer server-side (`REACTION_WINDOW_MS`)
-  - stack azioni/reazioni e fase di resolution
-- Data layer:
-  - `shared/cards_db.json`
+## 4) Mappa codice essenziale
+- Client:
+  - `client/src/scenes/BootScene.ts`
+  - `client/src/scenes/LoginScene.ts`
+  - `client/src/scenes/GameScene.ts`
+  - `client/src/network/ServerManager.ts`
+  - `client/src/ui/SimpleButtonFx.ts`
+  - `client/src/ui/Branding.ts`
+  - `client/src/ui/PokemonVisuals.ts`
+- Server:
+  - `server/src/index.ts`
+  - `server/src/State.ts`
+  - `server/src/rooms/OfficeRoom.ts`
+- Shared:
+  - `shared/SharedTypes.ts`
   - `shared/DeckManager.ts`
   - `shared/CardEffectParser.ts`
-- Frontend:
-  - boot/login/game scene
-  - connessione Colyseus via `ServerManager`
-  - base HUD/azioni + `VisualEventQueue`
-  - refactor grafico completo su:
-    - `client/src/main.ts` (scale RESIZE)
-    - `client/src/scenes/BootScene.ts` (loading screen responsive + animazioni)
-    - `client/src/scenes/LoginScene.ts` (menu/login responsive + animazioni)
-    - `client/src/scenes/GameScene.ts` (layout top/center/bottom ridisegnato, leggibilita e motion)
-    - `client/src/gameobjects/CardGameObject.ts` (restyle carte + interaction polish)
-    - `client/src/network/ServerManager.ts` (payload `SOLVE_CRISIS` allineato)
+  - `shared/cards_db.json`
 
-## 5) Organizzazione codice (mappa veloce)
-- `client/`
-  - `src/main.ts` bootstrap Phaser
-  - `src/scenes/BootScene.ts`
-  - `src/scenes/LoginScene.ts`
-  - `src/scenes/GameScene.ts`
-  - `src/network/ServerManager.ts`
-  - `src/systems/VisualEventQueue.ts`
-- `server/`
-  - `src/index.ts` bootstrap server e room registration
-  - `src/State.ts` schema Colyseus
-  - `src/rooms/OfficeRoom.ts` logica autoritativa partita
-- `shared/`
-  - `SharedTypes.ts` single source of truth contratti
-  - `DeckManager.ts`
-  - `CardEffectParser.ts`
-  - `cards_db.json`
-- `tests/` e `server/tests/`
-  - test core loop, reaction, connessione, parser, deck
-- `Documentation/` + `Feature_*.md`
-  - specifiche e linee guida architetturali
+## 5) Verifica tecnica corrente (2026-03-04)
+- Build:
+  - server: OK (`cd server && npm run build`)
+  - client: OK (`cd client && npm run build`)
+- Test root:
+  - comando: `npm test -- --runInBand`
+  - esito: FAIL parziale
+  - pass:
+    - `server/tests/core_loop.test.ts`
+    - `server/tests/room_connection.test.ts`
+    - `tests/CardEffectParser.test.ts`
+    - `tests/DeckManager.test.ts`
+  - fail:
+    - `server/tests/reaction_stress.test.ts` (assert su fase: atteso `PLAYER_TURN`, ricevuto `GAME_OVER`)
+    - `server/tests/win_conditions.test.ts` (suite legacy con `process.exit(1)` su fallimento)
+    - `tests/core_loop.test.ts`
+    - `tests/room_connection.test.ts`
+    - `tests/reaction_race_condition.test.ts`
+  - causa nota per 3 suite root: modulo `express` mancante nel workspace root richiesto da `@colyseus/testing`
 
-## 6) TODO principali (priorita)
-1. Hardening reaction flow (edge case disconnessioni, consistenza cleanup, logica stack).
-2. Rifinire visual contracts avanzati in `GameScene` (eventi VFX secondari, micro-pause, polish finale).
-3. Stabilizzare suite test end-to-end/server.
-4. Rifinire win conditions e punteggi in modo coerente con GDD.
+## 6) Criticita aperte prioritarie
+1. Riallineare test al comportamento reale:
+   - `server/tests/reaction_stress.test.ts` va aggiornato per la win condition attuale che puo chiudere in `GAME_OVER`.
+2. Stabilizzare test root `@colyseus/testing`:
+   - aggiungere dipendenze mancanti nel root oppure isolare queste suite in workspace coerente.
+3. Ripulire suite legacy `server/tests/win_conditions.test.ts`:
+   - evitare `process.exit(1)` dentro test Jest.
+4. Pulizia tecnica:
+   - ridurre uso di `any` in `OfficeRoom.ts` e `CardEffectParser.ts`.
 
-## 7) Fix da fare (stato attuale noto)
-1. Incoerenza commento vs comportamento `PLAY_MAGIC`:
-   - in `OfficeRoom` commento dice "immediate (no Reaction Window)"
-   - implementazione reale apre `REACTION_WINDOW`
-   - va allineato (codice o commento/spec, ma in modo unico).
+## 7) Checklist operativa prima di modificare codice
+1. Leggere questo file (`CodexGPT.md`).
+2. Leggere i contratti in `shared/SharedTypes.ts`.
+3. Verificare impatto client/server/shared/test.
+4. Applicare fix.
+5. Eseguire verifiche pertinenti (build/test).
+6. Aggiornare questo file con data, esito, bug emersi.
 
-2. Test non completamente verdi da root:
-   - parte test passa (`DeckManager`, `CardEffectParser`)
-   - suite room/integrazione falliscono per:
-     - modulo mancante `zod` (dipendenza indiretta colyseus testing)
-     - errore decorator/runtime schema in alcune suite server
-   - serve piano di fix test infra e compatibilita ts/jest/decorator.
+## 8) Comandi rapidi
+- Dev server:
+```bash
+cd server && npm run dev
+```
+- Dev client:
+```bash
+cd client && npm run dev
+```
+- Build server/client:
+```bash
+cd server && npm run build
+cd client && npm run build
+```
+- Test root:
+```bash
+npm test -- --runInBand
+```
 
-3. Alcuni `any` e cast restano in backend:
-   - soprattutto in `OfficeRoom.ts` e punti schema interop
-   - ridurre dove possibile per robustezza type-safe.
-
-4. Verifica build frontend:
-   - `client tsc --noEmit` (tsconfig client) risulta verde
-   - build Vite in questo ambiente puo fallire con `spawn EPERM` (limite runtime sandbox/esbuild)
-
-## 8) Regole di ingaggio tecniche (da rispettare sempre)
-- Server e source of truth: nessuna logica definitiva lato client
-- no RNG lato client
-- validazione tripla su messaggi critici
-- payload minimali e coerenti con `SharedTypes.ts`
-- reaction timeout gestito solo dal server
-- frontend reattivo allo state/eventi, no stato locale divergente
-
-## 9) Procedura rapida prima di ogni modifica
-1. Leggere `CodexGPT.md`
-2. Leggere file target e contratti in `shared/SharedTypes.ts`
-3. Verificare impatto su:
-   - backend room/state
-   - frontend manager/scene
-   - test correlati
-4. Applicare fix
-5. Eseguire verifica (build/test pertinenti)
-6. Aggiornare questo file con:
-   - cosa e stato fatto
-   - eventuali nuovi bug emersi
-   - stato TODO
-
-## 10) Log aggiornamenti Codex
+## 9) Log aggiornamenti
 - 2026-03-04:
-  - creato questo file memory operativo
-  - consolidata panoramica progetto da documentazione + codice reale
-  - registrati mismatch e criticita tecniche principali da fixare
-- 2026-03-04 (sessione refactor grafico):
-  - completato refactor grafico responsive su Boot/Login/Game/Card UI
-  - migliorata leggibilita (palette/contrasti/gerarchie tipografiche) e motion UI
-  - introdotto layout dinamico con `Phaser.Scale.RESIZE`
-  - allineato payload client `SOLVE_CRISIS` a `crisisId`
-  - verifica tecnica: compilazione client (`tsc --noEmit`) OK
+  - audit completo repository (client/server/shared/tests/docs)
+  - allineata documentazione principale (`README`, `Feature_01`, `Feature_02`, `Master`, `Phase Status`)
+  - registrato stato reale build/test (server build OK, client build FAIL, test root parzialmente FAIL)
+  - semplificata memoria operativa in questo file per consultazione rapida a ogni avvio
+- 2026-03-04 (sessione UI+i18n+riuso):
+  - menu login: `Host/Partecipa` non pre-selezionati (stesso stato iniziale, highlight solo su selezione)
+  - traduzioni: spostate stringhe hardcoded della `GameScene` in `i18n.ts` (vittoria, target selector, cancel)
+  - grafica partita: carte migliorate (badge tipo, descrizione piu leggibile, sheen su hover, tilt in drag)
+  - dinamismo: aggiunto emitter ambientale leggero e pulse della dropzone centrale
+  - riuso grafico: introdotto `client/src/ui/RetroButtonPainter.ts` e applicato a bottoni Login/Game
+  - build aggiornata: `client build` OK, `server build` OK
+  - test root: ancora FAIL parziale su suite storiche (`reaction_stress` + dipendenza `express`/`process.exit` test legacy)
