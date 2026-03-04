@@ -4,7 +4,7 @@ import { LoginScene } from './scenes/LoginScene';
 import { PreLobbyScene } from './scenes/PreLobbyScene';
 import { GameScene } from './scenes/GameScene';
 
-const deviceResolution = Math.max(1, Math.min(window.devicePixelRatio || 1, 3));
+const deviceResolution = Math.max(1, Math.min((window.devicePixelRatio || 1) * 1.1, 3));
 
 const config = {
     type: Phaser.AUTO,
@@ -21,9 +21,9 @@ const config = {
         height: window.innerHeight,
     },
     render: {
-        antialias: false,
-        antialiasGL: false,
-        pixelArt: true,
+        antialias: true,
+        antialiasGL: true,
+        pixelArt: false,
         roundPixels: true,
         powerPreference: 'high-performance',
     },

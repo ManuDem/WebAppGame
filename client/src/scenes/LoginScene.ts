@@ -103,7 +103,7 @@ export class LoginScene extends Phaser.Scene {
             .setDepth(-59);
 
         this.panelGfx = this.add.graphics();
-        this.panelShimmer = this.add.graphics().setAlpha(0.18);
+        this.panelShimmer = this.add.graphics().setAlpha(0);
         this.inputFrame = this.add.graphics().setDepth(25);
 
         this.title = this.add.text(0, 0, BRAND_TITLE_TEXT, BRAND_TITLE_STYLE).setOrigin(0.5).setAlpha(0);
@@ -610,14 +610,7 @@ export class LoginScene extends Phaser.Scene {
         this.tweens.add({ targets: this.title, alpha: 1, y: '-=8', duration: 460, ease: 'Sine.Out' });
         this.tweens.add({ targets: this.subtitle, alpha: 1, y: '+=4', duration: 460, delay: 110, ease: 'Sine.Out' });
 
-        this.tweens.add({
-            targets: this.panelShimmer,
-            alpha: { from: 0.06, to: 0.22 },
-            duration: 1500,
-            yoyo: true,
-            repeat: -1,
-            ease: 'Sine.InOut',
-        });
+        this.panelShimmer.setAlpha(0);
     }
 
     private handleResize(gameSize: Phaser.Structs.Size) {
@@ -841,8 +834,7 @@ export class LoginScene extends Phaser.Scene {
         this.panelGfx.strokeRoundedRect(x + 4, y + 4, w - 8, h - 8, 16);
 
         this.panelShimmer.clear();
-        this.panelShimmer.fillStyle(0xffffff, 0.05);
-        this.panelShimmer.fillRoundedRect(x + 8, y + 8, w - 16, h - 16, 14);
+        this.panelShimmer.setAlpha(0);
     }
 
     private redrawJoinButton(buttonW: number, buttonH: number) {

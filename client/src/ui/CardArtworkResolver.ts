@@ -17,6 +17,12 @@ const manifestPathById = new Map<string, string>();
 const requestedTextureKeys = new Set<string>();
 const pendingCallbacks = new Map<string, Array<(textureKey: string) => void>>();
 
+function applyNearestFilter(scene: Phaser.Scene, textureKey: string) {
+    if (!scene.textures.exists(textureKey)) return;
+    const texture = scene.textures.get(textureKey);
+    texture?.setFilter(Phaser.Textures.FilterMode.NEAREST);
+}
+
 function normalizeArtworkId(raw: string): string {
     return raw
         .trim()
@@ -93,7 +99,9 @@ export function preloadCardArtworkManifest(scene: Phaser.Scene): void {
     ensureManifestIndex();
     for (const [artworkId, filePath] of manifestPathById.entries()) {
         const textureKey = getCardArtworkTextureKey(artworkId);
-        if (!scene.textures.exists(textureKey)) {
+        if (scene.textures.exists(textureKey)) {
+            applyNearestFilter(scene, textureKey);
+        } else {
             scene.load.image(textureKey, filePath);
         }
     }
@@ -102,13 +110,22 @@ export function preloadCardArtworkManifest(scene: Phaser.Scene): void {
 export function resolveCardArtworkTexture(scene: Phaser.Scene, card: ICardData): string | undefined {
     const anyCard = getCardAny(card);
     const textureCandidate = typeof anyCard.textureKey === 'string' ? anyCard.textureKey : undefined;
-    if (textureCandidate && scene.textures.exists(textureCandidate)) return textureCandidate;
+    if (textureCandidate && scene.textures.exists(textureCandidate)) {
+        applyNearestFilter(scene, textureCandidate);
+        return textureCandidate;
+    }
 
     const candidates = extractCardArtworkIds(card);
     for (const candidate of candidates) {
         const textureKey = getCardArtworkTextureKey(candidate);
-        if (scene.textures.exists(textureKey)) return textureKey;
-        if (scene.textures.exists(candidate)) return candidate;
+        if (scene.textures.exists(textureKey)) {
+            applyNearestFilter(scene, textureKey);
+            return textureKey;
+        }
+        if (scene.textures.exists(candidate)) {
+            applyNearestFilter(scene, candidate);
+            return candidate;
+        }
     }
     return undefined;
 }
@@ -141,6 +158,7 @@ export function requestCardArtwork(
 
     const onComplete = () => {
         scene.load.off(Phaser.Loader.Events.FILE_LOAD_ERROR, onFileError);
+        applyNearestFilter(scene, textureKey);
         flushCallbacks(textureKey, true);
     };
     const onFileError = (file: Phaser.Loader.File) => {

@@ -59,6 +59,10 @@ export function createSimpleButtonFx(
         }));
 
     const canInteract = () => Boolean(hitArea.input?.enabled);
+    const isTouchPointer = (pointer?: Phaser.Input.Pointer) => {
+        const pointerType = String((pointer as unknown as { pointerType?: string })?.pointerType ?? '');
+        return pointerType === 'touch';
+    };
 
     const animate = (factor: number, duration: number) => {
         scalable.forEach((entry) => scene.tweens.killTweensOf(entry.target));
@@ -78,37 +82,68 @@ export function createSimpleButtonFx(
         scalable.forEach((entry) => entry.target.setScale(entry.baseX, entry.baseY));
     };
 
-    const onOver = () => {
+    let pressed = false;
+    let activePointerId: number | null = null;
+
+    const onOver = (pointer: Phaser.Input.Pointer) => {
+        if (isTouchPointer(pointer)) return;
+        if (pressed) return;
         if (!canInteract()) return;
         animate(HOVER_SCALE, TWEEN_MS);
     };
-    const onOut = () => reset();
-    const onDown = () => {
+    const onOut = () => {
+        if (pressed) return;
+        reset();
+    };
+    const onDown = (pointer: Phaser.Input.Pointer) => {
         if (!canInteract()) return;
+        pressed = true;
+        activePointerId = pointer?.id ?? null;
         animate(PRESS_SCALE, TWEEN_MS_PRESS);
     };
-    const onUp = () => {
-        if (!canInteract()) return;
+    const onRelease = () => {
+        pressed = false;
+        activePointerId = null;
         reset();
+    };
+    const onUp = (pointer: Phaser.Input.Pointer) => {
+        if (!canInteract()) {
+            onRelease();
+            return;
+        }
+
+        if (activePointerId !== null && pointer?.id !== activePointerId) return;
+        const inside = hitArea.getBounds().contains(pointer.x, pointer.y);
+        const touch = isTouchPointer(pointer);
+
+        onRelease();
+        if (!inside) return;
+
+        if (!touch) animate(HOVER_SCALE, TWEEN_MS);
         if (options?.playClickSfx !== false) {
             playUiClick(scene);
         }
         options?.onClick?.();
     };
+    const onUpOutside = () => onRelease();
 
     hitArea.on('pointerover', onOver);
     hitArea.on('pointerout', onOut);
     hitArea.on('pointerdown', onDown);
     hitArea.on('pointerup', onUp);
+    hitArea.on('pointerupoutside', onUpOutside);
+    scene.input.on('gameout', onUpOutside);
 
     return {
-        reset,
+        reset: onRelease,
         destroy: () => {
             hitArea.off('pointerover', onOver);
             hitArea.off('pointerout', onOut);
             hitArea.off('pointerdown', onDown);
             hitArea.off('pointerup', onUp);
-            reset();
+            hitArea.off('pointerupoutside', onUpOutside);
+            scene.input.off('gameout', onUpOutside);
+            onRelease();
         },
     };
 }

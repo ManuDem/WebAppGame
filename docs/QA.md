@@ -1,62 +1,82 @@
-# QA - Milestone Card Visuals / Targeting / Pixel Polish
+# QA - Milestone Match Readability + Live HUD + Anti-Overlap
 
 Data verifica: 2026-03-04
 
-## 1. Verifiche automatiche
+## 1) Verifiche automatiche eseguite
 
-Comandi usati:
-- `cd server && npm.cmd run build`
+Comandi:
 - `cd client && npm.cmd run build`
+- `cd server && npm.cmd run build`
 - `npm.cmd test -- --runInBand --forceExit tests/DeckManager.test.ts tests/CardEffectParser.test.ts server/tests/core_loop.test.ts server/tests/reaction_stress.test.ts server/tests/win_conditions.test.ts`
-- `npm.cmd test -- --runInBand --forceExit server/tests/gameplay_foundation.test.ts`
+- `npm.cmd test -- --runInBand --forceExit server/tests/gameplay_foundation.test.ts server/tests/room_connection.test.ts`
 
 Esito:
-- build server: OK
 - build client: OK
+- build server: OK
 - smoke suite stabile: OK
-- gameplay_foundation: OK
+- suite gameplay foundation + room connection: OK
 
-Nota:
-- Esistono ancora suite legacy note non incluse nella smoke stabile (fuori scope di questa milestone).
-
-## 2. Smoke manuale ripetibile (client)
+## 2) Smoke manuale ripetibile (match readability)
 
 Prerequisiti:
 1. Avvia server: `cd server && npm.cmd run dev`
 2. Avvia client: `cd client && npm.cmd run dev`
-3. Apri due tab/browser separati.
+3. Apri almeno 2 tab/browser distinti.
 
-Checklist:
-1. Host crea stanza e vede codice a 4 cifre.
-2. Join entra con codice valido e nome CEO.
-3. In pre-lobby entrambi mettono pronto e host avvia.
-4. Ogni giocatore parte con 3 carte in mano.
-5. In mano, ogni mini-card mostra:
-   - artwork (PNG se presente, fallback se mancante)
-   - titolo/tipo/costo leggibili
-6. Tap su carta in mano apre overlay full-card.
-7. Overlay mostra artwork reale se presente, altrimenti fallback senza errori.
-8. Drop di Item su tavolo:
-   - con 1 Hero in company: auto-target Hero
-   - con piu Hero: apertura target selector Hero
-   - con 0 Hero: feedback esplicito e carta non persa
-9. Drop di Magic/Event che bersaglia avversario:
-   - selettore target opponent
-   - se nessun avversario disponibile, feedback esplicito
-10. Hero con Item equipaggiati mostra badge `EQ n` nella company.
+Checklist funzionale:
+1. Host crea stanza e condivide codice.
+2. Join entra con codice + nome CEO valido.
+3. Pre-lobby: entrambi pronti, host avvia.
+4. Start match: ogni giocatore ha 3 carte iniziali.
+5. Hand interaction:
+   - tap su mini-card => inspect overlay full-card
+   - chiusura con `X` e tap fuori overlay
+6. Target selector:
+   - Magic/Event su opponent
+   - Item su Hero (auto-target se Hero unico)
+7. Equip item:
+   - Hero in company mostra badge equip (`EQ n`)
+8. Monster/crisis resolution:
+   - crisi con badge `ROLL X+`
+   - tiro dadi visibile lato client (toast)
+9. Event log:
+   - aggiornato con error/reaction/action/turn/dice/win
+   - toggle `ESPANDI/RIDUCI` funzionante
+10. HUD live:
+   - turno/AP/VP/deck/discard/phase/reaction visibili
 
-## 3. QA capture rapido (opzionale)
+Checklist layout (anti-overlap):
+1. Verifica `360x640` portrait.
+2. Verifica `390x844` portrait.
+3. Verifica `414x896` portrait.
+4. Verifica `768x1024` portrait.
+5. Verifica `1366x768` landscape.
+6. Nessun testo deve:
+   - sovrapporsi
+   - uscire da card/panel/toolbar
+   - uscire dalla propria sezione
+7. Touch target critici >= 44px (bottoni principali, toggle log, selector).
 
-Script disponibile:
-- `cd client && npm.cmd run qa:capture`
+## 3) Debug anti-overlap
 
-Variabili utili:
-- `QA_URL` (default `http://localhost:3000/`)
-- `QA_WAIT_MS` (default `5000`)
-- `QA_CHANNEL` (`chrome`, `msedge`, oppure vuoto)
+Attivazione debug:
+- URL con `?uiDebug=1`
+- oppure `localStorage.setItem('lucrare_ui_debug', '1')`
 
-## 4. Follow-up fuori scope
+Cosa controllare:
+- box zone (`topBar`, `board`, `hand`, `log`, `handCards`)
+- box testi principali HUD/log/turn
 
-- Rifinitura completa pixel-art su tutte le scene non toccate in questa milestone.
-- Copertura e2e automatica interazione drag/tap multi-client.
-- Stabilizzazione suite legacy non incluse nella smoke stabile.
+## 4) Nota ambiente CI/sandbox
+
+Il capture browser automatico (`npm.cmd run qa:capture`) in questo ambiente può fallire con:
+- `spawn EPERM` su Chromium/Chrome/Edge headless.
+
+In tal caso:
+- usare la checklist manuale sopra su browser locale reale.
+
+## 5) Follow-up
+
+- Riduzione log console test lato server (non bloccante).
+- Eventuale E2E multi-client automatica stabile fuori sandbox.
+- Hardening ulteriore overflow su nomi utente estremamente lunghi.

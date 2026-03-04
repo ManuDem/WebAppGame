@@ -77,10 +77,10 @@ Obiettivo: sapere subito cosa e fatto, cosa manca e dove intervenire.
     - import errato in `tests/reaction_race_condition.test.ts` (`../src/arena.config`)
 
 ## 6) Criticita aperte prioritarie
-1. Allineare o rimuovere suite root legacy non coerenti (`tests/*` con `@colyseus/testing`).
-2. Ridurre logging runtime in test per output piu pulito.
-3. Completare supporto gameplay Item equipaggiati su Hero specifico (oggi buff player-level).
-4. Rifinire target selector client per evitare richiesta bersaglio su carte che non lo richiedono.
+1. Eseguire QA visuale guidata su mobile reale (portrait + landscape) per validare zero overlap in partita.
+2. Rifinire encoding/messaggi testuali legacy lato server (mojibake in log/commenti storici).
+3. Allineare o dismettere suite root legacy non coerenti (`tests/*` con `@colyseus/testing`).
+4. Ridurre output log runtime in test per report piu leggibili.
 5. Ridurre uso di `any` in `server/src/rooms/OfficeRoom.ts`.
 
 ## 7) Checklist operativa prima di modificare codice
@@ -194,3 +194,39 @@ npm test -- --runInBand
   - build:
     - client build OK
     - server build OK
+- 2026-03-04 (sessione consolidamento UI/gameplay finale):
+  - carte mini/full allineate al riferimento `HTS card mockup.webp` (header piu pulito, artwork dominante, info strip sintetica)
+  - animazioni bottoni stabilizzate in `SimpleButtonFx`:
+    - gestione touch/mouse piu robusta
+    - reset sicuro su `pointerupoutside`/`gameout`
+    - ridotti casi di stato "incastrato"
+  - `GameScene`:
+    - aggiunto layout compatto landscape (mobile-first) per ridurre affollamento e overlap
+    - migliorata distribuzione carte (crisi/azienda/mano) su schermi bassi
+    - target selector ora usa la stessa animazione condivisa dei bottoni principali
+    - ridotte etichette dense nella barra avversari (`H` al posto icona ampia)
+  - `LoginScene`:
+    - rimosso layer semitrasparente interno al pannello (sfondo menu piu pulito/leggibile)
+  - verifica:
+    - `client build` OK
+    - `server build` OK
+    - smoke suite stabile OK (`35/35`)
+- 2026-03-04 (milestone match readability + live HUD):
+  - introdotto layout manager anti-overlap:
+    - `client/src/ui/layout/MatchLayout.ts`
+    - zone centralizzate: topBar/board/hand/log/handCards/overlay
+    - debug mode con bounding boxes (`?uiDebug=1` o `localStorage.lucrare_ui_debug=1`)
+  - `GameScene` aggiornata con:
+    - HUD live persistente (turno/AP/VP/deck/discard/phase/reaction)
+    - event feed persistente collassabile (`ESPANDI`/`RIDUCI`)
+    - surfacing `DICE_ROLLED` (toast + log)
+    - badge `ROLL X+` sulle crisi
+    - hand layout ancorato a `handCards` per ridurre overlap in portrait/landscape
+  - documentazione:
+    - nuova spec `docs/ui/MATCH_UI_SPEC.md`
+    - aggiornati `docs/PLAN.md`, `docs/QA.md`, `docs/index.md`
+  - verifica:
+    - `client build` OK
+    - `server build` OK
+    - smoke suite stabile OK (`35/35`)
+    - i18n parity IT/EN OK (`160/160`)

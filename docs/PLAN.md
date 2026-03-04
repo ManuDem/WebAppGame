@@ -78,6 +78,22 @@ Avanzamento corrente (2026-03-04):
   - Item -> selezione Hero (auto-target se 1 Hero, errore esplicito se 0 Hero)
   - Magic/Event target opponent -> feedback esplicito se nessun avversario disponibile
 
+### CARD LAYOUT CONTRACT - stile vicino a Here To Slay
+
+- Mini-card verticali, artwork dominante, info sintetiche e niente paragrafi lunghi.
+- Struttura mini-card obbligatoria:
+  - area artwork alta con PNG reale o fallback coerente
+  - header compatto (nome + tipo/classe + badge valore chiave)
+  - info strip singola (shortDesc/riassunto per tipo carta)
+  - nessuna descrizione completa in miniatura
+- Full-card obbligatoria su tap/click:
+  - artwork grande in alto
+  - titolo + tipo/classe/subtipo + valori chiave
+  - descrizione completa + note contestuali
+  - chiusura doppia: tap fuori e pulsante `X` grande
+- Coerenza layout tra mano, campo e inspect.
+- Mobile first: hit area generose, no overlap, no testo fuori area.
+
 ## M4 - Pixel art makeover
 Stato: `in_progress`
 
@@ -87,11 +103,10 @@ Scope previsto:
 - layout anti-overlap mobile/landscape
 
 Avanzamento corrente (2026-03-04):
-- renderer Phaser aggiornato per look piu crisp:
-  - `pixelArt: true`
-  - `roundPixels: true`
-  - `antialias` disattivato
-- risoluzione renderer riequilibrata per ridurre blur e mantenere leggibilita.
+- rendering bilanciato:
+  - testi UI nitidi (antialias attivo per leggibilita)
+  - artwork/asset carta in stile pixel tramite filtro nearest dedicato
+  - `roundPixels` mantenuto per stabilita di posizionamento
 
 ## M5 - i18n IT/EN completo
 Stato: `pending`
@@ -108,6 +123,30 @@ Scope previsto:
 - `docs/QA.md`
 - playtest checklist completa
 - bug bloccanti finali
+
+## M7 - Match Readability + Live HUD + Anti-Overlap
+Stato: `in_progress`
+
+Output:
+- `docs/ui/MATCH_UI_SPEC.md`
+- layout manager: `client/src/ui/layout/MatchLayout.ts`
+- integrazione layout in `GameScene` con debug mode (`uiDebug=1`)
+- HUD live persistente (turno/AP/VP/deck/discard/phase/reaction)
+- event feed persistente collassabile
+- surfacing `DICE_ROLLED` (toast + feed)
+- miglioramenti leggibilita board/opponents (badge roll crisi + info sintetiche)
+
+Comandi verifica:
+- `cd client && npm.cmd run build`
+- `cd server && npm.cmd run build`
+- `npm.cmd test -- --runInBand --forceExit tests/DeckManager.test.ts tests/CardEffectParser.test.ts server/tests/core_loop.test.ts server/tests/reaction_stress.test.ts server/tests/win_conditions.test.ts`
+
+Acceptance M7:
+- zone partita calcolate centralmente
+- no overlap strutturale nelle aree toccate
+- log eventi persistente visibile in match
+- feedback dado esplicito lato client
+- testi UI nitidi e wrapping stabile
 
 ## Decisioni bloccanti (attive)
 
