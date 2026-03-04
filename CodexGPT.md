@@ -29,8 +29,16 @@ Obiettivo: sapere subito cosa e fatto, cosa manca e dove intervenire.
 - AP turno: 3
 - Draw cost: 1 AP
 - Reaction window: 5000 ms
-- Win semplificata: 4 dipendenti in company o 2 crisi risolte
+- Reazioni e modifier: non consumano AP (modello Here-to-Slay Lite)
+- Win semplificata: 4 Hero in company o 2 Monster risolti
 - Rejoin in partita avviata: consentito solo con nome CEO gia esistente
+- Modello carte attivo (5+2):
+  - main deck: `Hero`, `Item`, `Magic`, `Modifier`, `Challenge`
+  - setup: `Monster`, `Party Leader`
+- Setup match:
+  - assegnazione Party Leader lato server
+  - popolamento 3 Monster sul tavolo
+  - deck costruito solo con carte main deck
 
 ## 4) Mappa codice essenziale
 - Client:
@@ -56,8 +64,8 @@ Obiettivo: sapere subito cosa e fatto, cosa manca e dove intervenire.
   - server: OK (`cd server && npm run build`)
   - client: OK (`cd client && npm run build`)
 - Test mirati (stabili): OK
-  - comando: `npm test -- --runInBand --forceExit tests/CardEffectParser.test.ts server/tests/win_conditions.test.ts server/tests/reaction_stress.test.ts`
-  - esito: 28/28 passed
+  - comando: `npm test -- --runInBand --forceExit tests/DeckManager.test.ts tests/CardEffectParser.test.ts server/tests/win_conditions.test.ts server/tests/reaction_stress.test.ts`
+  - esito: 31/31 passed
 - Test root completi: FAIL parziale (suite legacy)
   - comando: `npm test -- --runInBand --forceExit`
   - fail attuali:
@@ -71,8 +79,9 @@ Obiettivo: sapere subito cosa e fatto, cosa manca e dove intervenire.
 ## 6) Criticita aperte prioritarie
 1. Allineare o rimuovere suite root legacy non coerenti (`tests/*` con `@colyseus/testing`).
 2. Ridurre logging runtime in test per output piu pulito.
-3. Ridurre uso di `any` in `server/src/rooms/OfficeRoom.ts`.
-4. Completare supporto gameplay OGGETTO/equipment lato room (attualmente tipizzato ma non pienamente orchestrato).
+3. Completare supporto gameplay Item equipaggiati su Hero specifico (oggi buff player-level).
+4. Rifinire target selector client per evitare richiesta bersaglio su carte che non lo richiedono.
+5. Ridurre uso di `any` in `server/src/rooms/OfficeRoom.ts`.
 
 ## 7) Checklist operativa prima di modificare codice
 1. Leggere questo file (`CodexGPT.md`).
@@ -136,3 +145,34 @@ npm test -- --runInBand
   - test allineati:
     - aggiornati `tests/CardEffectParser.test.ts`, `server/tests/win_conditions.test.ts`, `server/tests/reaction_stress.test.ts`
     - pass su suite mirata (28/28)
+- 2026-03-04 (sessione bugfix giocabilita + roadmap Here-to-Slay Lite):
+  - client gameplay:
+    - fix pre-lobby visibile anche quando fase server e `PRE_LOBBY` (non solo `WAITING_FOR_PLAYERS`)
+    - fix giocabilita carte evento/reazione con check su `subtype` (non solo su `CardType.REACTION`)
+    - fix drop logic per eventi (nessun blocco su alias `MAGIC` legacy)
+  - visual:
+    - rimossi pallini mobili dal menu login
+    - disabilitate particelle ambientali a pallini in partita (restano nuvole lente)
+    - inspect carta fullscreen migliorato: area artwork in alto + dettagli effetto/dadi in basso
+  - documentazione aggiornata:
+    - `Documentation/RFC_Gameplay_Semplificato.md`
+    - `Documentation/LUCrAre_2.0_Rules.md`
+    - `Documentation/LUCrAre_SEMPRE_Master.md`
+- 2026-03-04 (sessione migrazione 5+2 completa + validazione):
+  - shared:
+    - `CardType` migrato formalmente a `Hero/Item/Magic/Modifier/Challenge/Monster/PartyLeader` con alias legacy
+    - `DeckManager` aggiornato: deck creato solo con tipi main deck
+    - `CardEffectParser` esteso con `roll_modifier` e gestione passivi migliorata (`win_multiplier`, `roll_bonus`, `discount_magic`)
+  - server:
+    - `OfficeRoom` aggiornata con setup `Party Leader` e tabellone `Monster`
+    - validazioni tipo carta in `PLAY_EMPLOYEE` / `PLAY_MAGIC`
+    - `PLAY_REACTION` esteso a `challenge/modifier` e senza consumo PA
+    - consumo one-shot dei tag `next_roll_mod_X` al momento del tiro
+  - client:
+    - `GameScene` aggiornata a nuovi tipi carta (hero/event/reaction/modifier)
+    - fix drop su zona Monster (non scarta piu carta mano in modo errato)
+    - palette carte riallineata in `CardGameObject`
+    - traduzioni IT/EN aggiornate per regole Here-to-Slay Lite
+  - verifica:
+    - build server/client OK
+    - test mirati OK (`31/31` pass)

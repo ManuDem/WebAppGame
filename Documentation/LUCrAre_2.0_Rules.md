@@ -1,29 +1,54 @@
-# LUCrAre 2.0: Core Rules & Meccaniche
+# LUCrAre 2.0: Core Rules & Meccaniche (Here to Slay Lite)
 
-Questo documento traccia il pivot direzionale del progetto "LUCrAre: SEMPRE" verso un feeling più dinamico e imprevedibile (ispirato a titoli come *Here to Slay*), semplificando la semantica delle carte e integrando l'RNG esplicito dei dadi nel game loop.
+Questo documento definisce la direzione ufficiale del gameplay: versione semplificata ispirata a Here to Slay, con priorita su leggibilita mobile, partite rapide e interazioni ad alta tensione.
 
-## 1. I 4 Nuovi Tipi di Carta
+## 1) Categorie carte
 
-Per semplificare l'onboarding visivo e logico, i tipi si riducono a 4 categorie nette:
+### Main deck (5)
+- Hero
+- Item
+- Magic
+- Modifier
+- Challenge
 
-- **EMPLOYEE (Impiegati):** Le unità base. Vengono giocate nella propria *Company* (plancia personale). Forniscono bonus passivi (es. modificatori ai dadi) e possono essere sacrificati o usati per effetti attivi.
-- **IMPREVISTO (Mostri / Sfide):** Carte posizionate al centro del tavolo. Per risolverle/sconfiggerle è necessario soddisfare un requisito (es. pagando un certo set di Impiegati) OPPURE superare un tiro di dado (`targetRoll`). Sconfiggerle fornisce Punti Vittoria (VP).
-- **OGGETTO (Equipaggiamento):** Si attaccano (equip) a uno specifico `EMPLOYEE` già in gioco. Ne amplificano i modificatori passivi, conferiscono protezioni, o malus se usati su impiegati avversari.
-- **EVENTO (Magie / Azioni One-Shot / Reazioni):** Carte istantanee. Hanno un effetto devastante e subitaneo che si risolve (a volte tramite lancio di dado) e finiscono direttamente negli scarti. Possono essere giocate anche nel turno avversario.
+### Extra setup (2)
+- Monster (tavolo centrale)
+- Party Leader (personale)
 
-## 2. Meccanica dei Dadi (2d6 System)
+## 2) Loop turno (quick)
+Ogni turno il player attivo riceve 3 AP e puo:
+- giocare carte (Hero/Item/Magic)
+- tentare un Monster
+- pescare
+- chiudere turno
 
-L'introduzione della meccanica del dado aggiunge un elemento di rischio e gestione delle probabilità.
+Le reazioni Challenge/Modifier avvengono in finestre brevi server-side.
 
-- **Il Tiro (Roll):** Le carte `IMPREVISTO` o `EVENTO` possono richiedere di tirare 2 dadi a 6 facce (2d6).
-- **Modificatori:** Il valore totale del tiro è influenzato dai `modifier` (bonus/malus) forniti passivamente dagli `EMPLOYEE` o `OGGETTO` controllati dal giocatore.
-- **Risoluzione (Target Roll):** Il risultato finale arrotondato viene confrontato con il `targetRoll` della carta. Se lo supera o uguaglia (`>=`), l'effetto ha *successo*, altrimenti fallisce.
-- **Sicurezza Server:** Il lancio avviene **sempre** sul Server per prevenire cheat. Il Client richiede il tiro (`ClientMessages.ROLL_DICE`) e il Server risponde broadcastando l'esito visivo (`ServerEvents.DICE_ROLLED`), permettendo al Client di attivare l'animazione fisica del dado. `GameState` si aspetterà l'avvenuta animazione visiva prima di applicare le conseguenze dell'azione a livello formale.
+## 3) Dadi
+- 2d6 server-authoritative
+- Modifier applicati in coda reazione
+- Soglie `targetRoll` su Monster e alcune abilita
 
-## 3. Risoluzione Grafica e UX (Il "Tap to Full-Screen")
+## 4) Vittoria
+- 2 Monster sconfitti
+oppure
+- 4 Hero in squadra
 
-In base al nuovo filone intrapreso per un design responsive/mobile first:
+## 5) Ispirazioni da giochi noti (adattate)
+- Here to Slay: struttura Hero/Item/Magic/Challenge/Modifier
+- King of Tokyo: tensione push-your-luck sui dadi (qui in forma piu snella)
+- 7 Wonders: leggibilita decisionale per turno (pochi passi, alto segnale)
 
-- Il tavolo da gioco non presenterà più i testi complessi direttamente sui rendering fisici delle carte (che diventerebbero illeggibili su mobile).
-- Le carte sul tavolo (sia in `hand`, che `company`, che `centralCrises`) mostreranno principalmente l'**Icona** del template (`visuals.iconName`), il **Nome** semplificato e il **Costo**.
-- **UX Tap:** Per poter consultare l'effetto di una carta, l'`Agente 2` imposterà un listener sui tap lunghi (o doppio click su desktop) che farà esplodere in full-screen un pop-up semitrasparente contenente l'illustrazione grande e tutto il set di regole testuali (l'effettivo payload `description` e `shortDesc`). Nessun calcolo verrà fatto lato server in questa fase.
+## 6) Design UX richiesto
+- Nessun overlap di testi in ogni orientamento
+- Carte compact sul tavolo
+- Dettaglio full screen su tap
+- Sfondo dinamico: solo nuvole lente (no pallini/cerchi)
+- Pre-lobby obbligatoria con regole brevi e stato ready
+
+## 7) Stato tecnico (2026-03-04)
+1. Completato: enum/tipi shared migrati a modello 5+2 (con alias legacy).
+2. Completato: `cards_db.json` riallineato al nuovo schema + aggiunta carte `Modifier` e `Party Leader`.
+3. Completato: parser/room aggiornati per `Challenge` e `Modifier` (tag one-shot su tiro dadi).
+4. Parziale: UI tavolo/hand e inspect fullscreen migliorati; resta da rifinire il target selector sulle carte senza bersaglio.
+5. Completato: build server/client + test mirati core gameplay passati.

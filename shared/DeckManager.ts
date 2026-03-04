@@ -32,11 +32,16 @@ export class DeckManager {
                 console.warn("[DeckManager] Skipping invalid template entry in cards_db.json:", template);
                 continue;
             }
+            const normalizedType = this.normalizeType(template.type);
+            // Main deck only: Hero, Item, Magic, Modifier, Challenge.
+            if (!this.isMainDeckType(normalizedType)) {
+                continue;
+            }
             for (let i = 0; i < COPIES_PER_CARD; i++) {
                 const card: ICardData = {
                     id: this.generateUUID(),
                     templateId: template.id,
-                    type: this.normalizeType(template.type),
+                    type: normalizedType,
                     costPA: template.cost,
                     isFaceUp: false, // Hidden in deck / hand by default
                     subtype: this.normalizeSubtype(template.subtype, template.type),
@@ -107,33 +112,62 @@ export class DeckManager {
     private static normalizeType(rawType: unknown): CardType {
         const value = String(rawType ?? "").trim().toLowerCase();
         switch (value) {
+            case "hero":
             case "employee":
-                return CardType.EMPLOYEE;
+            case "impiegato":
+                return CardType.HERO;
+
+            case "monster":
             case "crisis":
             case "imprevisto":
-                return CardType.IMPREVISTO;
+                return CardType.MONSTER;
+
             case "item":
             case "oggetto":
-                return CardType.OGGETTO;
+                return CardType.ITEM;
+
+            case "modifier":
+                return CardType.MODIFIER;
+
+            case "challenge":
+            case "reaction":
+                return CardType.CHALLENGE;
+
+            case "party_leader":
+            case "partyleader":
+            case "leader":
+                return CardType.PARTY_LEADER;
+
+            case "magic":
             case "event":
             case "trick":
-            case "reaction":
+            case "evento":
             default:
-                return CardType.EVENTO;
+                return CardType.MAGIC;
         }
     }
 
     private static normalizeSubtype(rawSubtype: unknown, rawType: unknown): CardSubtype {
         const subtype = String(rawSubtype ?? "").trim().toLowerCase();
-        if (["none", "spell", "challenge", "debuff", "reaction", "equipment"].includes(subtype)) {
+        if (["none", "spell", "challenge", "debuff", "reaction", "equipment", "modifier", "leader", "monster"].includes(subtype)) {
             return subtype as CardSubtype;
         }
 
         const type = String(rawType ?? "").trim().toLowerCase();
         if (type === "item" || type === "oggetto") return "equipment";
-        if (type === "crisis" || type === "imprevisto") return "challenge";
-        if (type === "reaction") return "reaction";
-        if (type === "employee") return "none";
+        if (type === "monster" || type === "crisis" || type === "imprevisto") return "monster";
+        if (type === "challenge" || type === "reaction") return "challenge";
+        if (type === "modifier") return "modifier";
+        if (type === "party_leader" || type === "leader") return "leader";
+        if (type === "hero" || type === "employee") return "none";
         return "spell";
+    }
+
+    private static isMainDeckType(type: CardType): boolean {
+        return type === CardType.HERO
+            || type === CardType.ITEM
+            || type === CardType.MAGIC
+            || type === CardType.MODIFIER
+            || type === CardType.CHALLENGE;
     }
 }

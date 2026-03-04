@@ -202,15 +202,22 @@ export interface IStartReactionTimerPayload {
 // -------------------------------------------------------------------------
 
 export enum CardType {
-    EMPLOYEE = "employee",      // Impiegati
-    IMPREVISTO = "crisis",      // Minacce centrali da affrontare
-    OGGETTO = "item",           // Equipaggiamenti assegnabili agli impiegati
-    EVENTO = "event",           // Eventi one-shot (magie/sfide/debuff/reazioni)
+    // Modello target Here-to-Slay Lite (5+2)
+    HERO = "hero",
+    ITEM = "item",
+    MAGIC = "magic",
+    MODIFIER = "modifier",
+    CHALLENGE = "challenge",
+    MONSTER = "monster",
+    PARTY_LEADER = "party_leader",
 
     // Alias legacy (compat retroattiva durante la migrazione)
-    MAGIC = "trick",
-    CRISIS = "crisis",
-    REACTION = "reaction",
+    EMPLOYEE = "hero",
+    IMPREVISTO = "monster",
+    OGGETTO = "item",
+    EVENTO = "magic",
+    CRISIS = "monster",
+    REACTION = "challenge",
 }
 
 export type CardSubtype =
@@ -219,7 +226,10 @@ export type CardSubtype =
     | "challenge"
     | "debuff"
     | "reaction"
-    | "equipment";
+    | "equipment"
+    | "modifier"
+    | "leader"
+    | "monster";
 
 /** Dati essenziali pubblici di una carta in gioco */
 export interface ICardData {
@@ -257,8 +267,11 @@ export type TargetType =
     | "self"
     | "opponent"
     | "opponent_hand"
+    | "hero"
     | "employee"
+    | "monster"
     | "win_condition"
+    | "magic"
     | "trick"
     | "another_opponent"
     | "played_card";
@@ -269,6 +282,7 @@ export type ActionType =
     | "protect"
     | "passive_bonus"
     | "discount_cost"
+    | "roll_modifier"
     | "draw_cards"
     | "steal_pa"
     | "steal_card"

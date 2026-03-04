@@ -1,381 +1,459 @@
 [
     {
-        "id": "emp_01",
-        "name": "Lo Stagista Sfruttato",
-        "type": "employee",
-        "cost": 1,
-        "shortDesc": "+1 PA gratis. Grazie, poverino.",
-        "description": "Lavora 24/7 ma non sa cosa fa. Ti fornisce 1 PA bonus il prossimo turno.",
-        "effect": {
-            "action": "produce",
-            "amount": 1,
-            "resource": "pa"
-        },
-        "visuals": {
-            "bgColorHex": "#2C3E50",
-            "iconName": "emp",
-            "particleColor": "#F39C12"
-        },
-        "subtype": "none"
+        "id":  "emp_01",
+        "name":  "Lo Stagista Sfruttato",
+        "type":  "hero",
+        "cost":  1,
+        "shortDesc":  "+1 PA gratis. Grazie, poverino.",
+        "description":  "Lavora 24/7 ma non sa cosa fa. Ti fornisce 1 PA bonus il prossimo turno.",
+        "effect":  {
+                       "action":  "produce",
+                       "amount":  1,
+                       "resource":  "pa"
+                   },
+        "visuals":  {
+                        "bgColorHex":  "#2C3E50",
+                        "iconName":  "emp",
+                        "particleColor":  "#F39C12"
+                    },
+        "subtype":  "none"
     },
     {
-        "id": "emp_02",
-        "name": "Il PR Fuffarolo",
-        "type": "employee",
-        "cost": 2,
-        "shortDesc": "Scudo PR: un tuo dipendente è intoccabile.",
-        "description": "Vende ghiaccio agli eschimesi. Protegge un tuo dipendente dal prossimo attacco.",
-        "effect": {
-            "action": "protect",
-            "target": "employee",
-            "amount": 1
-        },
-        "visuals": {
-            "bgColorHex": "#2C3E50",
-            "iconName": "emp",
-            "particleColor": "#F39C12"
-        },
-        "subtype": "none"
+        "id":  "emp_02",
+        "name":  "Il PR Fuffarolo",
+        "type":  "hero",
+        "cost":  2,
+        "shortDesc":  "Scudo PR: un tuo dipendente è intoccabile.",
+        "description":  "Vende ghiaccio agli eschimesi. Protegge un tuo dipendente dal prossimo attacco.",
+        "effect":  {
+                       "action":  "protect",
+                       "target":  "employee",
+                       "amount":  1
+                   },
+        "visuals":  {
+                        "bgColorHex":  "#2C3E50",
+                        "iconName":  "emp",
+                        "particleColor":  "#F39C12"
+                    },
+        "subtype":  "none"
     },
     {
-        "id": "emp_03",
-        "name": "Il C-Level Assente",
-        "type": "employee",
-        "cost": 3,
-        "shortDesc": "Vale doppio per il Monopolio. Chi è?",
-        "description": "Nessuno sa cosa faccia realmente in azienda. Conta doppio per l'obiettivo di Monopolio Umano.",
-        "effect": {
-            "action": "passive_bonus",
-            "target": "win_condition",
-            "multiplier": 2
-        },
-        "visuals": {
-            "bgColorHex": "#2C3E50",
-            "iconName": "emp",
-            "particleColor": "#F39C12"
-        },
-        "subtype": "none"
+        "id":  "emp_03",
+        "name":  "Il C-Level Assente",
+        "type":  "hero",
+        "cost":  3,
+        "shortDesc":  "Vale doppio per il Monopolio. Chi è?",
+        "description":  "Nessuno sa cosa faccia realmente in azienda. Conta doppio per l\u0027obiettivo di Monopolio Umano.",
+        "effect":  {
+                       "action":  "passive_bonus",
+                       "target":  "win_condition",
+                       "multiplier":  2
+                   },
+        "visuals":  {
+                        "bgColorHex":  "#2C3E50",
+                        "iconName":  "emp",
+                        "particleColor":  "#F39C12"
+                    },
+        "subtype":  "none"
     },
     {
-        "id": "emp_04",
-        "name": "Manager Micro-Gestore",
-        "type": "employee",
-        "cost": 2,
-        "shortDesc": "Trucchi -1 PA. Anche al bagno.",
-        "description": "Controlla anche la pausa bagno. Rende le tue prossime azioni Magheggio più economiche di 1 PA.",
-        "effect": {
-            "action": "discount_cost",
-            "target": "trick",
-            "amount": 1
-        },
-        "visuals": {
-            "bgColorHex": "#2C3E50",
-            "iconName": "emp",
-            "particleColor": "#F39C12"
-        },
-        "subtype": "none"
+        "id":  "emp_04",
+        "name":  "Manager Micro-Gestore",
+        "type":  "hero",
+        "cost":  2,
+        "shortDesc":  "Trucchi -1 PA. Anche al bagno.",
+        "description":  "Controlla anche la pausa bagno. Rende le tue prossime azioni Magheggio più economiche di 1 PA.",
+        "effect":  {
+                       "action":  "discount_cost",
+                       "target":  "trick",
+                       "amount":  1
+                   },
+        "visuals":  {
+                        "bgColorHex":  "#2C3E50",
+                        "iconName":  "emp",
+                        "particleColor":  "#F39C12"
+                    },
+        "subtype":  "none"
     },
     {
-        "id": "emp_05",
-        "name": "Tecnico IT Esausto",
-        "type": "employee",
-        "cost": 2,
-        "shortDesc": "Pesca 2 carte. Il Wi-Fi funziona, stavolta.",
-        "description": "Ha riparato il Wi-Fi per la millesima volta. Pesca 2 carte extra quando viene assunto.",
-        "effect": {
-            "action": "draw_cards",
-            "amount": 2
-        },
-        "visuals": {
-            "bgColorHex": "#2C3E50",
-            "iconName": "emp",
-            "particleColor": "#F39C12"
-        },
-        "subtype": "none"
+        "id":  "emp_05",
+        "name":  "Tecnico IT Esausto",
+        "type":  "hero",
+        "cost":  2,
+        "shortDesc":  "Pesca 2 carte. Il Wi-Fi funziona, stavolta.",
+        "description":  "Ha riparato il Wi-Fi per la millesima volta. Pesca 2 carte extra quando viene assunto.",
+        "effect":  {
+                       "action":  "draw_cards",
+                       "amount":  2
+                   },
+        "visuals":  {
+                        "bgColorHex":  "#2C3E50",
+                        "iconName":  "emp",
+                        "particleColor":  "#F39C12"
+                    },
+        "subtype":  "none"
     },
     {
-        "id": "trk_01",
-        "name": "Falso in Bilancio",
-        "type": "event",
-        "cost": 2,
-        "shortDesc": "Ruba 2 PA a un avversario. Classico.",
-        "description": "Ruba 2 PA a un avversario per il suo prossimo turno.",
-        "effect": {
-            "action": "steal_pa",
-            "target": "opponent",
-            "amount": 2
-        },
-        "visuals": {
-            "bgColorHex": "#8E44AD",
-            "iconName": "trick",
-            "particleColor": "#9B59B6"
-        },
-        "subtype": "debuff"
+        "id":  "trk_01",
+        "name":  "Falso in Bilancio",
+        "type":  "magic",
+        "cost":  2,
+        "shortDesc":  "Ruba 2 PA a un avversario. Classico.",
+        "description":  "Ruba 2 PA a un avversario per il suo prossimo turno.",
+        "effect":  {
+                       "action":  "steal_pa",
+                       "target":  "opponent",
+                       "amount":  2
+                   },
+        "visuals":  {
+                        "bgColorHex":  "#8E44AD",
+                        "iconName":  "trick",
+                        "particleColor":  "#9B59B6"
+                    },
+        "subtype":  "debuff"
     },
     {
-        "id": "trk_02",
-        "name": "Rubare l'Idea",
-        "type": "event",
-        "cost": 1,
-        "shortDesc": "Pesca 1 carta dalla mano avversaria.",
-        "description": "Pesca 1 carta a caso dalla mano di un avversario.",
-        "effect": {
-            "action": "steal_card",
-            "target": "opponent_hand",
-            "amount": 1
-        },
-        "visuals": {
-            "bgColorHex": "#8E44AD",
-            "iconName": "trick",
-            "particleColor": "#9B59B6"
-        },
-        "subtype": "debuff"
+        "id":  "trk_02",
+        "name":  "Rubare l\u0027Idea",
+        "type":  "magic",
+        "cost":  1,
+        "shortDesc":  "Pesca 1 carta dalla mano avversaria.",
+        "description":  "Pesca 1 carta a caso dalla mano di un avversario.",
+        "effect":  {
+                       "action":  "steal_card",
+                       "target":  "opponent_hand",
+                       "amount":  1
+                   },
+        "visuals":  {
+                        "bgColorHex":  "#8E44AD",
+                        "iconName":  "trick",
+                        "particleColor":  "#9B59B6"
+                    },
+        "subtype":  "debuff"
     },
     {
-        "id": "trk_03",
-        "name": "Taglio del Budget",
-        "type": "event",
-        "cost": 2,
-        "shortDesc": "Un avversario scarta 2 carte. Efficienza!",
-        "description": "Costringe un avversario a scartare 2 carte.",
-        "effect": {
-            "action": "discard",
-            "target": "opponent",
-            "amount": 2
-        },
-        "visuals": {
-            "bgColorHex": "#8E44AD",
-            "iconName": "trick",
-            "particleColor": "#9B59B6"
-        },
-        "subtype": "debuff"
+        "id":  "trk_03",
+        "name":  "Taglio del Budget",
+        "type":  "magic",
+        "cost":  2,
+        "shortDesc":  "Un avversario scarta 2 carte. Efficienza!",
+        "description":  "Costringe un avversario a scartare 2 carte.",
+        "effect":  {
+                       "action":  "discard",
+                       "target":  "opponent",
+                       "amount":  2
+                   },
+        "visuals":  {
+                        "bgColorHex":  "#8E44AD",
+                        "iconName":  "trick",
+                        "particleColor":  "#9B59B6"
+                    },
+        "subtype":  "debuff"
     },
     {
-        "id": "trk_04",
-        "name": "Riunione Fiume Inutile",
-        "type": "event",
-        "cost": 1,
-        "shortDesc": "Tu peschi 1, lui scarta 1. Sinergia!",
-        "description": "Un avversario scarta 1 carta a caso, tu ne peschi 1.",
-        "effect": {
-            "action": "trade_random",
-            "target": "opponent"
-        },
-        "visuals": {
-            "bgColorHex": "#8E44AD",
-            "iconName": "trick",
-            "particleColor": "#9B59B6"
-        },
-        "subtype": "debuff"
+        "id":  "trk_04",
+        "name":  "Riunione Fiume Inutile",
+        "type":  "magic",
+        "cost":  1,
+        "shortDesc":  "Tu peschi 1, lui scarta 1. Sinergia!",
+        "description":  "Un avversario scarta 1 carta a caso, tu ne peschi 1.",
+        "effect":  {
+                       "action":  "trade_random",
+                       "target":  "opponent"
+                   },
+        "visuals":  {
+                        "bgColorHex":  "#8E44AD",
+                        "iconName":  "trick",
+                        "particleColor":  "#9B59B6"
+                    },
+        "subtype":  "debuff"
     },
     {
-        "id": "crs_01",
-        "name": "Ispezione della Finanza",
-        "type": "crisis",
-        "cost": 2,
-        "shortDesc": "Risolvi o tutti perdono 2 carte. Paura?",
-        "description": "Pena se non risolta: Tutti perdono 2 carte. Premio: +1 VP.",
-        "effect": {
-            "action": "crisis_resolve",
-            "penalty": "discard_2",
-            "reward": "vp_1"
-        },
-        "visuals": {
-            "bgColorHex": "#E74C3C",
-            "iconName": "crisis",
-            "particleColor": "#C0392B"
-        },
-        "subtype": "challenge",
-        "targetRoll": 7
+        "id":  "crs_01",
+        "name":  "Ispezione della Finanza",
+        "type":  "monster",
+        "cost":  2,
+        "shortDesc":  "Risolvi o tutti perdono 2 carte. Paura?",
+        "description":  "Pena se non risolta: Tutti perdono 2 carte. Premio: +1 VP.",
+        "effect":  {
+                       "action":  "crisis_resolve",
+                       "penalty":  "discard_2",
+                       "reward":  "vp_1"
+                   },
+        "visuals":  {
+                        "bgColorHex":  "#E74C3C",
+                        "iconName":  "crisis",
+                        "particleColor":  "#C0392B"
+                    },
+        "subtype":  "monster",
+        "targetRoll":  7
     },
     {
-        "id": "crs_02",
-        "name": "Server In Fiamme",
-        "type": "crisis",
-        "cost": 2,
-        "shortDesc": "IT in cenere. Risolvi o perdi un emp.",
-        "description": "Pena se non risolta: Tutti perdono il loro IT Manager. Premio: +1 VP.",
-        "effect": {
-            "action": "crisis_resolve",
-            "penalty": "lose_employee",
-            "reward": "vp_1"
-        },
-        "visuals": {
-            "bgColorHex": "#E74C3C",
-            "iconName": "crisis",
-            "particleColor": "#C0392B"
-        },
-        "subtype": "challenge",
-        "targetRoll": 8
+        "id":  "crs_02",
+        "name":  "Server In Fiamme",
+        "type":  "monster",
+        "cost":  2,
+        "shortDesc":  "IT in cenere. Risolvi o perdi un emp.",
+        "description":  "Pena se non risolta: Tutti perdono il loro IT Manager. Premio: +1 VP.",
+        "effect":  {
+                       "action":  "crisis_resolve",
+                       "penalty":  "lose_employee",
+                       "reward":  "vp_1"
+                   },
+        "visuals":  {
+                        "bgColorHex":  "#E74C3C",
+                        "iconName":  "crisis",
+                        "particleColor":  "#C0392B"
+                    },
+        "subtype":  "monster",
+        "targetRoll":  8
     },
     {
-        "id": "crs_03",
-        "name": "Crollo in Borsa",
-        "type": "crisis",
-        "cost": 2,
-        "shortDesc": "Risolvi o niente Trucchi per un turno.",
-        "description": "Pena se non risolta: Nessuno può giocare Magheggi nel prossimo turno. Premio: +1 VP.",
-        "effect": {
-            "action": "crisis_resolve",
-            "penalty": "lock_tricks",
-            "reward": "vp_1"
-        },
-        "visuals": {
-            "bgColorHex": "#E74C3C",
-            "iconName": "crisis",
-            "particleColor": "#C0392B"
-        },
-        "subtype": "challenge",
-        "targetRoll": 9
+        "id":  "crs_03",
+        "name":  "Crollo in Borsa",
+        "type":  "monster",
+        "cost":  2,
+        "shortDesc":  "Risolvi o niente Trucchi per un turno.",
+        "description":  "Pena se non risolta: Nessuno può giocare Magheggi nel prossimo turno. Premio: +1 VP.",
+        "effect":  {
+                       "action":  "crisis_resolve",
+                       "penalty":  "lock_tricks",
+                       "reward":  "vp_1"
+                   },
+        "visuals":  {
+                        "bgColorHex":  "#E74C3C",
+                        "iconName":  "crisis",
+                        "particleColor":  "#C0392B"
+                    },
+        "subtype":  "monster",
+        "targetRoll":  9
     },
     {
-        "id": "rea_01",
-        "name": "Scaricabarile",
-        "type": "event",
-        "cost": 1,
-        "shortDesc": "Reindirizza il Trucco a un altro. Ciao!",
-        "description": "Quando sei bersagliato da un Magheggio, scegli un altro bersaglio valido invece di te.",
-        "effect": {
-            "action": "redirect_effect",
-            "target": "another_opponent"
-        },
-        "visuals": {
-            "bgColorHex": "#27AE60",
-            "iconName": "reaction",
-            "particleColor": "#2ECC71"
-        },
-        "subtype": "reaction"
+        "id":  "rea_01",
+        "name":  "Scaricabarile",
+        "type":  "challenge",
+        "cost":  1,
+        "shortDesc":  "Reindirizza il Trucco a un altro. Ciao!",
+        "description":  "Quando sei bersagliato da un Magheggio, scegli un altro bersaglio valido invece di te.",
+        "effect":  {
+                       "action":  "redirect_effect",
+                       "target":  "another_opponent"
+                   },
+        "visuals":  {
+                        "bgColorHex":  "#27AE60",
+                        "iconName":  "reaction",
+                        "particleColor":  "#2ECC71"
+                    },
+        "subtype":  "reaction"
     },
     {
-        "id": "rea_02",
-        "name": "NDA Esclusivo",
-        "type": "event",
-        "cost": 2,
-        "shortDesc": "Soffio il dipendente mentre lo assumono.",
-        "description": "Gioca per annullare l'assunzione di un dipendente avversario e prenderlo in mano tua.",
-        "effect": {
-            "action": "steal_played_card",
-            "target": "self"
-        },
-        "visuals": {
-            "bgColorHex": "#27AE60",
-            "iconName": "reaction",
-            "particleColor": "#2ECC71"
-        },
-        "subtype": "reaction"
+        "id":  "rea_02",
+        "name":  "NDA Esclusivo",
+        "type":  "challenge",
+        "cost":  2,
+        "shortDesc":  "Soffio il dipendente mentre lo assumono.",
+        "description":  "Gioca per annullare l\u0027assunzione di un dipendente avversario e prenderlo in mano tua.",
+        "effect":  {
+                       "action":  "steal_played_card",
+                       "target":  "self"
+                   },
+        "visuals":  {
+                        "bgColorHex":  "#27AE60",
+                        "iconName":  "reaction",
+                        "particleColor":  "#2ECC71"
+                    },
+        "subtype":  "reaction"
     },
     {
-        "id": "rea_03",
-        "name": "\"Non è di mia competenza\"",
-        "type": "event",
-        "cost": 1,
-        "shortDesc": "Annulla qualsiasi carta giocata. Punto.",
-        "description": "Annulla l'effetto di una singola carta giocata (Magheggio o Reazione).",
-        "effect": {
-            "action": "cancel_effect",
-            "target": "played_card"
-        },
-        "visuals": {
-            "bgColorHex": "#27AE60",
-            "iconName": "reaction",
-            "particleColor": "#2ECC71"
-        },
-        "subtype": "reaction"
+        "id":  "rea_03",
+        "name":  "\"Non è di mia competenza\"",
+        "type":  "challenge",
+        "cost":  1,
+        "shortDesc":  "Annulla qualsiasi carta giocata. Punto.",
+        "description":  "Annulla l\u0027effetto di una singola carta giocata (Magheggio o Reazione).",
+        "effect":  {
+                       "action":  "cancel_effect",
+                       "target":  "played_card"
+                   },
+        "visuals":  {
+                        "bgColorHex":  "#27AE60",
+                        "iconName":  "reaction",
+                        "particleColor":  "#2ECC71"
+                    },
+        "subtype":  "reaction"
     },
     {
-        "id": "emp_06",
-        "name": "Agile Coach",
-        "type": "employee",
-        "cost": 3,
-        "shortDesc": "Post-It ovunque. Trucchi -2 PA.",
-        "description": "Riempie la lavagna di Post-It. Sconta di 2 PA la tua prossima azione Magheggio.",
-        "effect": {
-            "action": "discount_cost",
-            "target": "trick",
-            "amount": 2
-        },
-        "visuals": {
-            "bgColorHex": "#34495E",
-            "iconName": "coach",
-            "particleColor": "#F1C40F"
-        },
-        "subtype": "none"
+        "id":  "emp_06",
+        "name":  "Agile Coach",
+        "type":  "hero",
+        "cost":  3,
+        "shortDesc":  "Post-It ovunque. Trucchi -2 PA.",
+        "description":  "Riempie la lavagna di Post-It. Sconta di 2 PA la tua prossima azione Magheggio.",
+        "effect":  {
+                       "action":  "discount_cost",
+                       "target":  "trick",
+                       "amount":  2
+                   },
+        "visuals":  {
+                        "bgColorHex":  "#34495E",
+                        "iconName":  "coach",
+                        "particleColor":  "#F1C40F"
+                    },
+        "subtype":  "none"
     },
     {
-        "id": "trk_05",
-        "name": "Spionaggio Industriale",
-        "type": "event",
-        "cost": 3,
-        "shortDesc": "Ruba 2 carte dalla mano avversaria.",
-        "description": "Estremamente subdolo. Ruba 2 carte dalla mano di un avversario.",
-        "effect": {
-            "action": "steal_card",
-            "target": "opponent_hand",
-            "amount": 2
-        },
-        "visuals": {
-            "bgColorHex": "#8E44AD",
-            "iconName": "trick",
-            "particleColor": "#9B59B6"
-        },
-        "subtype": "debuff"
+        "id":  "trk_05",
+        "name":  "Spionaggio Industriale",
+        "type":  "magic",
+        "cost":  3,
+        "shortDesc":  "Ruba 2 carte dalla mano avversaria.",
+        "description":  "Estremamente subdolo. Ruba 2 carte dalla mano di un avversario.",
+        "effect":  {
+                       "action":  "steal_card",
+                       "target":  "opponent_hand",
+                       "amount":  2
+                   },
+        "visuals":  {
+                        "bgColorHex":  "#8E44AD",
+                        "iconName":  "trick",
+                        "particleColor":  "#9B59B6"
+                    },
+        "subtype":  "debuff"
     },
     {
-        "id": "emp_07",
-        "name": "Il Nipote del Boss",
-        "type": "employee",
-        "cost": 4,
-        "shortDesc": "Vale triplo per il Monopolio. Raccomandato.",
-        "description": "Intoccabile e strapagato. Conta triplo per l'obiettivo di Monopolio Umano.",
-        "effect": {
-            "action": "passive_bonus",
-            "target": "win_condition",
-            "multiplier": 3
-        },
-        "visuals": {
-            "bgColorHex": "#FFD700",
-            "iconName": "boss",
-            "particleColor": "#FFDF00"
-        },
-        "subtype": "none"
+        "id":  "emp_07",
+        "name":  "Il Nipote del Boss",
+        "type":  "hero",
+        "cost":  4,
+        "shortDesc":  "Vale triplo per il Monopolio. Raccomandato.",
+        "description":  "Intoccabile e strapagato. Conta triplo per l\u0027obiettivo di Monopolio Umano.",
+        "effect":  {
+                       "action":  "passive_bonus",
+                       "target":  "win_condition",
+                       "multiplier":  3
+                   },
+        "visuals":  {
+                        "bgColorHex":  "#FFD700",
+                        "iconName":  "boss",
+                        "particleColor":  "#FFDF00"
+                    },
+        "subtype":  "none"
     },
     {
-        "id": "itm_01",
-        "name": "Badge Motivazionale",
-        "type": "item",
-        "subtype": "equipment",
-        "cost": 1,
-        "shortDesc": "+1 al tiro contro gli Imprevisti.",
-        "description": "Assegna a un tuo Impiegato: ottiene +1 ai tiri contro gli Imprevisti.",
-        "effect": {
-            "action": "passive_bonus",
-            "target": "employee",
-            "amount": 1
-        },
-        "visuals": {
-            "bgColorHex": "#F4C95D",
-            "iconName": "item",
-            "particleColor": "#F6D36E"
-        },
-        "modifier": 1
+        "id":  "itm_01",
+        "name":  "Badge Motivazionale",
+        "type":  "item",
+        "subtype":  "equipment",
+        "cost":  1,
+        "shortDesc":  "+1 al tiro contro gli Imprevisti.",
+        "description":  "Assegna a un tuo Impiegato: ottiene +1 ai tiri contro gli Imprevisti.",
+        "effect":  {
+                       "action":  "passive_bonus",
+                       "target":  "employee",
+                       "amount":  1
+                   },
+        "visuals":  {
+                        "bgColorHex":  "#F4C95D",
+                        "iconName":  "item",
+                        "particleColor":  "#F6D36E"
+                    },
+        "modifier":  1
     },
     {
-        "id": "itm_02",
-        "name": "Toolbox Tattica",
-        "type": "item",
-        "subtype": "equipment",
-        "cost": 2,
-        "shortDesc": "Sconto di 1 PA sul prossimo Evento.",
-        "description": "Assegna a un tuo Impiegato: il prossimo Evento che giochi costa 1 PA in meno.",
-        "effect": {
-            "action": "discount_cost",
-            "target": "trick",
-            "amount": 1
-        },
-        "visuals": {
-            "bgColorHex": "#D8A24A",
-            "iconName": "item",
-            "particleColor": "#F2C06A"
-        }
+        "id":  "itm_02",
+        "name":  "Toolbox Tattica",
+        "type":  "item",
+        "subtype":  "equipment",
+        "cost":  2,
+        "shortDesc":  "Sconto di 1 PA sul prossimo Evento.",
+        "description":  "Assegna a un tuo Impiegato: il prossimo Evento che giochi costa 1 PA in meno.",
+        "effect":  {
+                       "action":  "discount_cost",
+                       "target":  "trick",
+                       "amount":  1
+                   },
+        "visuals":  {
+                        "bgColorHex":  "#D8A24A",
+                        "iconName":  "item",
+                        "particleColor":  "#F2C06A"
+                    }
+    },
+    {
+        "id":  "mod_01",
+        "name":  "Spinta Adrenalinica",
+        "type":  "modifier",
+        "subtype":  "modifier",
+        "cost":  1,
+        "shortDesc":  "+2 al prossimo tiro.",
+        "description":  "Gioca durante una finestra reazione: il prossimo tiro di dado del bersaglio riceve +2.",
+        "effect":  {
+                       "action":  "roll_modifier",
+                       "target":  "self",
+                       "amount":  2
+                   },
+        "visuals":  {
+                        "bgColorHex":  "#2B6E63",
+                        "iconName":  "modifier",
+                        "particleColor":  "#8FEFE0"
+                    },
+        "modifier":  2
+    },
+    {
+        "id":  "mod_02",
+        "name":  "Audit a Sorpresa",
+        "type":  "modifier",
+        "subtype":  "modifier",
+        "cost":  1,
+        "shortDesc":  "-2 al tiro avversario.",
+        "description":  "Gioca durante una finestra reazione: il prossimo tiro del bersaglio riceve -2.",
+        "effect":  {
+                       "action":  "roll_modifier",
+                       "target":  "opponent",
+                       "amount":  -2
+                   },
+        "visuals":  {
+                        "bgColorHex":  "#3A2B2B",
+                        "iconName":  "modifier",
+                        "particleColor":  "#F1B4B4"
+                    },
+        "modifier":  -2
+    },
+    {
+        "id":  "ldr_01",
+        "name":  "Capitano dei KPI",
+        "type":  "party_leader",
+        "subtype":  "leader",
+        "cost":  0,
+        "shortDesc":  "Il tuo team parte sempre carico.",
+        "description":  "Leader: ottieni un bonus passivo al tuo piano di vittoria.",
+        "effect":  {
+                       "action":  "passive_bonus",
+                       "target":  "win_condition",
+                       "multiplier":  1
+                   },
+        "visuals":  {
+                        "bgColorHex":  "#2E4D78",
+                        "iconName":  "leader",
+                        "particleColor":  "#B6D7FF"
+                    }
+    },
+    {
+        "id":  "ldr_02",
+        "name":  "Regina del Budget",
+        "type":  "party_leader",
+        "subtype":  "leader",
+        "cost":  0,
+        "shortDesc":  "Ottimizza ogni azione.",
+        "description":  "Leader: riduci il costo della tua prossima magia di 1 PA.",
+        "effect":  {
+                       "action":  "discount_cost",
+                       "target":  "magic",
+                       "amount":  1
+                   },
+        "visuals":  {
+                        "bgColorHex":  "#5B3E70",
+                        "iconName":  "leader",
+                        "particleColor":  "#E2C7FF"
+                    }
     }
 ]

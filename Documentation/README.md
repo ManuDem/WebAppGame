@@ -18,6 +18,11 @@ Indice rapido dei file `.md` principali.
 - `Feature_03_ReactionWindow.md`
 - `Feature_04_CardEffectsData.md`
 - `Feature_05_Visual_Contracts.md`
+- `LUCrAre_2.0_Rules.md`
+- `RFC_Gameplay_Semplificato.md`
+- `RFC_UI_MobileFirst.md`
+- `RFC_PhaseMachine_PreLobby.md`
+- `../README.md` (overview tecnico + comandi rapidi)
 
 ## Architettura e review
 - `Architectural_Guidelines.md`

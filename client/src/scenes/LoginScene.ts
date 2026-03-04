@@ -67,8 +67,6 @@ export class LoginScene extends Phaser.Scene {
     private langButtonFx: SimpleButtonController[] = [];
     private modeButtonFx: SimpleButtonController[] = [];
     private menuDots: MenuDot[] = [];
-    private viewW = 1280;
-    private viewH = 720;
     private inputPlaced = false;
     private nameExample = '';
 
@@ -215,24 +213,8 @@ export class LoginScene extends Phaser.Scene {
     }
 
     private createMenuDots() {
-        const palette = [0xfef6d6, 0x95d7ff, 0xa6e3b5, 0xffd8a8];
-        const anchors: Array<[number, number]> = [
-            [0.08, 0.14], [0.16, 0.22], [0.24, 0.12], [0.82, 0.2], [0.9, 0.14],
-            [0.12, 0.78], [0.2, 0.86], [0.82, 0.84], [0.9, 0.74], [0.74, 0.88],
-        ];
-
-        anchors.forEach(([xRatio, yRatio], index) => {
-            const dot = this.add.circle(0, 0, index % 3 === 0 ? 3 : 2, palette[index % palette.length], 0.45)
-                .setDepth(-57);
-            this.menuDots.push({
-                node: dot,
-                xRatio,
-                yRatio,
-                amp: 5 + (index % 4),
-                speed: 0.00035 + index * 0.00002,
-                phase: index * 1.37,
-            });
-        });
+        // Keep only cloud movement in background (no floating dots/circles).
+        this.menuDots = [];
     }
 
     private createLanguageControls() {
@@ -620,11 +602,6 @@ export class LoginScene extends Phaser.Scene {
         this.cloudLayer.tilePositionY += 0.01;
         this.ditherLayer.tilePositionX += 0.03;
         this.ditherLayer.tilePositionY += 0.006;
-        const now = this.time.now;
-        this.menuDots.forEach((dot) => {
-            dot.node.x = this.viewW * dot.xRatio + Math.sin(now * dot.speed + dot.phase) * dot.amp;
-            dot.node.y = this.viewH * dot.yRatio + Math.cos(now * dot.speed * 1.13 + dot.phase) * dot.amp * 0.65;
-        });
     }
 
     private playIntroMotion() {
@@ -650,9 +627,6 @@ export class LoginScene extends Phaser.Scene {
         const centerX = Math.round(w * 0.5);
         const showForm = this.modeConfirmed;
         const isLandscape = w > h;
-        this.viewW = w;
-        this.viewH = h;
-
         this.redrawBackground(w, h);
         this.cloudLayer.setSize(w, h);
         this.ditherLayer.setSize(w, h);

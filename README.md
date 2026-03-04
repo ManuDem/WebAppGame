@@ -34,7 +34,10 @@ Web card game multiplayer con architettura server-authoritative (Colyseus + Phas
 - Pesca carta: costo `1` PA
 - Mano iniziale: `3` carte per player
 - Reaction window: `5000 ms`
-- Vittoria semplificata: `4` dipendenti in company oppure `2` crisi risolte
+- Modello carte Here-to-Slay Lite:
+  - Main deck: `Hero`, `Item`, `Magic`, `Modifier`, `Challenge`
+  - Setup: `Monster` (centro tavolo), `Party Leader` (passiva per player)
+- Vittoria semplificata: `4` Hero in company oppure `2` Monster risolti
 - Rejoin consentito in partita in corso solo con nome CEO gia esistente
 
 ## Requisiti
@@ -84,12 +87,9 @@ npm run build
 ## Verifica tecnica (snapshot 2026-03-04)
 - `server build`: OK
 - `client build`: OK
-- `npm test -- --runInBand` (root): FAIL parziale
-  - pass: `server/tests/core_loop.test.ts`, `server/tests/room_connection.test.ts`, `tests/CardEffectParser.test.ts`, `tests/DeckManager.test.ts`
-  - fail:
-    - `server/tests/reaction_stress.test.ts` (ora riceve `GAME_OVER` invece di `PLAYER_TURN`)
-    - `tests/core_loop.test.ts`, `tests/room_connection.test.ts`, `tests/reaction_race_condition.test.ts` (dipendenza `express` mancante nel workspace root usato da `@colyseus/testing`)
-    - `server/tests/win_conditions.test.ts` (suite legacy con `process.exit(1)` in caso fail)
+- test mirati: OK
+  - comando: `npm test -- --runInBand --forceExit tests/DeckManager.test.ts tests/CardEffectParser.test.ts server/tests/win_conditions.test.ts server/tests/reaction_stress.test.ts`
+  - esito: `31/31` test passed
 
 ## Documentazione utile
 - `CodexGPT.md`: memoria operativa aggiornata

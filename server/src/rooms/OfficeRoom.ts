@@ -40,8 +40,8 @@ const MAX_PLAYERS = 10;
 const STARTING_HAND_SIZE = 3;
 
 /** Win conditions */
-const WIN_EMPLOYEES = 4;   // Modalita semplificata: 4 dipendenti in company
-const WIN_CRISES = 2;   // Modalita semplificata: 2 crisi risolte (VP score)
+const WIN_EMPLOYEES = 4;   // Here-to-Slay Lite: 4 Hero in company
+const WIN_CRISES = 2;   // Here-to-Slay Lite: 2 Monster risolti (VP score)
 
 // ═════════════════════════════════════════════════════════
 //  OfficeRoom — the authoritative game room
@@ -388,7 +388,10 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         this.state.deckCount = this.serverDeck.length;
         console.log(`🃏 Deck ready: ${this.state.deckCount} cards`);
 
-        // Populate central crises (crisis type only, up to 3)
+        // Assign a Party Leader to each participant (setup-only cards, outside main deck).
+        this.assignPartyLeaders(players);
+
+        // Populate central monsters (up to 3)
         this.populateCentralCrises();
 
         // Deal an initial hand to keep the first turns fast and readable (casual mode).
@@ -406,25 +409,54 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         } as ITurnStartedEvent);
     }
 
+    private assignPartyLeaders(participantIds: string[]): void {
+        const leaders = Array.from(this.cardTemplates.values()).filter((t) => {
+            const type = String(t.type ?? "").trim().toLowerCase();
+            return type === "party_leader" || type === "leader";
+        });
+        if (leaders.length === 0) return;
+
+        for (let i = 0; i < participantIds.length; i++) {
+            const playerId = participantIds[i];
+            const player = this.state.players.get(playerId) as PlayerState | undefined;
+            if (!player) continue;
+
+            const leader = leaders[i % leaders.length]!;
+            const effects = player.activeEffects as string[];
+            const leaderTag = `party_leader_${leader.id}`;
+            if (!effects.includes(leaderTag)) effects.push(leaderTag);
+
+            // Apply passive leader effects once at setup.
+            try {
+                CardEffectParser.resolve(leader as any, player as any, null, this.state as any);
+            } catch (err) {
+                console.warn("[ROOM] Failed to apply party leader effect:", leader.id, err);
+            }
+        }
+    }
+
     private populateCentralCrises(): void {
-        const crisisTemplates = Array.from(this.cardTemplates.values()).filter(t => t.type === "crisis");
+        const crisisTemplates = Array.from(this.cardTemplates.values()).filter((t) => {
+            const type = String(t.type ?? "").trim().toLowerCase();
+            return type === "monster" || type === "crisis";
+        });
         const max = Math.min(crisisTemplates.length, 3);
         for (let i = 0; i < max; i++) {
             const t = crisisTemplates[i]!;
             const card = new CardState();
             card.id = this.generateId();
             card.templateId = t.id;
-            card.type = CardType.IMPREVISTO;
+            card.type = CardType.MONSTER;
             card.costPA = t.cost;
             card.isFaceUp = true;
             card.name = t.name;
             card.description = t.description;
             card.targetRoll = typeof t.targetRoll === "number" ? t.targetRoll : 7;
             if (typeof t.modifier === "number") card.modifier = t.modifier;
-            card.subtype = "challenge";
+            card.subtype = t.subtype ?? "monster";
             this.state.centralCrises.push(card);
         }
-        console.log(`🏦 Central crises populated: ${this.state.centralCrises.length}`);
+        console.log(`🏦 Central monsters populated: ${this.state.centralCrises.length}`);
     }
 
     private dealInitialHands(participantIds: string[], cardsPerPlayer: number): void {
@@ -584,6 +616,14 @@ export class OfficeRoom extends Room<OfficeRoomState> {
 
         const cardInHand = handArr[cardIdx];
         const template = this.getTemplate(cardInHand.templateId);
+        const typeValue = String(template?.type ?? cardInHand.type ?? "").trim().toLowerCase();
+        if (typeValue !== "hero" && typeValue !== "employee") {
+            client.send(ServerEvents.ERROR, {
+                code: "NOT_HERO_CARD",
+                message: "Puoi assumere solo carte Hero.",
+            });
+            return;
+        }
         const cost = template?.cost ?? 1;
 
         if (!this.checkPlayerTurnAction(client, cost)) return;
@@ -700,9 +740,25 @@ export class OfficeRoom extends Room<OfficeRoomState> {
 
         const cardInHand = handArr[cardIdx];
         const template = this.getTemplate(cardInHand.templateId);
+        const typeValue = String(template?.type ?? cardInHand.type ?? "").trim().toLowerCase();
+        if (typeValue === "hero" || typeValue === "employee") {
+            client.send(ServerEvents.ERROR, {
+                code: "USE_PLAY_EMPLOYEE",
+                message: "Le carte Hero si giocano con l'azione di assunzione.",
+            });
+            return;
+        }
+        const allowedMagicLike = ["magic", "event", "trick", "item", "oggetto", "modifier"];
+        if (!allowedMagicLike.includes(typeValue)) {
+            client.send(ServerEvents.ERROR, {
+                code: "INVALID_CARD_TYPE",
+                message: "Tipo carta non valido per questa azione.",
+            });
+            return;
+        }
         const cost = template?.cost ?? 1;
 
-        if (template?.subtype === "reaction") {
+        if (typeValue === "challenge" || typeValue === "reaction" || template?.subtype === "reaction") {
             client.send(ServerEvents.ERROR, {
                 code: "REACTION_ONLY_WINDOW",
                 message: "Le carte Reazione possono essere giocate solo durante la finestra di reazione.",
@@ -710,9 +766,12 @@ export class OfficeRoom extends Room<OfficeRoomState> {
             return;
         }
 
-        // TASK 3: Validate targetPlayerId for targeted tricks
-        const needsTarget = template?.effect?.action &&
-            ["steal_pa", "steal_card", "discard", "trade_random"].includes(template.effect.action);
+        // Validate targetPlayerId for targeted cards (magic/modifier)
+        const effectAction = String(template?.effect?.action ?? "");
+        const effectTarget = String(template?.effect?.target ?? "").toLowerCase();
+        const targetedActions = ["steal_pa", "steal_card", "discard", "trade_random", "roll_modifier"];
+        const needsTarget = targetedActions.includes(effectAction)
+            && ["opponent", "another_opponent", "opponent_hand"].includes(effectTarget);
 
         if (needsTarget && !targetPlayerId) {
             client.send(ServerEvents.ERROR, {
@@ -722,7 +781,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
             return;
         }
 
-        if (targetPlayerId) {
+        if (needsTarget && targetPlayerId) {
             if (targetPlayerId === client.sessionId) {
                 client.send(ServerEvents.ERROR, { code: "SELF_TARGET", message: "Non puoi bersagliare te stesso." });
                 return;
@@ -744,7 +803,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         pending.playerId = client.sessionId;
         pending.actionType = ClientMessages.PLAY_MAGIC;
         pending.targetCardId = cardInHand.templateId; // templateId for CardEffectParser
-        pending.targetPlayerId = targetPlayerId;
+        pending.targetPlayerId = needsTarget ? targetPlayerId : undefined;
         pending.timestamp = Date.now();
 
         this.state.pendingAction = pending;
@@ -796,9 +855,14 @@ export class OfficeRoom extends Room<OfficeRoomState> {
 
         const cardInHand = handArr[cardIdx];
         const template = this.getTemplate(cardInHand.templateId);
-        const cost = template?.cost ?? 1;
+        const typeValue = String(template?.type ?? cardInHand.type ?? "").trim().toLowerCase();
+        const subtypeValue = String((cardInHand as any)?.subtype ?? template?.subtype ?? "").trim().toLowerCase();
 
-        const isReactionCard = (cardInHand as any)?.subtype === "reaction" || template?.subtype === "reaction";
+        const isReactionCard = subtypeValue === "reaction"
+            || subtypeValue === "modifier"
+            || typeValue === "challenge"
+            || typeValue === "reaction"
+            || typeValue === "modifier";
         if (!isReactionCard) {
             client.send(ServerEvents.ERROR, {
                 code: "NOT_REACTION_CARD",
@@ -807,13 +871,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
             return;
         }
 
-        if (player.actionPoints < cost) {
-            client.send(ServerEvents.ERROR, { code: "NO_PA", message: "Punti Azione insufficienti per reagire." });
-            return;
-        }
-
-        // Deduct PA and remove card from hand
-        player.actionPoints -= cost;
+        // Reazioni/Modifier non consumano PA nel modello Here-to-Slay Lite.
         handArr.splice(cardIdx, 1);
 
         // Create IPendingAction for this reaction and push onto stack (LIFO top)
@@ -822,6 +880,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
             playerId: client.sessionId,
             actionType: ClientMessages.PLAY_REACTION,
             targetCardId: cardInHand.templateId,  // reaction card's templateId for CardEffectParser
+            targetPlayerId: this.state.pendingAction?.playerId ?? undefined,
             timestamp: Date.now(),
             isCancelled: false
         };
@@ -950,7 +1009,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         const companyCard = new CardState();
         companyCard.id = this.generateId();
         companyCard.templateId = templateId;
-        companyCard.type = CardType.EMPLOYEE;
+        companyCard.type = CardType.HERO;
         companyCard.costPA = template.cost;
         companyCard.isFaceUp = true;
         companyCard.name = template.name;
@@ -1027,12 +1086,26 @@ export class OfficeRoom extends Room<OfficeRoomState> {
             }
         }
 
-        for (const tag of player.activeEffects as string[]) {
-            if (typeof tag === "string" && tag.startsWith("roll_bonus_")) {
+        const effects = player.activeEffects as string[];
+        for (let i = effects.length - 1; i >= 0; i--) {
+            const tag = effects[i];
+            if (typeof tag !== "string") continue;
+
+            if (tag.startsWith("roll_bonus_")) {
                 const parsed = parseInt(tag.replace("roll_bonus_", ""), 10);
                 if (Number.isFinite(parsed)) {
                     bonus += parsed;
                 }
+                continue;
+            }
+
+            if (tag.startsWith("next_roll_mod_")) {
+                const parsed = parseInt(tag.replace("next_roll_mod_", ""), 10);
+                if (Number.isFinite(parsed)) {
+                    bonus += parsed;
+                }
+                // one-shot: consumed when this roll is computed
+                effects.splice(i, 1);
             }
         }
 

@@ -110,11 +110,13 @@ export class GameScene extends Phaser.Scene {
 
     private cardInspectOverlay!: Phaser.GameObjects.Rectangle;
     private cardInspectPanel!: Phaser.GameObjects.Graphics;
+    private cardInspectArtwork!: Phaser.GameObjects.Graphics;
     private cardInspectTitle!: Phaser.GameObjects.Text;
     private cardInspectType!: Phaser.GameObjects.Text;
     private cardInspectBody!: Phaser.GameObjects.Text;
     private cardInspectHint!: Phaser.GameObjects.Text;
     private cardInspectVisible = false;
+    private inspectedCard?: ICardData;
 
     private fxEmitter?: Phaser.GameObjects.Particles.ParticleEmitter;
     private ambientEmitter?: Phaser.GameObjects.Particles.ParticleEmitter;
@@ -198,6 +200,36 @@ export class GameScene extends Phaser.Scene {
 
     private tr(key: string, vars?: Record<string, string | number>) {
         return t(this.lang, key, vars);
+    }
+
+    private isPreLobbyPhase(phase?: GamePhase) {
+        return phase === GamePhase.PRE_LOBBY || phase === GamePhase.WAITING_FOR_PLAYERS;
+    }
+
+    private isHeroCard(card: ICardData) {
+        const type = String(card.type ?? '').toLowerCase();
+        return type === 'hero' || type === 'employee';
+    }
+
+    private isReactionCard(card: ICardData) {
+        const subtype = String(card.subtype ?? '').toLowerCase();
+        const type = String(card.type ?? '').toLowerCase();
+        return subtype === 'reaction'
+            || subtype === 'modifier'
+            || type === 'challenge'
+            || type === 'reaction'
+            || type === 'modifier';
+    }
+
+    private isEventCard(card: ICardData) {
+        const type = String(card.type ?? '').toLowerCase();
+        if (this.isReactionCard(card)) return true;
+        return type === 'magic'
+            || type === 'event'
+            || type === 'trick'
+            || type === 'item'
+            || type === 'oggetto'
+            || type === 'modifier';
     }
 
     private boostText(...texts: Array<Phaser.GameObjects.Text | undefined>) {
@@ -476,6 +508,7 @@ export class GameScene extends Phaser.Scene {
         this.cardInspectOverlay.on('pointerdown', () => this.hideCardInspect());
 
         this.cardInspectPanel = this.add.graphics().setDepth(541).setVisible(false);
+        this.cardInspectArtwork = this.add.graphics().setDepth(541).setVisible(false);
         this.cardInspectTitle = this.add.text(0, 0, '', {
             fontFamily: FONT_UI,
             fontSize: '22px',
@@ -538,22 +571,8 @@ export class GameScene extends Phaser.Scene {
             tint: [0x72d6ff, 0x9ef0c5, 0xffc57f, 0xc7b5ff],
         }).setDepth(490);
 
-        this.ambientEmitter = this.add.particles(0, 0, 'fx-dot', {
-            x: { min: 0, max: this.screenW },
-            y: { min: 0, max: this.screenH },
-            speedX: { min: -10, max: 10 },
-            speedY: { min: -14, max: -4 },
-            scale: { start: 0.45, end: 0 },
-            alpha: { start: 0.26, end: 0 },
-            lifespan: { min: 2200, max: 3400 },
-            quantity: 1,
-            frequency: 260,
-            emitting: true,
-            blendMode: Phaser.BlendModes.ADD,
-            tint: [0x8ad9ff, 0xa7e9c1, 0xffd4a6],
-        }).setDepth(4);
-
-        this.updateAmbientEmitterBounds();
+        // Background remains cloud-driven only; no ambient floating dots.
+        this.ambientEmitter = undefined;
     }
 
     private wireButtons() {
@@ -581,7 +600,7 @@ export class GameScene extends Phaser.Scene {
                     if (!room) return;
 
                     const state = room.state as IGameState;
-                    if (state.phase !== GamePhase.WAITING_FOR_PLAYERS) return;
+                    if (!this.isPreLobbyPhase(state.phase)) return;
 
                     const me = (state.players as unknown as Map<string, IPlayer>).get(room.sessionId);
                     if (!me) return;
@@ -625,7 +644,7 @@ export class GameScene extends Phaser.Scene {
 
             if (state.phase === GamePhase.REACTION_WINDOW) {
                 const canReact = state.pendingAction?.playerId !== myId;
-                if (card.cardData.type === CardType.REACTION && canReact) {
+                if (this.isReactionCard(card.cardData) && canReact) {
                     this.serverManager.playReaction(card.cardData.id);
                     this.stashPending(card);
                     return;
@@ -640,12 +659,12 @@ export class GameScene extends Phaser.Scene {
             }
 
             if (zoneType === 'center_table') {
-                if (card.cardData.type === CardType.EMPLOYEE) {
+                if (this.isHeroCard(card.cardData)) {
                     this.serverManager.playEmployee(card.cardData.id);
                     this.stashPending(card);
                     return;
                 }
-                if (card.cardData.type === CardType.MAGIC) {
+                if (this.isEventCard(card.cardData)) {
                     this.showTargetSelector(card);
                     return;
                 }
@@ -660,7 +679,15 @@ export class GameScene extends Phaser.Scene {
                     return;
                 }
                 this.serverManager.solveCrisis(card.cardData.id, crisisId);
-                this.stashPending(card);
+                this.tweens.add({
+                    targets: card,
+                    x: card.homeX,
+                    y: card.homeY,
+                    scaleX: 1,
+                    scaleY: 1,
+                    duration: 180,
+                    ease: 'Cubic.Out',
+                });
                 return;
             }
 
@@ -945,6 +972,26 @@ export class GameScene extends Phaser.Scene {
         this.cardInspectPanel.lineStyle(1.5, 0xc3d6e8, 0.92);
         this.cardInspectPanel.strokeRoundedRect(panelX, panelY, panelW, panelH, 18);
 
+        const artX = panelX + 20;
+        const artY = panelY + panelH * 0.2;
+        const artW = panelW - 40;
+        const artH = panelH * 0.3;
+        const cardType = String(this.inspectedCard?.type ?? '').toLowerCase();
+        const artTint = cardType === CardType.EMPLOYEE ? 0x2f4f66
+            : cardType === CardType.IMPREVISTO ? 0x5a2f3c
+                : cardType === CardType.OGGETTO ? 0x60512f
+                    : 0x3a3260;
+
+        this.cardInspectArtwork.clear();
+        this.cardInspectArtwork.fillStyle(artTint, 0.95);
+        this.cardInspectArtwork.fillRoundedRect(artX, artY, artW, artH, 14);
+        this.cardInspectArtwork.fillStyle(0xffffff, 0.08);
+        this.cardInspectArtwork.fillRoundedRect(artX + 2, artY + 2, artW - 4, artH * 0.28, { tl: 12, tr: 12, bl: 0, br: 0 });
+        this.cardInspectArtwork.lineStyle(1.3, 0xd2e7f8, 0.9);
+        this.cardInspectArtwork.strokeRoundedRect(artX, artY, artW, artH, 14);
+        this.cardInspectArtwork.lineStyle(1, 0xffffff, 0.18);
+        this.cardInspectArtwork.strokeLineShape(new Phaser.Geom.Line(artX + 16, artY + artH - 14, artX + artW - 16, artY + 16));
+
         this.cardInspectTitle
             .setPosition(cx, panelY + 20)
             .setWordWrapWidth(panelW - 48)
@@ -953,16 +1000,17 @@ export class GameScene extends Phaser.Scene {
             .setPosition(cx, panelY + 74)
             .setFontSize(`${Phaser.Math.Clamp(panelW * 0.018, 12, 18)}px`);
         this.cardInspectBody
-            .setPosition(cx, panelY + 112)
+            .setPosition(cx, artY + artH + 18)
             .setWordWrapWidth(panelW - 44)
             .setLineSpacing(5)
-            .setFontSize(`${Phaser.Math.Clamp(panelW * 0.022, 15, 24)}px`);
+            .setFontSize(`${Phaser.Math.Clamp(panelW * 0.02, 14, 22)}px`);
         this.cardInspectHint
             .setPosition(cx, panelY + panelH - 14)
             .setFontSize(`${Phaser.Math.Clamp(panelW * 0.014, 11, 14)}px`);
 
         if (!this.cardInspectVisible) {
             this.cardInspectPanel.setVisible(false);
+            this.cardInspectArtwork.setVisible(false);
         }
     }
 
@@ -1025,16 +1073,31 @@ export class GameScene extends Phaser.Scene {
 
     private showCardInspect(card: ICardData) {
         const typeLabel = String(card.type ?? '').toUpperCase();
+        this.inspectedCard = card;
         this.cardInspectTitle.setText(card.name ?? card.templateId ?? 'CARD');
         this.cardInspectType.setText(`${typeLabel}  |  ${card.templateId ?? ''}`);
-        this.cardInspectBody.setText(card.description && card.description.trim().length > 0
-            ? card.description
-            : this.tr('game_no_card_description'));
+        const lines: string[] = [];
+        if (card.description && card.description.trim().length > 0) {
+            lines.push(card.description.trim());
+        } else {
+            lines.push(this.tr('game_no_card_description'));
+        }
+        if (typeof card.targetRoll === 'number') {
+            lines.push(`Target dado: ${card.targetRoll}+`);
+        }
+        if (typeof card.modifier === 'number' && card.modifier !== 0) {
+            lines.push(`Modificatore: ${card.modifier > 0 ? '+' : ''}${card.modifier}`);
+        }
+        if (card.subtype) {
+            lines.push(`Sottotipo: ${String(card.subtype).toUpperCase()}`);
+        }
+        this.cardInspectBody.setText(lines.join('\n\n'));
         this.cardInspectHint.setText(this.tr('game_close_hint'));
 
         this.cardInspectVisible = true;
         this.cardInspectOverlay.setVisible(true);
         this.cardInspectPanel.setVisible(true);
+        this.cardInspectArtwork.setVisible(true);
         this.cardInspectTitle.setVisible(true);
         this.cardInspectType.setVisible(true);
         this.cardInspectBody.setVisible(true);
@@ -1045,8 +1108,10 @@ export class GameScene extends Phaser.Scene {
     private hideCardInspect() {
         if (!this.cardInspectVisible) return;
         this.cardInspectVisible = false;
+        this.inspectedCard = undefined;
         this.cardInspectOverlay.setVisible(false);
         this.cardInspectPanel.setVisible(false);
+        this.cardInspectArtwork.setVisible(false);
         this.cardInspectTitle.setVisible(false);
         this.cardInspectType.setVisible(false);
         this.cardInspectBody.setVisible(false);
@@ -1104,7 +1169,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     private updateTurn(state: IGameState, myId: string) {
-        if (state.phase === GamePhase.WAITING_FOR_PLAYERS) {
+        if (this.isPreLobbyPhase(state.phase)) {
             if (this.myTurnTween) this.myTurnTween.stop();
             this.myTurnTween = undefined;
             this.turnText.setText(this.tr('game_lobby')).setColor('#f6d7a6').setAlpha(1);
@@ -1139,7 +1204,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     private updateLobby(state: IGameState, myId: string, me: IPlayer) {
-        const waiting = state.phase === GamePhase.WAITING_FOR_PLAYERS;
+        const waiting = this.isPreLobbyPhase(state.phase);
         const hostId = state.hostSessionId ?? '';
         const localIsHost = hostId === myId;
 
@@ -1244,7 +1309,7 @@ export class GameScene extends Phaser.Scene {
         const canPlayTurn = state.phase === GamePhase.PLAYER_TURN && isMyTurn;
 
         this.handCards.forEach((card) => {
-            const canPlayThisCard = canPlayTurn || (canReact && card.cardData.type === CardType.REACTION);
+            const canPlayThisCard = canPlayTurn || (canReact && this.isReactionCard(card.cardData));
             if (!card.input) {
                 card.setInteractive({ useHandCursor: true });
             }
@@ -1316,7 +1381,7 @@ export class GameScene extends Phaser.Scene {
         opponents.sort((a, b) => a.username.localeCompare(b.username));
 
         if (opponents.length === 0) {
-            const waitMsg = state.phase === GamePhase.WAITING_FOR_PLAYERS
+            const waitMsg = this.isPreLobbyPhase(state.phase)
                 ? this.tr('game_open_tab_hint')
                 : this.tr('game_waiting_opponents');
             this.opponentsPlaceholder.setText(waitMsg);
@@ -1351,7 +1416,7 @@ export class GameScene extends Phaser.Scene {
             const x = startX + col * (panelW + gapX);
             const y = startY + row * (panelH + gapY);
             const active = state.phase === GamePhase.PLAYER_TURN && state.currentTurnPlayerId === opp.sessionId;
-            const ready = state.phase === GamePhase.WAITING_FOR_PLAYERS && opp.isReady;
+            const ready = this.isPreLobbyPhase(state.phase) && opp.isReady;
             const offline = !opp.isConnected;
 
             const frame = this.add.graphics();
@@ -1378,7 +1443,7 @@ export class GameScene extends Phaser.Scene {
             }).setOrigin(0, 0.5).setResolution(this.textResolution);
 
             const companyLen = (opp.company as unknown as ICardData[])?.length ?? 0;
-            const statsLabel = state.phase === GamePhase.WAITING_FOR_PLAYERS
+            const statsLabel = this.isPreLobbyPhase(state.phase)
                 ? `${opp.isReady ? this.tr('game_status_ready') : this.tr('game_status_waiting_short')} | ${opp.isConnected ? this.tr('game_status_online_short') : this.tr('game_status_offline_short')}`
                 : `${this.tr('game_hand_short')} ${(opp.hand as any)?.length ?? 0} | ${this.tr('game_ap')} ${opp.actionPoints} | \ud83d\udc54 ${companyLen}`;
 

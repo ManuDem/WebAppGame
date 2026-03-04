@@ -76,10 +76,13 @@ export class CardEffectParser {
                 return this.resolveProtect(sourcePlayer, targetPlayer);
 
             case "passive_bonus":
-                return this.resolvePassiveBonus(effect, sourcePlayer);
+                return this.resolvePassiveBonus(effect, sourcePlayer, targetPlayer);
 
             case "discount_cost":
                 return this.resolveDiscountCost(effect, sourcePlayer);
+
+            case "roll_modifier":
+                return this.resolveRollModifier(effect, sourcePlayer, targetPlayer);
 
             case "trade_random":
                 return this.resolveTradeRandom(sourcePlayer, targetPlayer);
@@ -364,13 +367,33 @@ export class CardEffectParser {
      * passive_bonus — adds "win_multiplier_X" to sourcePlayer.activeEffects.
      * The win-condition checker on the server reads this tag.
      */
-    private static resolvePassiveBonus(effect: ICardEffect, sourcePlayer: IPlayer): boolean {
-        const multiplier = effect.multiplier ?? 1;
-        if (!sourcePlayer.activeEffects) sourcePlayer.activeEffects = [];
-        const tag = `win_multiplier_${multiplier}`;
-        sourcePlayer.activeEffects.push(tag);
-        console.log(`[CardEffectParser] passive_bonus: "${tag}" added to ${sourcePlayer.username}`);
-        return true;
+    private static resolvePassiveBonus(
+        effect: ICardEffect,
+        sourcePlayer: IPlayer,
+        targetPlayer: IPlayer | null
+    ): boolean {
+        const target = String(effect.target ?? "win_condition").toLowerCase();
+
+        if (target === "win_condition") {
+            const multiplier = effect.multiplier ?? effect.amount ?? 1;
+            if (!sourcePlayer.activeEffects) sourcePlayer.activeEffects = [];
+            const tag = `win_multiplier_${multiplier}`;
+            sourcePlayer.activeEffects.push(tag);
+            console.log(`[CardEffectParser] passive_bonus: "${tag}" added to ${sourcePlayer.username}`);
+            return true;
+        }
+
+        if (target === "employee" || target === "hero") {
+            const amount = effect.amount ?? effect.multiplier ?? 1;
+            const owner = targetPlayer ?? sourcePlayer;
+            if (!owner.activeEffects) owner.activeEffects = [];
+            const tag = `roll_bonus_${amount}`;
+            owner.activeEffects.push(tag);
+            console.log(`[CardEffectParser] passive_bonus: "${tag}" added to ${owner.username}`);
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -380,9 +403,37 @@ export class CardEffectParser {
     private static resolveDiscountCost(effect: ICardEffect, sourcePlayer: IPlayer): boolean {
         const amount = effect.amount ?? 1;
         if (!sourcePlayer.activeEffects) sourcePlayer.activeEffects = [];
-        const tag = `discount_trick_${amount}`;
+        const target = String(effect.target ?? "magic").toLowerCase();
+        const tag = target === "trick"
+            ? `discount_trick_${amount}` // legacy support
+            : `discount_magic_${amount}`;
         sourcePlayer.activeEffects.push(tag);
+        if (tag !== `discount_trick_${amount}`) {
+            sourcePlayer.activeEffects.push(`discount_trick_${amount}`);
+        }
         console.log(`[CardEffectParser] discount_cost: "${tag}" added to ${sourcePlayer.username}`);
+        return true;
+    }
+    /**
+     * roll_modifier - one-shot bonus/malus consumed by the next dice roll.
+     */
+    private static resolveRollModifier(
+        effect: ICardEffect,
+        sourcePlayer: IPlayer,
+        targetPlayer: IPlayer | null
+    ): boolean {
+        const amount = Number(effect.amount ?? 0);
+        if (!Number.isFinite(amount) || amount === 0) return false;
+
+        const target = String(effect.target ?? "self").toLowerCase();
+        const owner = (target === "opponent" || target === "another_opponent")
+            ? (targetPlayer ?? sourcePlayer)
+            : sourcePlayer;
+
+        if (!owner.activeEffects) owner.activeEffects = [];
+        const tag = `next_roll_mod_${amount}`;
+        owner.activeEffects.push(tag);
+        console.log(`[CardEffectParser] roll_modifier: "${tag}" added to ${owner.username}`);
         return true;
     }
 
@@ -452,7 +503,7 @@ export class CardEffectParser {
         sourcePlayer.hand.push({
             id: `stolen_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
             templateId: target.targetCardId,
-            type: CardType.EVENTO // Semplificazione: il server la sovrascriverà se necessario
+            type: CardType.CHALLENGE // Semplificazione: il server la sovrascrivera se necessario
         });
 
         console.log(`[CardEffectParser] steal_played_card: action ${target.id} cancelled; card added to ${sourcePlayer.username}'s hand`);

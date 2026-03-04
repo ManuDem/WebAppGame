@@ -32,37 +32,53 @@ const ART_W = CARD_W - 18;
 const ART_H = 56;
 
 const PALETTES: Partial<Record<CardType, CardPalette>> = {
-    [CardType.EMPLOYEE]: {
+    [CardType.HERO]: {
         body: 0x102436,
         border: 0x6fd3ff,
         topBand: 0x17374e,
         badge: 0x1f4d6d,
         accentText: '#bce9ff',
-        label: 'EMPLOYEE',
+        label: 'HERO',
+    },
+    [CardType.ITEM]: {
+        body: 0x302612,
+        border: 0xffd374,
+        topBand: 0x47361a,
+        badge: 0x7a5f2c,
+        accentText: '#ffe8b8',
+        label: 'ITEM',
     },
     [CardType.MAGIC]: {
-        body: 0x2a2610,
-        border: 0xf3d26a,
-        topBand: 0x3b3518,
-        badge: 0x6f5e29,
-        accentText: '#ffeab1',
+        body: 0x1d2438,
+        border: 0x9cc3ff,
+        topBand: 0x2d3550,
+        badge: 0x4b5f97,
+        accentText: '#d8e7ff',
         label: 'MAGIC',
     },
-    [CardType.CRISIS]: {
-        body: 0x2d1820,
-        border: 0xff8ba5,
-        topBand: 0x43222d,
-        badge: 0x713245,
-        accentText: '#ffd6df',
-        label: 'CRISIS',
+    [CardType.MODIFIER]: {
+        body: 0x1d2f2b,
+        border: 0x91efdd,
+        topBand: 0x28413b,
+        badge: 0x3f6e64,
+        accentText: '#d6fff7',
+        label: 'MOD',
     },
-    [CardType.REACTION]: {
+    [CardType.CHALLENGE]: {
         body: 0x211d37,
         border: 0xcab2ff,
         topBand: 0x332b57,
         badge: 0x5849a1,
         accentText: '#e6dbff',
-        label: 'REACTION',
+        label: 'CHALL',
+    },
+    [CardType.MONSTER]: {
+        body: 0x2d1820,
+        border: 0xff8ba5,
+        topBand: 0x43222d,
+        badge: 0x713245,
+        accentText: '#ffd6df',
+        label: 'MONSTER',
     },
 };
 
