@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { CardType, ICardData } from '../../../shared/SharedTypes';
 import { APP_FONT_FAMILY } from '../ui/Typography';
+import { requestCardArtwork, resolveCardArtworkTexture } from '../ui/CardArtworkResolver';
 
 interface CardPalette {
     body: number;
@@ -91,6 +92,8 @@ export class CardGameObject extends Phaser.GameObjects.Container {
 
     private shadow!: Phaser.GameObjects.Graphics;
     private frame!: Phaser.GameObjects.Graphics;
+    private artFallback?: Phaser.GameObjects.Graphics;
+    private artImage?: Phaser.GameObjects.Image;
     private artSheen?: Phaser.GameObjects.Rectangle;
     private artSheenTween?: Phaser.Tweens.Tween;
 
@@ -179,8 +182,9 @@ export class CardGameObject extends Phaser.GameObjects.Container {
         }).setOrigin(0.5).setResolution(TEXT_RESOLUTION);
         this.add(typeChipText);
 
-        const art = this.drawUniqueArtwork(palette);
-        this.add(art);
+        this.artFallback = this.drawUniqueArtwork(palette);
+        this.add(this.artFallback);
+        this.attachArtworkTexture();
 
         this.artSheen = this.scene.add.rectangle(
             ART_X - 18,
@@ -202,19 +206,20 @@ export class CardGameObject extends Phaser.GameObjects.Container {
         descPanel.strokeRoundedRect(-CARD_W / 2 + 8, 22, CARD_W - 16, 48, 7);
         this.add(descPanel);
 
-        const desc = this.cardData.description
-            ? (this.cardData.description.length > 64
-                ? `${this.cardData.description.slice(0, 61)}...`
-                : this.cardData.description)
-            : '';
+        const cardAny = this.cardData as unknown as { shortDesc?: string };
+        const shortDesc = typeof cardAny.shortDesc === 'string' ? cardAny.shortDesc : '';
+        const descSource = shortDesc || this.cardData.description || '';
+        const desc = descSource.length > 54
+            ? `${descSource.slice(0, 51)}...`
+            : descSource;
 
         const descText = this.scene.add.text(0, 46, desc, {
             fontFamily: FONT_TITLE,
-            fontSize: '12px',
+            fontSize: '11px',
             color: '#deedf8',
             align: 'center',
             wordWrap: { width: CARD_W - 22 },
-            lineSpacing: 3,
+            lineSpacing: 2,
         }).setOrigin(0.5, 0.5).setResolution(TEXT_RESOLUTION);
         this.add(descText);
 
@@ -223,14 +228,43 @@ export class CardGameObject extends Phaser.GameObjects.Container {
         footer.fillRoundedRect(-CARD_W / 2, CARD_H / 2 - 24, CARD_W, 24, { tl: 0, tr: 0, bl: 12, br: 12 });
         this.add(footer);
 
-        const typeText = this.scene.add.text(0, CARD_H / 2 - 12, palette.label, {
+        const footerParts: string[] = [palette.label];
+        if (typeof this.cardData.targetRoll === 'number') {
+            footerParts.push(`D${this.cardData.targetRoll}+`);
+        }
+        if (typeof this.cardData.modifier === 'number' && this.cardData.modifier !== 0) {
+            footerParts.push(`${this.cardData.modifier > 0 ? '+' : ''}${this.cardData.modifier}`);
+        }
+        const typeText = this.scene.add.text(0, CARD_H / 2 - 12, footerParts.join(' | '), {
             fontFamily: FONT_META,
-            fontSize: '11px',
+            fontSize: '10px',
             color: '#f2f8ff',
             fontStyle: '700',
-            letterSpacing: 1.2,
+            letterSpacing: 0.8,
         }).setOrigin(0.5).setResolution(TEXT_RESOLUTION);
         this.add(typeText);
+
+        const equippedCount = this.getEquippedCount();
+        if (equippedCount > 0 && this.isHeroCard()) {
+            const equipBadge = this.scene.add.graphics();
+            const bw = 38;
+            const bh = 16;
+            const bx = CARD_W * 0.5 - bw - 8;
+            const by = CARD_H * 0.5 - bh - 28;
+            equipBadge.fillStyle(0x12364c, 0.96);
+            equipBadge.fillRoundedRect(bx, by, bw, bh, 6);
+            equipBadge.lineStyle(1, 0x8fd4ff, 0.95);
+            equipBadge.strokeRoundedRect(bx, by, bw, bh, 6);
+            this.add(equipBadge);
+
+            const equipText = this.scene.add.text(bx + bw * 0.5, by + bh * 0.5, `EQ ${equippedCount}`, {
+                fontFamily: FONT_META,
+                fontSize: '9px',
+                color: '#e5f4ff',
+                fontStyle: '700',
+            }).setOrigin(0.5).setResolution(TEXT_RESOLUTION);
+            this.add(equipText);
+        }
 
         if (this.cardData.costPA !== undefined) {
             const bubble = this.scene.add.graphics();
@@ -254,6 +288,64 @@ export class CardGameObject extends Phaser.GameObjects.Container {
         this.setSize(CARD_W, CARD_H);
         this.setInteractive({ useHandCursor: true });
         this.scene.input.setDraggable(this as unknown as Phaser.GameObjects.GameObject);
+    }
+
+    private attachArtworkTexture() {
+        const existingTexture = resolveCardArtworkTexture(this.scene, this.cardData);
+        if (existingTexture) {
+            this.applyArtworkTexture(existingTexture);
+            return;
+        }
+
+        this.showArtworkFallback();
+        requestCardArtwork(this.scene, this.cardData, (loadedTexture) => {
+            if (!this.active) return;
+            this.applyArtworkTexture(loadedTexture);
+        });
+    }
+
+    private applyArtworkTexture(textureKey: string) {
+        if (!this.scene.textures.exists(textureKey)) {
+            this.showArtworkFallback();
+            return;
+        }
+
+        if (!this.artImage) {
+            this.artImage = this.scene.add.image(
+                ART_X + ART_W * 0.5,
+                ART_Y + ART_H * 0.5,
+                textureKey,
+            ).setOrigin(0.5);
+            this.add(this.artImage);
+        } else {
+            this.artImage.setTexture(textureKey);
+        }
+
+        const frame = this.artImage.frame;
+        const sourceW = Math.max(1, frame.realWidth || frame.width);
+        const sourceH = Math.max(1, frame.realHeight || frame.height);
+        const scale = Math.min((ART_W - 8) / sourceW, (ART_H - 8) / sourceH);
+        this.artImage.setDisplaySize(
+            Math.max(1, Math.floor(sourceW * scale)),
+            Math.max(1, Math.floor(sourceH * scale)),
+        );
+        this.artImage.setVisible(true);
+
+        if (this.artFallback) {
+            this.artFallback.setAlpha(0.26);
+        }
+        if (this.artSheen) {
+            this.bringToTop(this.artSheen);
+        }
+    }
+
+    private showArtworkFallback() {
+        if (this.artImage) {
+            this.artImage.setVisible(false);
+        }
+        if (this.artFallback) {
+            this.artFallback.setAlpha(1);
+        }
     }
 
     private drawUniqueArtwork(palette: CardPalette): Phaser.GameObjects.Graphics {
@@ -346,6 +438,17 @@ export class CardGameObject extends Phaser.GameObjects.Container {
             hash = Math.imul(hash, 16777619);
         }
         return hash >>> 0;
+    }
+
+    private isHeroCard() {
+        const typeValue = String(this.cardData.type ?? '').toLowerCase();
+        return typeValue === 'hero' || typeValue === 'employee';
+    }
+
+    private getEquippedCount(): number {
+        const equipped = (this.cardData as unknown as { equippedItems?: { length?: number } }).equippedItems;
+        const count = Number(equipped?.length ?? 0);
+        return Number.isFinite(count) ? Math.max(0, count) : 0;
     }
 
     private shiftColor(color: number, amount: number): number {

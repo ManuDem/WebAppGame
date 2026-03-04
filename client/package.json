@@ -6,7 +6,8 @@
     "scripts": {
         "dev": "vite",
         "build": "tsc && vite build",
-        "preview": "vite preview"
+        "preview": "vite preview",
+        "qa:capture": "node qa/capture.mjs"
     },
     "dependencies": {
         "colyseus.js": "^0.15.0",

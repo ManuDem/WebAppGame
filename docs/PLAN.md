@@ -1,4 +1,4 @@
-# PLAN - Stato Milestone
+﻿# PLAN - Stato Milestone
 
 Piano operativo aggiornato come living document.
 
@@ -28,7 +28,7 @@ Acceptance:
 - regole allineate all'implementazione corrente
 - nessun placeholder vuoto per le sezioni critiche M1
 
-## M2 - Refactor logica per testabilità
+## M2 - Refactor logica per testabilita
 Stato: `completata`
 
 Output:
@@ -54,20 +54,44 @@ Acceptance:
 - test nuovi verdi su AP, reaction-only, item equip su Hero, monster refill
 
 ## M3 - UI/UX carte
-Stato: `pending`
+Stato: `in_progress`
 
 Scope previsto:
 - mini-card + overlay carta grande
 - hit areas mobile-first
-- miglioramenti leggibilità board/hand
+- miglioramenti leggibilita board/hand
+
+Avanzamento corrente (2026-03-04):
+- pipeline artwork PNG pronta con fallback sicuro:
+  - `client/src/ui/CardArtworkResolver.ts`
+  - preload manifest in `client/src/scenes/BootScene.ts`
+  - risoluzione on-demand da `/cards/{templateId}.png`
+- mini-card migliorate:
+  - artwork PNG quando disponibile, fallback procedurale altrimenti
+  - testo compatto con preferenza `shortDesc`
+  - badge equip per Hero con Item equipaggiati
+- overlay inspect migliorato:
+  - artwork reale quando disponibile
+  - fallback grafico mantenuto
+  - dettagli completi (target roll/modifier/subtype/equip count)
+- targeting UX esteso:
+  - Item -> selezione Hero (auto-target se 1 Hero, errore esplicito se 0 Hero)
+  - Magic/Event target opponent -> feedback esplicito se nessun avversario disponibile
 
 ## M4 - Pixel art makeover
-Stato: `pending`
+Stato: `in_progress`
 
 Scope previsto:
 - render crisp + scaling
 - feedback visivo coerente
 - layout anti-overlap mobile/landscape
+
+Avanzamento corrente (2026-03-04):
+- renderer Phaser aggiornato per look piu crisp:
+  - `pixelArt: true`
+  - `roundPixels: true`
+  - `antialias` disattivato
+- risoluzione renderer riequilibrata per ridurre blur e mantenere leggibilita.
 
 ## M5 - i18n IT/EN completo
 Stato: `pending`

@@ -7,6 +7,7 @@ import { createSimpleButtonFx, SimpleButtonController } from '../ui/SimpleButton
 import { drawPokemonBackdrop, ensurePokemonTextures } from '../ui/PokemonVisuals';
 import { paintRetroButton } from '../ui/RetroButtonPainter';
 import { APP_FONT_FAMILY } from '../ui/Typography';
+import { requestCardArtwork, resolveCardArtworkTexture } from '../ui/CardArtworkResolver';
 import {
     CardType,
     GamePhase,
@@ -111,6 +112,7 @@ export class GameScene extends Phaser.Scene {
     private cardInspectOverlay!: Phaser.GameObjects.Rectangle;
     private cardInspectPanel!: Phaser.GameObjects.Graphics;
     private cardInspectArtwork!: Phaser.GameObjects.Graphics;
+    private cardInspectArtworkImage!: Phaser.GameObjects.Image;
     private cardInspectTitle!: Phaser.GameObjects.Text;
     private cardInspectType!: Phaser.GameObjects.Text;
     private cardInspectBody!: Phaser.GameObjects.Text;
@@ -531,6 +533,11 @@ export class GameScene extends Phaser.Scene {
 
         this.cardInspectPanel = this.add.graphics().setDepth(541).setVisible(false);
         this.cardInspectArtwork = this.add.graphics().setDepth(541).setVisible(false);
+        this.cardInspectArtworkImage = this.add.image(
+            0,
+            0,
+            this.textures.exists('ui-deck') ? 'ui-deck' : 'poke-dither',
+        ).setDepth(542).setVisible(false);
         this.cardInspectTitle = this.add.text(0, 0, '', {
             fontFamily: FONT_UI,
             fontSize: '22px',
@@ -1005,7 +1012,7 @@ export class GameScene extends Phaser.Scene {
                     : 0x3a3260;
 
         this.cardInspectArtwork.clear();
-        this.cardInspectArtwork.fillStyle(artTint, 0.95);
+        this.cardInspectArtwork.fillStyle(artTint, 0.9);
         this.cardInspectArtwork.fillRoundedRect(artX, artY, artW, artH, 14);
         this.cardInspectArtwork.fillStyle(0xffffff, 0.08);
         this.cardInspectArtwork.fillRoundedRect(artX + 2, artY + 2, artW - 4, artH * 0.28, { tl: 12, tr: 12, bl: 0, br: 0 });
@@ -1013,6 +1020,7 @@ export class GameScene extends Phaser.Scene {
         this.cardInspectArtwork.strokeRoundedRect(artX, artY, artW, artH, 14);
         this.cardInspectArtwork.lineStyle(1, 0xffffff, 0.18);
         this.cardInspectArtwork.strokeLineShape(new Phaser.Geom.Line(artX + 16, artY + artH - 14, artX + artW - 16, artY + 16));
+        this.layoutCardInspectArtworkImage(artX, artY, artW, artH);
 
         this.cardInspectTitle
             .setPosition(cx, panelY + 20)
@@ -1033,7 +1041,35 @@ export class GameScene extends Phaser.Scene {
         if (!this.cardInspectVisible) {
             this.cardInspectPanel.setVisible(false);
             this.cardInspectArtwork.setVisible(false);
+            this.cardInspectArtworkImage.setVisible(false);
         }
+    }
+
+    private layoutCardInspectArtworkImage(artX: number, artY: number, artW: number, artH: number) {
+        if (!this.inspectedCard) {
+            this.cardInspectArtworkImage.setVisible(false);
+            return;
+        }
+
+        const textureKey = resolveCardArtworkTexture(this, this.inspectedCard);
+        if (!textureKey) {
+            this.cardInspectArtworkImage.setVisible(false);
+            return;
+        }
+
+        this.cardInspectArtworkImage
+            .setTexture(textureKey)
+            .setPosition(artX + artW * 0.5, artY + artH * 0.5);
+
+        const frame = this.cardInspectArtworkImage.frame;
+        const sourceW = Math.max(1, frame.realWidth || frame.width);
+        const sourceH = Math.max(1, frame.realHeight || frame.height);
+        const scale = Math.min((artW - 12) / sourceW, (artH - 12) / sourceH);
+        this.cardInspectArtworkImage.setDisplaySize(
+            Math.max(1, Math.floor(sourceW * scale)),
+            Math.max(1, Math.floor(sourceH * scale)),
+        );
+        this.cardInspectArtworkImage.setVisible(this.cardInspectVisible);
     }
 
     private redrawReactionBar() {
@@ -1114,6 +1150,10 @@ export class GameScene extends Phaser.Scene {
         if (card.subtype) {
             lines.push(this.tr('game_card_subtype', { value: String(card.subtype).toUpperCase() }));
         }
+        const equippedCount = Number((card as any)?.equippedItems?.length ?? 0);
+        if (equippedCount > 0) {
+            lines.push(this.tr('game_card_equipped_count', { count: equippedCount }));
+        }
         this.cardInspectBody.setText(lines.join('\n\n'));
         this.cardInspectHint.setText(this.tr('game_close_hint'));
 
@@ -1121,10 +1161,20 @@ export class GameScene extends Phaser.Scene {
         this.cardInspectOverlay.setVisible(true);
         this.cardInspectPanel.setVisible(true);
         this.cardInspectArtwork.setVisible(true);
+        this.cardInspectArtworkImage.setVisible(false);
         this.cardInspectTitle.setVisible(true);
         this.cardInspectType.setVisible(true);
         this.cardInspectBody.setVisible(true);
         this.cardInspectHint.setVisible(true);
+
+        requestCardArtwork(this, card, () => {
+            if (!this.cardInspectVisible || !this.inspectedCard) return;
+            const currentId = String(this.inspectedCard.id ?? this.inspectedCard.templateId ?? '');
+            const expectedId = String(card.id ?? card.templateId ?? '');
+            if (currentId !== expectedId) return;
+            this.layoutCardInspectOverlay();
+        });
+
         this.layoutCardInspectOverlay();
     }
 
@@ -1135,6 +1185,7 @@ export class GameScene extends Phaser.Scene {
         this.cardInspectOverlay.setVisible(false);
         this.cardInspectPanel.setVisible(false);
         this.cardInspectArtwork.setVisible(false);
+        this.cardInspectArtworkImage.setVisible(false);
         this.cardInspectTitle.setVisible(false);
         this.cardInspectType.setVisible(false);
         this.cardInspectBody.setVisible(false);
@@ -1958,14 +2009,26 @@ export class GameScene extends Phaser.Scene {
             const heroes = ((me?.company ?? []) as ICardData[]).filter((entry) => this.isHeroCard(entry));
 
             if (heroes.length === 0) {
-                this.serverManager.playMagic(card.cardData.id);
+                this.snapBack(card, this.tr('game_error_no_hero_for_item'));
+                return;
+            }
+
+            if (heroes.length === 1) {
+                const single = heroes[0];
+                if (!single?.id) {
+                    this.snapBack(card, this.tr('game_error_invalid_hero_target'));
+                    return;
+                }
+                this.serverManager.playMagic(card.cardData.id, undefined, single.id);
                 this.stashPending(card);
                 return;
             }
 
             heroes.forEach((hero) => {
+                const itemCount = Number((hero as any)?.equippedItems?.length ?? 0);
+                const suffix = itemCount > 0 ? ` (${itemCount} EQ)` : '';
                 selectionRows.push({
-                    label: String(hero.name ?? hero.templateId ?? this.tr('game_card_unknown')),
+                    label: `${String(hero.name ?? hero.templateId ?? this.tr('game_card_unknown'))}${suffix}`,
                     onPick: () => this.serverManager.playMagic(card.cardData.id, undefined, hero.id),
                 });
             });
@@ -1976,8 +2039,7 @@ export class GameScene extends Phaser.Scene {
             });
 
             if (opponents.length === 0) {
-                this.serverManager.playMagic(card.cardData.id);
-                this.stashPending(card);
+                this.snapBack(card, this.tr('game_waiting_opponents'));
                 return;
             }
 

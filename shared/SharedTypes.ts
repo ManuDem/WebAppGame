@@ -240,6 +240,7 @@ export interface ICardData {
     costPA?: number;         // Costo in Punti Azione
     isFaceUp?: boolean;      // Per sapere se è visibile agli altri
     name?: string;           // Nome leggibile della carta (popolato dal server dal DB)
+    shortDesc?: string;      // Sommario breve per UI compatta
     description?: string;    // Descrizione breve della carta (popolato dal server dal DB)
     targetRoll?: number;     // Target roll (es. 8+) necessario per affrontare la carta/evento
     modifier?: number;       // Bonus/malus al tiro (+1, -1) fornito passivamente

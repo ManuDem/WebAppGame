@@ -14,6 +14,7 @@ Indice principale documentazione.
 - [ARCHITECTURE](./ARCHITECTURE.md)
 - [PLAN](./PLAN.md)
 - [GDD](./GDD.md)
+- [QA](./QA.md)
 
 ## Design
 

@@ -33,6 +33,9 @@ export class CardState extends Schema implements ICardData {
     name?: string;
 
     @type("string")
+    shortDesc?: string;
+
+    @type("string")
     description?: string;
 
     @type("uint8")

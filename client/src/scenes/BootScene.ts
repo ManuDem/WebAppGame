@@ -4,6 +4,7 @@ import { DEFAULT_LANGUAGE, sanitizeLanguage, SupportedLanguage, t } from '../i18
 import { drawPokemonBackdrop, ensurePokemonTextures } from '../ui/PokemonVisuals';
 import { applyBrandTypography, BRAND_SUBTITLE_STYLE, BRAND_TITLE_STYLE, BRAND_TITLE_TEXT, placeBrandHeader } from '../ui/Branding';
 import { APP_FONT_FAMILY } from '../ui/Typography';
+import { preloadCardArtworkManifest } from '../ui/CardArtworkResolver';
 
 const FONT_UI = APP_FONT_FAMILY;
 
@@ -43,6 +44,8 @@ export class BootScene extends Phaser.Scene {
                 this.load.image(key, path);
             }
         });
+
+        preloadCardArtworkManifest(this);
     }
 
     create() {

@@ -501,10 +501,12 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         if (drawnCard.targetRoll !== undefined) card.targetRoll = drawnCard.targetRoll;
         if (drawnCard.modifier !== undefined) card.modifier = drawnCard.modifier;
         card.subtype = drawnCard.subtype ?? "none";
+        if (drawnCard.shortDesc) card.shortDesc = drawnCard.shortDesc;
 
         const tmpl = this.getTemplate(drawnCard.templateId);
         if (tmpl) {
             card.name = tmpl.name;
+            card.shortDesc = tmpl.shortDesc;
             card.description = tmpl.description;
             if (card.subtype === "none" && tmpl.subtype) card.subtype = tmpl.subtype;
             if (card.targetRoll === undefined && typeof tmpl.targetRoll === "number") card.targetRoll = tmpl.targetRoll;
@@ -1003,6 +1005,8 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         companyCard.costPA = template.cost;
         companyCard.isFaceUp = true;
         companyCard.name = template.name;
+        companyCard.shortDesc = template.shortDesc;
+        companyCard.description = template.description;
         player.company.push(companyCard);
 
         console.log(`   👔 ${player.username} hired ${template.name}. Company size: ${(player.company as any[]).length}`);

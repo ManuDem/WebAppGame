@@ -114,3 +114,19 @@ Obiettivo: mantenere feeling Here To Slay ma con regole più leggibili e robuste
 
 - 2026-03-04: approvate A/B/C.
 - 2026-03-04: M1+M2 implementate in server gameplay modules + test dedicati.
+
+## 6. Aggiornamento user-facing M3/M4 (2026-03-04)
+
+- Le carte nel client ora supportano artwork PNG reale tramite chiave esplicita (`artworkKey`/`artworkId`/`artKey`) oppure `templateId`.
+- Pipeline robusta con fallback: se il PNG non esiste, resta attivo l'artwork procedurale senza bloccare il gameplay.
+- Le mini-card privilegiano testo breve (`shortDesc` quando disponibile) per ridurre rumore visivo.
+- Overlay inspect carta usa artwork reale quando disponibile e mostra in modo completo:
+  - tipo/template
+  - descrizione
+  - target roll/modifier/subtype
+  - numero item equipaggiati sul Hero
+- UX targeting item completata lato client:
+  - 0 Hero validi: feedback esplicito e azione annullata
+  - 1 Hero valido: auto-target
+  - N Hero validi: selettore esplicito
+- Il payload carta espone anche `shortDesc` opzionale per supportare UI compatta in modo retrocompatibile.

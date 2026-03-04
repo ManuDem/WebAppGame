@@ -44,6 +44,7 @@ export function createMonsterCardState(template: ICardTemplate, generateId: () =
     card.costPA = template.cost;
     card.isFaceUp = true;
     card.name = template.name;
+    card.shortDesc = template.shortDesc;
     card.description = template.description;
     card.targetRoll = typeof template.targetRoll === "number" ? template.targetRoll : 7;
     if (typeof template.modifier === "number") card.modifier = template.modifier;

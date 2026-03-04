@@ -434,9 +434,12 @@ class OfficeRoom extends colyseus_1.Room {
         if (drawnCard.modifier !== undefined)
             card.modifier = drawnCard.modifier;
         card.subtype = drawnCard.subtype ?? "none";
+        if (drawnCard.shortDesc)
+            card.shortDesc = drawnCard.shortDesc;
         const tmpl = this.getTemplate(drawnCard.templateId);
         if (tmpl) {
             card.name = tmpl.name;
+            card.shortDesc = tmpl.shortDesc;
             card.description = tmpl.description;
             if (card.subtype === "none" && tmpl.subtype)
                 card.subtype = tmpl.subtype;
@@ -861,6 +864,8 @@ class OfficeRoom extends colyseus_1.Room {
         companyCard.costPA = template.cost;
         companyCard.isFaceUp = true;
         companyCard.name = template.name;
+        companyCard.shortDesc = template.shortDesc;
+        companyCard.description = template.description;
         player.company.push(companyCard);
         console.log(`   👔 ${player.username} hired ${template.name}. Company size: ${player.company.length}`);
     }

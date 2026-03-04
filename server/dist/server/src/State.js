@@ -53,6 +53,10 @@ __decorate([
 __decorate([
     (0, schema_1.type)("string"),
     __metadata("design:type", String)
+], CardState.prototype, "shortDesc", void 0);
+__decorate([
+    (0, schema_1.type)("string"),
+    __metadata("design:type", String)
 ], CardState.prototype, "description", void 0);
 __decorate([
     (0, schema_1.type)("uint8"),

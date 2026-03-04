@@ -7,6 +7,7 @@ export declare class CardState extends Schema implements ICardData {
     costPA?: number;
     isFaceUp?: boolean;
     name?: string;
+    shortDesc?: string;
     description?: string;
     targetRoll?: number;
     modifier?: number;
