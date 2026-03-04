@@ -1,5 +1,5 @@
 import { Schema } from "@colyseus/schema";
-import { IGameState, IPlayer, ICardData, IPendingAction, GamePhase, CardType, ClientMessages } from "../../shared/SharedTypes";
+import { IGameState, IPlayer, ICardData, IPendingAction, GamePhase, CardType, CardSubtype, ClientMessages } from "../../shared/SharedTypes";
 export declare class CardState extends Schema implements ICardData {
     id: string;
     templateId: string;
@@ -11,6 +11,7 @@ export declare class CardState extends Schema implements ICardData {
     targetRoll?: number;
     modifier?: number;
     equippedItems?: ICardData[];
+    subtype?: CardSubtype;
 }
 export declare class PendingActionState extends Schema implements IPendingAction {
     id: string;
@@ -19,6 +20,7 @@ export declare class PendingActionState extends Schema implements IPendingAction
     targetCardId?: string;
     targetCrisisId?: string;
     targetPlayerId?: string;
+    targetHeroCardId?: string;
     timestamp: number;
     isCancelled?: boolean;
 }

@@ -10,14 +10,19 @@ const SharedTypes_1 = require("../../../shared/SharedTypes");
 const DeckManager_1 = require("../../../shared/DeckManager");
 const CardEffectParser_1 = require("../../../shared/CardEffectParser");
 const cards_db_json_1 = __importDefault(require("../../../shared/cards_db.json"));
+const monsterBoard_1 = require("../game/monsterBoard");
+const turnFlow_1 = require("../game/turnFlow");
+const winConditions_1 = require("../game/winConditions");
+const reactionResolution_1 = require("../game/reactionResolution");
+const itemEquip_1 = require("../game/itemEquip");
 // ─────────────────────────────────────────────────────────
 //  Constants
 // ─────────────────────────────────────────────────────────
 const MAX_PLAYERS = 10;
 const STARTING_HAND_SIZE = 3;
 /** Win conditions */
-const WIN_EMPLOYEES = 4; // Modalita semplificata: 4 dipendenti in company
-const WIN_CRISES = 2; // Modalita semplificata: 2 crisi risolte (VP score)
+const WIN_EMPLOYEES = 4; // Here-to-Slay Lite: 4 Hero in company
+const WIN_CRISES = 2; // Here-to-Slay Lite: 2 Monster risolti (VP score)
 // ═════════════════════════════════════════════════════════
 //  OfficeRoom — the authoritative game room
 // ═════════════════════════════════════════════════════════
@@ -31,6 +36,8 @@ class OfficeRoom extends colyseus_1.Room {
         this.serverDeck = [];
         /** Card template lookup map (templateId → ICardTemplate) built from cards_db.json */
         this.cardTemplates = new Map();
+        this.monsterTemplateIds = [];
+        this.monsterBag = [];
     }
     // ─────────────────────────────────────────────────────
     //  Lifecycle
@@ -243,7 +250,7 @@ class OfficeRoom extends colyseus_1.Room {
     // ─────────────────────────────────────────────────────
     handleJoinGame(client, _data) {
         if (this.state.phase !== SharedTypes_1.GamePhase.WAITING_FOR_PLAYERS && this.state.phase !== SharedTypes_1.GamePhase.PRE_LOBBY) {
-            client.send(SharedTypes_1.ServerEvents.ERROR, { message: "Il gioco è già iniziato." });
+            client.send(SharedTypes_1.ServerEvents.ERROR, { code: "GAME_ALREADY_STARTED", message: "Il gioco è già iniziato." });
             return;
         }
         const player = this.state.players.get(client.sessionId);
@@ -328,7 +335,11 @@ class OfficeRoom extends colyseus_1.Room {
         }
         this.state.deckCount = this.serverDeck.length;
         console.log(`🃏 Deck ready: ${this.state.deckCount} cards`);
-        // Populate central crises (crisis type only, up to 3)
+        // Assign a Party Leader to each participant (setup-only cards, outside main deck).
+        this.assignPartyLeaders(players);
+        this.monsterTemplateIds = (0, monsterBoard_1.collectMonsterTemplateIds)(this.cardTemplates.values());
+        this.monsterBag = [];
+        // Populate and keep central monsters at 3 slots.
         this.populateCentralCrises();
         // Deal an initial hand to keep the first turns fast and readable (casual mode).
         this.dealInitialHands(players, STARTING_HAND_SIZE);
@@ -343,21 +354,53 @@ class OfficeRoom extends colyseus_1.Room {
             actionPoints: SharedTypes_1.MAX_ACTION_POINTS
         });
     }
-    populateCentralCrises() {
-        const crisisTemplates = Array.from(this.cardTemplates.values()).filter(t => t.type === "crisis");
-        const max = Math.min(crisisTemplates.length, 3);
-        for (let i = 0; i < max; i++) {
-            const t = crisisTemplates[i];
-            const card = new State_1.CardState();
-            card.id = this.generateId();
-            card.templateId = t.id;
-            card.type = SharedTypes_1.CardType.IMPREVISTO;
-            card.costPA = t.cost;
-            card.isFaceUp = true;
-            card.name = t.name;
-            this.state.centralCrises.push(card);
+    assignPartyLeaders(participantIds) {
+        const leaders = Array.from(this.cardTemplates.values()).filter((t) => {
+            const type = String(t.type ?? "").trim().toLowerCase();
+            return type === "party_leader" || type === "leader";
+        });
+        if (leaders.length === 0)
+            return;
+        for (let i = 0; i < participantIds.length; i++) {
+            const playerId = participantIds[i];
+            const player = this.state.players.get(playerId);
+            if (!player)
+                continue;
+            const leader = leaders[i % leaders.length];
+            const effects = player.activeEffects;
+            const leaderTag = `party_leader_${leader.id}`;
+            if (!effects.includes(leaderTag))
+                effects.push(leaderTag);
+            // Apply passive leader effects once at setup.
+            try {
+                CardEffectParser_1.CardEffectParser.resolve(leader, player, null, this.state);
+            }
+            catch (err) {
+                console.warn("[ROOM] Failed to apply party leader effect:", leader.id, err);
+            }
         }
-        console.log(`🏦 Central crises populated: ${this.state.centralCrises.length}`);
+    }
+    populateCentralCrises() {
+        while (this.state.centralCrises.length > 0) {
+            this.state.centralCrises.pop();
+        }
+        this.refillCentralCrisesToThree();
+    }
+    refillCentralCrisesToThree() {
+        if (this.monsterTemplateIds.length === 0) {
+            this.monsterTemplateIds = (0, monsterBoard_1.collectMonsterTemplateIds)(this.cardTemplates.values());
+        }
+        const maxSlots = 3;
+        while (this.state.centralCrises.length < maxSlots) {
+            const templateId = (0, monsterBoard_1.drawMonsterTemplateId)(this.monsterBag, this.monsterTemplateIds);
+            if (!templateId)
+                break;
+            const template = this.getTemplate(templateId);
+            if (!template)
+                continue;
+            this.state.centralCrises.push((0, monsterBoard_1.createMonsterCardState)(template, () => this.generateId()));
+        }
+        console.log(`Central monsters on board: ${this.state.centralCrises.length}`);
     }
     dealInitialHands(participantIds, cardsPerPlayer) {
         if (cardsPerPlayer <= 0 || participantIds.length === 0)
@@ -386,10 +429,21 @@ class OfficeRoom extends colyseus_1.Room {
         if (drawnCard.costPA !== undefined)
             card.costPA = drawnCard.costPA;
         card.isFaceUp = false;
+        if (drawnCard.targetRoll !== undefined)
+            card.targetRoll = drawnCard.targetRoll;
+        if (drawnCard.modifier !== undefined)
+            card.modifier = drawnCard.modifier;
+        card.subtype = drawnCard.subtype ?? "none";
         const tmpl = this.getTemplate(drawnCard.templateId);
         if (tmpl) {
             card.name = tmpl.name;
             card.description = tmpl.description;
+            if (card.subtype === "none" && tmpl.subtype)
+                card.subtype = tmpl.subtype;
+            if (card.targetRoll === undefined && typeof tmpl.targetRoll === "number")
+                card.targetRoll = tmpl.targetRoll;
+            if (card.modifier === undefined && typeof tmpl.modifier === "number")
+                card.modifier = tmpl.modifier;
         }
         return card;
     }
@@ -408,21 +462,11 @@ class OfficeRoom extends colyseus_1.Room {
         this.advanceTurn();
     }
     advanceTurn() {
-        const playerCount = this.state.playerOrder.length;
-        if (playerCount === 0)
+        const next = (0, turnFlow_1.computeNextConnectedTurn)(this.state.playerOrder, this.state.turnIndex, (playerId) => Boolean(this.state.players.get(playerId)?.isConnected));
+        if (!next)
             return;
-        let nextIndex = this.state.turnIndex;
-        let attempts = 0;
-        let nextPlayerId = "";
-        do {
-            nextIndex = (nextIndex + 1) % playerCount;
-            nextPlayerId = this.state.playerOrder.at(nextIndex) ?? "";
-            attempts++;
-            if (attempts >= playerCount)
-                break;
-        } while (!this.state.players.get(nextPlayerId)?.isConnected);
-        this.state.turnIndex = nextIndex;
-        this.state.currentTurnPlayerId = nextPlayerId;
+        this.state.turnIndex = next.nextIndex;
+        this.state.currentTurnPlayerId = next.nextPlayerId;
         this.state.phase = SharedTypes_1.GamePhase.PLAYER_TURN;
         this.state.turnNumber++;
         const nextPlayer = this.state.players.get(this.state.currentTurnPlayerId);
@@ -490,6 +534,14 @@ class OfficeRoom extends colyseus_1.Room {
         }
         const cardInHand = handArr[cardIdx];
         const template = this.getTemplate(cardInHand.templateId);
+        const typeValue = String(template?.type ?? cardInHand.type ?? "").trim().toLowerCase();
+        if (typeValue !== "hero" && typeValue !== "employee") {
+            client.send(SharedTypes_1.ServerEvents.ERROR, {
+                code: "NOT_HERO_CARD",
+                message: "Puoi assumere solo carte Hero.",
+            });
+            return;
+        }
         const cost = template?.cost ?? 1;
         if (!this.checkPlayerTurnAction(client, cost))
             return;
@@ -563,7 +615,7 @@ class OfficeRoom extends colyseus_1.Room {
     //  PLAY_MAGIC — immediate (no Reaction Window)
     // ─────────────────────────────────────────────────────
     handlePlayMagic(client, data) {
-        const { cardId, targetPlayerId } = data;
+        const { cardId, targetPlayerId, targetHeroCardId } = data;
         if (!cardId) {
             client.send(SharedTypes_1.ServerEvents.ERROR, { code: "MISSING_CARD_ID", message: "Specifica il cardId." });
             return;
@@ -587,10 +639,41 @@ class OfficeRoom extends colyseus_1.Room {
         }
         const cardInHand = handArr[cardIdx];
         const template = this.getTemplate(cardInHand.templateId);
+        const typeValue = String(template?.type ?? cardInHand.type ?? "").trim().toLowerCase();
+        const subtypeValue = String(template?.subtype ?? cardInHand.subtype ?? "").trim().toLowerCase();
+        if (typeValue === "hero" || typeValue === "employee") {
+            client.send(SharedTypes_1.ServerEvents.ERROR, {
+                code: "USE_PLAY_EMPLOYEE",
+                message: "Le carte Hero si giocano con l'azione di assunzione.",
+            });
+            return;
+        }
+        if (typeValue === "challenge"
+            || typeValue === "reaction"
+            || typeValue === "modifier"
+            || subtypeValue === "reaction"
+            || subtypeValue === "modifier") {
+            client.send(SharedTypes_1.ServerEvents.ERROR, {
+                code: "REACTION_ONLY_WINDOW",
+                message: "Le carte Reazione possono essere giocate solo durante la finestra di reazione.",
+            });
+            return;
+        }
+        const allowedMagicLike = ["magic", "event", "trick", "item", "oggetto"];
+        if (!allowedMagicLike.includes(typeValue)) {
+            client.send(SharedTypes_1.ServerEvents.ERROR, {
+                code: "INVALID_CARD_TYPE",
+                message: "Tipo carta non valido per questa azione.",
+            });
+            return;
+        }
         const cost = template?.cost ?? 1;
-        // TASK 3: Validate targetPlayerId for targeted tricks
-        const needsTarget = template?.effect?.action &&
-            ["steal_pa", "steal_card", "discard", "trade_random"].includes(template.effect.action);
+        // Validate targetPlayerId for targeted cards (magic/modifier)
+        const effectAction = String(template?.effect?.action ?? "");
+        const effectTarget = String(template?.effect?.target ?? "").toLowerCase();
+        const targetedActions = ["steal_pa", "steal_card", "discard", "trade_random"];
+        const needsTarget = targetedActions.includes(effectAction)
+            && ["opponent", "another_opponent", "opponent_hand"].includes(effectTarget);
         if (needsTarget && !targetPlayerId) {
             client.send(SharedTypes_1.ServerEvents.ERROR, {
                 code: "MISSING_TARGET",
@@ -598,7 +681,7 @@ class OfficeRoom extends colyseus_1.Room {
             });
             return;
         }
-        if (targetPlayerId) {
+        if (needsTarget && targetPlayerId) {
             if (targetPlayerId === client.sessionId) {
                 client.send(SharedTypes_1.ServerEvents.ERROR, { code: "SELF_TARGET", message: "Non puoi bersagliare te stesso." });
                 return;
@@ -607,6 +690,23 @@ class OfficeRoom extends colyseus_1.Room {
                 client.send(SharedTypes_1.ServerEvents.ERROR, { code: "INVALID_TARGET", message: "Il giocatore bersaglio non esiste." });
                 return;
             }
+        }
+        const isItemCard = typeValue === "item" || typeValue === "oggetto";
+        let resolvedTargetHeroCardId = undefined;
+        if (isItemCard) {
+            const equipTarget = (0, itemEquip_1.resolveHeroEquipTarget)({
+                player,
+                targetHeroCardId,
+                allowFallbackToPlayerLevel: true,
+            });
+            if (!equipTarget.ok) {
+                client.send(SharedTypes_1.ServerEvents.ERROR, {
+                    code: equipTarget.errorCode ?? "MISSING_HERO_TARGET",
+                    message: equipTarget.errorMessage ?? "Seleziona un Hero valido per equipaggiare l'Item.",
+                });
+                return;
+            }
+            resolvedTargetHeroCardId = equipTarget.targetHero?.id;
         }
         if (!this.checkPlayerTurnAction(client, cost))
             return;
@@ -618,7 +718,8 @@ class OfficeRoom extends colyseus_1.Room {
         pending.playerId = client.sessionId;
         pending.actionType = SharedTypes_1.ClientMessages.PLAY_MAGIC;
         pending.targetCardId = cardInHand.templateId; // templateId for CardEffectParser
-        pending.targetPlayerId = targetPlayerId;
+        pending.targetPlayerId = needsTarget ? targetPlayerId : undefined;
+        pending.targetHeroCardId = resolvedTargetHeroCardId;
         pending.timestamp = Date.now();
         this.state.pendingAction = pending;
         this.state.phase = SharedTypes_1.GamePhase.REACTION_WINDOW;
@@ -661,13 +762,21 @@ class OfficeRoom extends colyseus_1.Room {
         }
         const cardInHand = handArr[cardIdx];
         const template = this.getTemplate(cardInHand.templateId);
-        const cost = template?.cost ?? 1;
-        if (player.actionPoints < cost) {
-            client.send(SharedTypes_1.ServerEvents.ERROR, { code: "NO_PA", message: "Punti Azione insufficienti per reagire." });
+        const typeValue = String(template?.type ?? cardInHand.type ?? "").trim().toLowerCase();
+        const subtypeValue = String(cardInHand?.subtype ?? template?.subtype ?? "").trim().toLowerCase();
+        const isReactionCard = subtypeValue === "reaction"
+            || subtypeValue === "modifier"
+            || typeValue === "challenge"
+            || typeValue === "reaction"
+            || typeValue === "modifier";
+        if (!isReactionCard) {
+            client.send(SharedTypes_1.ServerEvents.ERROR, {
+                code: "NOT_REACTION_CARD",
+                message: "Questa carta non e una Reazione valida.",
+            });
             return;
         }
-        // Deduct PA and remove card from hand
-        player.actionPoints -= cost;
+        // Reazioni/Modifier non consumano PA nel modello Here-to-Slay Lite.
         handArr.splice(cardIdx, 1);
         // Create IPendingAction for this reaction and push onto stack (LIFO top)
         const reactionPending = {
@@ -675,6 +784,7 @@ class OfficeRoom extends colyseus_1.Room {
             playerId: client.sessionId,
             actionType: SharedTypes_1.ClientMessages.PLAY_REACTION,
             targetCardId: cardInHand.templateId, // reaction card's templateId for CardEffectParser
+            targetPlayerId: this.state.pendingAction?.playerId ?? undefined,
             timestamp: Date.now(),
             isCancelled: false
         };
@@ -694,78 +804,49 @@ class OfficeRoom extends colyseus_1.Room {
     // ─────────────────────────────────────────────────────
     resolvePhase() {
         this.state.phase = SharedTypes_1.GamePhase.RESOLUTION;
-        console.log(`🔥 Reaction Window closed. Resolving stack of ${this.state.actionStack.length} action(s)...`);
-        const originalAction = this.state.pendingAction;
-        // Build the reactions array in chronological order (oldest first).
-        // Our internal stack has stack[0] = newest reaction, stack[N-1] = original action.
-        const chainStack = [...this.state.actionStack].reverse();
-        // The first element is the original action. The rest are reactions.
-        const reactions = chainStack.slice(1);
-        // Run the full LIFO resolution queue using Agent 3's API
-        let result = null;
-        try {
-            if (originalAction) {
-                result = CardEffectParser_1.CardEffectParser.resolveQueue(originalAction, reactions, this.state);
-            }
-        }
-        catch (err) {
-            console.error("[ROOM] FATAL: Error during CardEffectParser.resolveQueue:", err);
-            result = {
-                success: false,
-                log: ["[resolveQueue] Internal error during resolution. Action cancelled."]
-            };
-        }
-        // Apply structural effects that CardEffectParser can't do (Colyseus schema mutations):
+        console.log(`Reaction Window closed. Resolving stack of ${this.state.actionStack.length} action(s)...`);
+        const resolution = (0, reactionResolution_1.resolveReactionQueue)(this.state);
+        const originalAction = resolution.originalAction;
+        let structuralSuccess = !originalAction?.isCancelled;
         if (originalAction && !originalAction.isCancelled) {
             switch (originalAction.actionType) {
                 case SharedTypes_1.ClientMessages.PLAY_EMPLOYEE:
                     this.applyEmployeeHire(originalAction.playerId, originalAction.targetCardId);
+                    structuralSuccess = true;
                     break;
                 case SharedTypes_1.ClientMessages.SOLVE_CRISIS:
-                    this.applyCrisisRemoval(originalAction.playerId, originalAction.targetCrisisId);
+                    structuralSuccess = this.applyCrisisResolution(originalAction.playerId, originalAction.targetCrisisId);
+                    break;
+                case SharedTypes_1.ClientMessages.PLAY_MAGIC:
+                    structuralSuccess = this.applyMagicResolution(originalAction);
+                    break;
+                default:
+                    structuralSuccess = true;
                     break;
             }
         }
-        // TASK 2: Consume pending_draw_X tags set by CardEffectParser
-        this.state.players.forEach((player) => {
-            const effects = player.activeEffects;
-            for (let i = effects.length - 1; i >= 0; i--) {
-                const tag = effects[i];
-                if (typeof tag === 'string' && tag.startsWith('pending_draw_')) {
-                    const drawCount = parseInt(tag.replace('pending_draw_', ''), 10);
-                    if (!isNaN(drawCount) && drawCount > 0) {
-                        for (let d = 0; d < drawCount; d++) {
-                            const drawn = DeckManager_1.DeckManager.drawCard(this.serverDeck);
-                            if (drawn) {
-                                player.hand.push(this.createCardStateFromDeckCard(drawn));
-                            }
-                        }
-                        this.state.deckCount = this.serverDeck.length;
-                    }
-                    effects.splice(i, 1); // Consume the tag
-                }
-            }
-        });
-        const success = result ? result.success : !originalAction?.isCancelled;
-        const log = result ? result.log :
-            (success ? [`Azione originale eseguita con successo.`] : [`Azione annullata.`]);
+        const drawnCards = (0, reactionResolution_1.consumePendingDrawTags)(this.state, () => DeckManager_1.DeckManager.drawCard(this.serverDeck), (card) => this.createCardStateFromDeckCard(card));
+        if (drawnCards > 0) {
+            this.state.deckCount = this.serverDeck.length;
+        }
+        const success = resolution.parserSuccess && structuralSuccess;
+        const log = resolution.log.length > 0
+            ? [...resolution.log]
+            : (success ? [`Azione originale eseguita con successo.`] : [`Azione annullata.`]);
+        if (originalAction && originalAction.actionType === SharedTypes_1.ClientMessages.SOLVE_CRISIS && !originalAction.isCancelled) {
+            log.push(success
+                ? "Imprevisto risolto con successo."
+                : "Tentativo di risoluzione Imprevisto fallito.");
+        }
         this.broadcast(SharedTypes_1.ServerEvents.ACTION_RESOLVED, { success, log });
-        // Cleanup
         this.state.pendingAction = null;
         this.state.actionStack = [];
         this.state.reactionEndTime = 0;
         this.reactionTimeout = null;
         this.state.phase = SharedTypes_1.GamePhase.PLAYER_TURN;
-        console.log(`   ✅ Resolution complete. Restored PLAYER_TURN.`);
+        console.log(`Resolution complete. Restored PLAYER_TURN.`);
         this.checkWinConditions();
     }
-    // ─────────────────────────────────────────────────────
-    //  Structural effect appliers (Colyseus schema mutations)
-    // ─────────────────────────────────────────────────────
-    /**
-     * Moves the card from pending limbo → player's company (public area).
-     * Called by resolveReactions when the PLAY_EMPLOYEE action is not cancelled.
-     */
     applyEmployeeHire(playerId, templateId) {
         const player = this.state.players.get(playerId);
         if (!player)
@@ -776,7 +857,7 @@ class OfficeRoom extends colyseus_1.Room {
         const companyCard = new State_1.CardState();
         companyCard.id = this.generateId();
         companyCard.templateId = templateId;
-        companyCard.type = SharedTypes_1.CardType.EMPLOYEE;
+        companyCard.type = SharedTypes_1.CardType.HERO;
         companyCard.costPA = template.cost;
         companyCard.isFaceUp = true;
         companyCard.name = template.name;
@@ -784,16 +865,149 @@ class OfficeRoom extends colyseus_1.Room {
         console.log(`   👔 ${player.username} hired ${template.name}. Company size: ${player.company.length}`);
     }
     /**
-     * Removes the resolved crisis from centralCrises.
-     * CardEffectParser.resolve already awarded VP via resolveCrisis().
+     * Server-authoritative crisis resolution:
+     * - Roll 2d6 (+ modifiers)
+     * - Broadcast DICE_ROLLED
+     * - On success: reward + remove crisis
+     * - On fail: apply crisis penalty
      */
-    applyCrisisRemoval(playerId, crisisId) {
+    applyMagicResolution(action) {
+        const player = this.state.players.get(action.playerId);
+        if (!player)
+            return false;
+        if (!action.targetCardId)
+            return true;
+        const template = this.getTemplate(action.targetCardId);
+        if (!template)
+            return false;
+        const typeValue = String(template.type ?? "").trim().toLowerCase();
+        if (typeValue !== "item" && typeValue !== "oggetto") {
+            return true;
+        }
+        const equipTarget = (0, itemEquip_1.resolveHeroEquipTarget)({
+            player,
+            targetHeroCardId: action.targetHeroCardId,
+            allowFallbackToPlayerLevel: true,
+        });
+        if (!equipTarget.ok)
+            return false;
+        if (!equipTarget.targetHero) {
+            // Temporary compatibility fallback: no explicit hero target, skip structural equip.
+            return true;
+        }
+        const itemCard = (0, itemEquip_1.createItemCardForEquip)(template, () => this.generateId());
+        return (0, itemEquip_1.equipItemOnHero)(equipTarget.targetHero, itemCard);
+    }
+    applyCrisisResolution(playerId, crisisId) {
+        const player = this.state.players.get(playerId);
+        if (!player)
+            return false;
         const crisisArr = this.state.centralCrises;
         const idx = crisisArr.findIndex((c) => c.id === crisisId);
-        if (idx !== -1) {
-            const crisis = crisisArr[idx];
+        if (idx === -1)
+            return false;
+        const crisis = crisisArr[idx];
+        const template = this.getTemplate(crisis.templateId);
+        const targetRoll = typeof crisis.targetRoll === "number"
+            ? crisis.targetRoll
+            : (typeof template?.targetRoll === "number" ? template.targetRoll : 7);
+        const modifier = this.getCrisisRollModifier(playerId) + (typeof crisis.modifier === "number" ? crisis.modifier : 0);
+        const roll = (0, monsterBoard_1.rollCrisisAttempt)(targetRoll, modifier);
+        this.broadcast(SharedTypes_1.ServerEvents.DICE_ROLLED, {
+            playerId,
+            cardId: crisis.id,
+            roll1: roll.roll1,
+            roll2: roll.roll2,
+            total: roll.total,
+            success: roll.success,
+        });
+        if (roll.success) {
+            const reward = template?.effect?.reward;
+            if (typeof reward === "string" && reward.startsWith("vp_")) {
+                const gainedVp = parseInt(reward.replace("vp_", ""), 10);
+                player.score += Number.isFinite(gainedVp) && gainedVp > 0 ? gainedVp : 1;
+            }
+            else {
+                player.score += 1;
+            }
             crisisArr.splice(idx, 1);
-            console.log(`   🗑️  Crisis ${crisis.templateId} removed from central table.`);
+            this.refillCentralCrisesToThree();
+            console.log(`   Crisis ${crisis.templateId} removed from central table.`);
+            return true;
+        }
+        this.applyCrisisPenalty(template?.effect?.penalty, playerId);
+        return false;
+    }
+    getCrisisRollModifier(playerId) {
+        const player = this.state.players.get(playerId);
+        if (!player)
+            return 0;
+        let bonus = 0;
+        const company = player.company;
+        for (const employee of company) {
+            const equippedItems = (employee?.equippedItems ?? []);
+            for (const item of equippedItems) {
+                if (typeof item?.modifier === "number") {
+                    bonus += item.modifier;
+                }
+            }
+        }
+        const effects = player.activeEffects;
+        for (let i = effects.length - 1; i >= 0; i--) {
+            const tag = effects[i];
+            if (typeof tag !== "string")
+                continue;
+            if (tag.startsWith("roll_bonus_")) {
+                const parsed = parseInt(tag.replace("roll_bonus_", ""), 10);
+                if (Number.isFinite(parsed)) {
+                    bonus += parsed;
+                }
+                continue;
+            }
+            if (tag.startsWith("next_roll_mod_")) {
+                const parsed = parseInt(tag.replace("next_roll_mod_", ""), 10);
+                if (Number.isFinite(parsed)) {
+                    bonus += parsed;
+                }
+                // one-shot: consumed when this roll is computed
+                effects.splice(i, 1);
+            }
+        }
+        return bonus;
+    }
+    applyCrisisPenalty(rawPenalty, solverPlayerId) {
+        const penalty = typeof rawPenalty === "string" ? rawPenalty : "";
+        if (!penalty)
+            return;
+        const victims = Array.from(this.state.players.entries())
+            .filter(([sessionId]) => sessionId !== solverPlayerId)
+            .map(([, p]) => p);
+        for (const victim of victims) {
+            switch (penalty) {
+                case "discard_2":
+                    for (let i = 0; i < 2; i++) {
+                        const hand = victim.hand;
+                        if (hand.length === 0)
+                            break;
+                        hand.splice(Math.floor(Math.random() * hand.length), 1);
+                    }
+                    break;
+                case "lose_employee":
+                    if (victim.company.length > 0) {
+                        victim.company.pop();
+                    }
+                    break;
+                case "lock_tricks": {
+                    const effects = victim.activeEffects;
+                    if (!effects.includes("locked_tricks")) {
+                        effects.push("locked_tricks");
+                    }
+                    break;
+                }
+                default:
+                    console.warn("[ROOM] Unknown crisis penalty:", penalty);
+                    break;
+            }
         }
     }
     // ─────────────────────────────────────────────────────
@@ -803,60 +1017,39 @@ class OfficeRoom extends colyseus_1.Room {
         if (this.state.phase === SharedTypes_1.GamePhase.GAME_OVER)
             return;
         for (const [sessionId, player] of this.state.players) {
-            // TASK 1: Calculate weighted employee count using win_multiplier_X tags
-            let weightedEmployeeCount = 0;
-            const companyArr = player.company;
-            for (const empCard of companyArr) {
-                let multiplier = 1;
-                const effects = player.activeEffects;
-                for (const eff of effects) {
-                    if (typeof eff === 'string' && eff.startsWith('win_multiplier_')) {
-                        const parsedMul = parseInt(eff.replace('win_multiplier_', ''), 10);
-                        if (!isNaN(parsedMul) && parsedMul > multiplier) {
-                            multiplier = parsedMul;
-                        }
-                    }
-                }
-                weightedEmployeeCount += multiplier;
-            }
-            const crisisVP = player.score;
-            const won = weightedEmployeeCount >= WIN_EMPLOYEES || crisisVP >= WIN_CRISES;
-            if (won) {
-                this.state.winnerId = sessionId;
-                this.state.phase = SharedTypes_1.GamePhase.GAME_OVER;
-                this.broadcast(SharedTypes_1.ServerEvents.GAME_WON, {
-                    winnerId: player.sessionId,
-                    winnerName: player.username,
-                    finalScore: player.score
-                });
-                console.log(`🏆 GAME OVER! Winner: ${player.username} (weighted employees: ${weightedEmployeeCount}, crisisVP: ${crisisVP})`);
-                return;
-            }
+            const evaluation = (0, winConditions_1.evaluatePlayerWin)(player, WIN_EMPLOYEES, WIN_CRISES);
+            if (!evaluation.won)
+                continue;
+            this.state.winnerId = sessionId;
+            this.state.phase = SharedTypes_1.GamePhase.GAME_OVER;
+            this.broadcast(SharedTypes_1.ServerEvents.GAME_WON, {
+                winnerId: player.sessionId,
+                winnerName: player.username,
+                finalScore: player.score,
+            });
+            console.log(`GAME OVER! Winner: ${player.username} (weighted employees: ${evaluation.weightedEmployeeCount}, crisisVP: ${evaluation.crisisVP})`);
+            return;
         }
     }
     // ─────────────────────────────────────────────────────
     //  Triple Validation Helper
     // ─────────────────────────────────────────────────────
     checkPlayerTurnAction(client, requiredPA) {
-        // TASK 4: Block all actions during GAME_OVER
-        if (this.state.phase === SharedTypes_1.GamePhase.GAME_OVER) {
-            client.send(SharedTypes_1.ServerEvents.ERROR, { code: "GAME_OVER", message: "La partita è terminata." });
-            return false;
-        }
-        if (client.sessionId !== this.state.currentTurnPlayerId) {
-            client.send(SharedTypes_1.ServerEvents.ERROR, { code: "NOT_YOUR_TURN", message: "Non è il tuo turno." });
-            return false;
-        }
-        if (this.state.phase !== SharedTypes_1.GamePhase.PLAYER_TURN) {
-            client.send(SharedTypes_1.ServerEvents.ERROR, { code: "WRONG_PHASE", message: "Fase non corretta." });
-            return false;
-        }
         const player = this.state.players.get(client.sessionId);
-        if (!player || player.actionPoints < requiredPA) {
-            client.send(SharedTypes_1.ServerEvents.ERROR, { code: "NO_PA", message: "Punti Azione insufficienti." });
+        const validation = (0, turnFlow_1.validateAndSpendTurnAction)({
+            phase: this.state.phase,
+            currentTurnPlayerId: this.state.currentTurnPlayerId,
+            requesterPlayerId: client.sessionId,
+            requiredPA,
+            player,
+        });
+        if (!validation.ok) {
+            client.send(SharedTypes_1.ServerEvents.ERROR, {
+                code: validation.code ?? "ACTION_DENIED",
+                message: validation.message ?? "Azione non consentita.",
+            });
             return false;
         }
-        player.actionPoints -= requiredPA;
         return true;
     }
     // ─────────────────────────────────────────────────────

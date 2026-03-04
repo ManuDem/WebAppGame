@@ -223,15 +223,18 @@ export class GameScene extends Phaser.Scene {
             || type === 'modifier';
     }
 
+    private isItemCard(card: ICardData) {
+        const type = String(card.type ?? '').toLowerCase();
+        return type === 'item' || type === 'oggetto';
+    }
+
     private isEventCard(card: ICardData) {
         const type = String(card.type ?? '').toLowerCase();
-        if (this.isReactionCard(card)) return true;
         return type === 'magic'
             || type === 'event'
             || type === 'trick'
             || type === 'item'
-            || type === 'oggetto'
-            || type === 'modifier';
+            || type === 'oggetto';
     }
 
     private boostText(...texts: Array<Phaser.GameObjects.Text | undefined>) {
@@ -309,6 +312,9 @@ export class GameScene extends Phaser.Scene {
             NO_REACTION_WINDOW: 'game_error_no_reaction_window',
             SELF_REACTION: 'game_error_self_reaction',
             NOT_REACTION_CARD: 'game_error_not_reaction_card',
+            NO_HERO_FOR_ITEM: 'game_error_no_hero_for_item',
+            INVALID_HERO_TARGET: 'game_error_invalid_hero_target',
+            MISSING_HERO_TARGET: 'game_error_missing_hero_target',
             GAME_OVER: 'game_error_game_over',
             NO_PA: 'game_error_no_pa',
         };
@@ -1943,28 +1949,54 @@ export class GameScene extends Phaser.Scene {
             return;
         }
 
-        const opponents: IPlayer[] = [];
-        (state.players as unknown as Map<string, IPlayer>).forEach((p, sid) => {
-            if (sid !== myId) opponents.push(p);
-        });
+        const selectionRows: Array<{ label: string; onPick: () => void }> = [];
+        let titleText = this.tr('game_choose_target');
 
-        if (opponents.length === 0) {
-            // No opponents — play without target
-            this.serverManager.playMagic(card.cardData.id);
-            this.stashPending(card);
-            return;
+        if (this.isItemCard(card.cardData)) {
+            titleText = this.tr('game_choose_hero_target');
+            const me = (state.players as unknown as Map<string, IPlayer>).get(myId);
+            const heroes = ((me?.company ?? []) as ICardData[]).filter((entry) => this.isHeroCard(entry));
+
+            if (heroes.length === 0) {
+                this.serverManager.playMagic(card.cardData.id);
+                this.stashPending(card);
+                return;
+            }
+
+            heroes.forEach((hero) => {
+                selectionRows.push({
+                    label: String(hero.name ?? hero.templateId ?? this.tr('game_card_unknown')),
+                    onPick: () => this.serverManager.playMagic(card.cardData.id, undefined, hero.id),
+                });
+            });
+        } else {
+            const opponents: IPlayer[] = [];
+            (state.players as unknown as Map<string, IPlayer>).forEach((p, sid) => {
+                if (sid !== myId) opponents.push(p);
+            });
+
+            if (opponents.length === 0) {
+                this.serverManager.playMagic(card.cardData.id);
+                this.stashPending(card);
+                return;
+            }
+
+            opponents.forEach((opp) => {
+                selectionRows.push({
+                    label: opp.username,
+                    onPick: () => this.serverManager.playMagic(card.cardData.id, opp.sessionId),
+                });
+            });
         }
 
         const cx = this.screenW * 0.5;
         const cy = this.screenH * 0.5;
 
-        // Overlay
         this.targetSelectorOverlay = this.add.rectangle(cx, cy, this.screenW, this.screenH, 0x000000, 0.6)
             .setDepth(550).setInteractive();
         this.targetSelectorElements.push(this.targetSelectorOverlay);
 
-        // Title
-        const title = this.add.text(cx, cy - 90, this.tr('game_choose_target'), {
+        const title = this.add.text(cx, cy - 90, titleText, {
             fontFamily: FONT_UI,
             fontSize: '22px',
             color: '#f8f0e2',
@@ -1973,14 +2005,13 @@ export class GameScene extends Phaser.Scene {
         }).setOrigin(0.5).setDepth(551).setResolution(this.textResolution);
         this.targetSelectorElements.push(title);
 
-        // Opponent buttons
         const btnW = Phaser.Math.Clamp(this.uiW * 0.4, 180, 300);
         const btnH = 46;
         const gap = 12;
-        const totalH = opponents.length * btnH + (opponents.length - 1) * gap;
+        const totalH = selectionRows.length * btnH + (selectionRows.length - 1) * gap;
         const startY = cy - totalH * 0.5 + btnH * 0.5 - 20;
 
-        opponents.forEach((opp, i) => {
+        selectionRows.forEach((row, i) => {
             const y = startY + i * (btnH + gap);
 
             const bg = this.add.graphics().setDepth(551);
@@ -1996,7 +2027,7 @@ export class GameScene extends Phaser.Scene {
             );
             this.targetSelectorElements.push(bg);
 
-            const label = this.add.text(cx, y, opp.username, {
+            const label = this.add.text(cx, y, row.label, {
                 fontFamily: FONT_UI,
                 fontSize: '15px',
                 color: '#e8f4ff',
@@ -2007,15 +2038,14 @@ export class GameScene extends Phaser.Scene {
             const hit = this.add.rectangle(cx, y, btnW, btnH, 0x000000, 0)
                 .setDepth(553).setInteractive({ useHandCursor: true });
             hit.on('pointerdown', () => {
-                this.serverManager.playMagic(card.cardData.id, opp.sessionId);
+                row.onPick();
                 this.stashPending(card);
                 this.hideTargetSelector();
             });
             this.targetSelectorElements.push(hit);
         });
 
-        // Cancel button
-        const cancelY = startY + opponents.length * (btnH + gap) + 10;
+        const cancelY = startY + selectionRows.length * (btnH + gap) + 10;
         const cancelBg = this.add.graphics().setDepth(551);
         cancelBg.setPosition(cx, cancelY);
         paintRetroButton(
@@ -2052,3 +2082,4 @@ export class GameScene extends Phaser.Scene {
         this.targetSelectorOverlay = undefined;
     }
 }
+

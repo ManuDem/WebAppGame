@@ -30,8 +30,13 @@ import {
     IErrorEvent,
 } from "../../../shared/SharedTypes";
 import { DeckManager } from "../../../shared/DeckManager";
-import { CardEffectParser, IResolveQueueResult } from "../../../shared/CardEffectParser";
+import { CardEffectParser } from "../../../shared/CardEffectParser";
 import cardsDbRaw from "../../../shared/cards_db.json";
+import { collectMonsterTemplateIds, createMonsterCardState, drawMonsterTemplateId, rollCrisisAttempt } from "../game/monsterBoard";
+import { computeNextConnectedTurn, validateAndSpendTurnAction } from "../game/turnFlow";
+import { evaluatePlayerWin } from "../game/winConditions";
+import { consumePendingDrawTags, resolveReactionQueue } from "../game/reactionResolution";
+import { createItemCardForEquip, equipItemOnHero, resolveHeroEquipTarget } from "../game/itemEquip";
 
 // ─────────────────────────────────────────────────────────
 //  Constants
@@ -57,6 +62,8 @@ export class OfficeRoom extends Room<OfficeRoomState> {
 
     /** Card template lookup map (templateId → ICardTemplate) built from cards_db.json */
     private cardTemplates: Map<string, ICardTemplate> = new Map();
+    private monsterTemplateIds: string[] = [];
+    private monsterBag: string[] = [];
 
     // ─────────────────────────────────────────────────────
     //  Lifecycle
@@ -391,7 +398,10 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         // Assign a Party Leader to each participant (setup-only cards, outside main deck).
         this.assignPartyLeaders(players);
 
-        // Populate central monsters (up to 3)
+        this.monsterTemplateIds = collectMonsterTemplateIds(this.cardTemplates.values());
+        this.monsterBag = [];
+
+        // Populate and keep central monsters at 3 slots.
         this.populateCentralCrises();
 
         // Deal an initial hand to keep the first turns fast and readable (casual mode).
@@ -436,27 +446,27 @@ export class OfficeRoom extends Room<OfficeRoomState> {
     }
 
     private populateCentralCrises(): void {
-        const crisisTemplates = Array.from(this.cardTemplates.values()).filter((t) => {
-            const type = String(t.type ?? "").trim().toLowerCase();
-            return type === "monster" || type === "crisis";
-        });
-        const max = Math.min(crisisTemplates.length, 3);
-        for (let i = 0; i < max; i++) {
-            const t = crisisTemplates[i]!;
-            const card = new CardState();
-            card.id = this.generateId();
-            card.templateId = t.id;
-            card.type = CardType.MONSTER;
-            card.costPA = t.cost;
-            card.isFaceUp = true;
-            card.name = t.name;
-            card.description = t.description;
-            card.targetRoll = typeof t.targetRoll === "number" ? t.targetRoll : 7;
-            if (typeof t.modifier === "number") card.modifier = t.modifier;
-            card.subtype = t.subtype ?? "monster";
-            this.state.centralCrises.push(card);
+        while (this.state.centralCrises.length > 0) {
+            this.state.centralCrises.pop();
         }
-        console.log(`🏦 Central monsters populated: ${this.state.centralCrises.length}`);
+        this.refillCentralCrisesToThree();
+    }
+
+    private refillCentralCrisesToThree(): void {
+        if (this.monsterTemplateIds.length === 0) {
+            this.monsterTemplateIds = collectMonsterTemplateIds(this.cardTemplates.values());
+        }
+        const maxSlots = 3;
+        while (this.state.centralCrises.length < maxSlots) {
+            const templateId = drawMonsterTemplateId(this.monsterBag, this.monsterTemplateIds);
+            if (!templateId) break;
+
+            const template = this.getTemplate(templateId);
+            if (!template) continue;
+
+            this.state.centralCrises.push(createMonsterCardState(template, () => this.generateId()));
+        }
+        console.log(`Central monsters on board: ${this.state.centralCrises.length}`);
     }
 
     private dealInitialHands(participantIds: string[], cardsPerPlayer: number): void {
@@ -521,22 +531,15 @@ export class OfficeRoom extends Room<OfficeRoomState> {
     }
 
     private advanceTurn(): void {
-        const playerCount = this.state.playerOrder.length;
-        if (playerCount === 0) return;
+        const next = computeNextConnectedTurn(
+            this.state.playerOrder as string[],
+            this.state.turnIndex,
+            (playerId) => Boolean(this.state.players.get(playerId)?.isConnected),
+        );
+        if (!next) return;
 
-        let nextIndex = this.state.turnIndex;
-        let attempts = 0;
-        let nextPlayerId = "";
-
-        do {
-            nextIndex = (nextIndex + 1) % playerCount;
-            nextPlayerId = this.state.playerOrder.at(nextIndex) ?? "";
-            attempts++;
-            if (attempts >= playerCount) break;
-        } while (!this.state.players.get(nextPlayerId)?.isConnected);
-
-        this.state.turnIndex = nextIndex;
-        this.state.currentTurnPlayerId = nextPlayerId;
+        this.state.turnIndex = next.nextIndex;
+        this.state.currentTurnPlayerId = next.nextPlayerId;
         this.state.phase = GamePhase.PLAYER_TURN;
         this.state.turnNumber++;
 
@@ -713,7 +716,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
     // ─────────────────────────────────────────────────────
 
     private handlePlayMagic(client: Client, data: IPlayMagicPayload): void {
-        const { cardId, targetPlayerId } = data;
+        const { cardId, targetPlayerId, targetHeroCardId } = data;
         if (!cardId) {
             client.send(ServerEvents.ERROR, { code: "MISSING_CARD_ID", message: "Specifica il cardId." });
             return;
@@ -741,6 +744,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         const cardInHand = handArr[cardIdx];
         const template = this.getTemplate(cardInHand.templateId);
         const typeValue = String(template?.type ?? cardInHand.type ?? "").trim().toLowerCase();
+        const subtypeValue = String(template?.subtype ?? cardInHand.subtype ?? "").trim().toLowerCase();
         if (typeValue === "hero" || typeValue === "employee") {
             client.send(ServerEvents.ERROR, {
                 code: "USE_PLAY_EMPLOYEE",
@@ -748,7 +752,21 @@ export class OfficeRoom extends Room<OfficeRoomState> {
             });
             return;
         }
-        const allowedMagicLike = ["magic", "event", "trick", "item", "oggetto", "modifier"];
+        if (
+            typeValue === "challenge"
+            || typeValue === "reaction"
+            || typeValue === "modifier"
+            || subtypeValue === "reaction"
+            || subtypeValue === "modifier"
+        ) {
+            client.send(ServerEvents.ERROR, {
+                code: "REACTION_ONLY_WINDOW",
+                message: "Le carte Reazione possono essere giocate solo durante la finestra di reazione.",
+            });
+            return;
+        }
+
+        const allowedMagicLike = ["magic", "event", "trick", "item", "oggetto"];
         if (!allowedMagicLike.includes(typeValue)) {
             client.send(ServerEvents.ERROR, {
                 code: "INVALID_CARD_TYPE",
@@ -758,18 +776,10 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         }
         const cost = template?.cost ?? 1;
 
-        if (typeValue === "challenge" || typeValue === "reaction" || template?.subtype === "reaction") {
-            client.send(ServerEvents.ERROR, {
-                code: "REACTION_ONLY_WINDOW",
-                message: "Le carte Reazione possono essere giocate solo durante la finestra di reazione.",
-            });
-            return;
-        }
-
         // Validate targetPlayerId for targeted cards (magic/modifier)
         const effectAction = String(template?.effect?.action ?? "");
         const effectTarget = String(template?.effect?.target ?? "").toLowerCase();
-        const targetedActions = ["steal_pa", "steal_card", "discard", "trade_random", "roll_modifier"];
+        const targetedActions = ["steal_pa", "steal_card", "discard", "trade_random"];
         const needsTarget = targetedActions.includes(effectAction)
             && ["opponent", "another_opponent", "opponent_hand"].includes(effectTarget);
 
@@ -792,6 +802,24 @@ export class OfficeRoom extends Room<OfficeRoomState> {
             }
         }
 
+        const isItemCard = typeValue === "item" || typeValue === "oggetto";
+        let resolvedTargetHeroCardId: string | undefined = undefined;
+        if (isItemCard) {
+            const equipTarget = resolveHeroEquipTarget({
+                player,
+                targetHeroCardId,
+                allowFallbackToPlayerLevel: true,
+            });
+            if (!equipTarget.ok) {
+                client.send(ServerEvents.ERROR, {
+                    code: equipTarget.errorCode ?? "MISSING_HERO_TARGET",
+                    message: equipTarget.errorMessage ?? "Seleziona un Hero valido per equipaggiare l'Item.",
+                });
+                return;
+            }
+            resolvedTargetHeroCardId = equipTarget.targetHero?.id;
+        }
+
         if (!this.checkPlayerTurnAction(client, cost)) return;
 
         // Deduct PA and remove from hand immediately
@@ -804,6 +832,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         pending.actionType = ClientMessages.PLAY_MAGIC;
         pending.targetCardId = cardInHand.templateId; // templateId for CardEffectParser
         pending.targetPlayerId = needsTarget ? targetPlayerId : undefined;
+        pending.targetHeroCardId = resolvedTargetHeroCardId;
         pending.timestamp = Date.now();
 
         this.state.pendingAction = pending;
@@ -905,32 +934,11 @@ export class OfficeRoom extends Room<OfficeRoomState> {
 
     private resolvePhase(): void {
         this.state.phase = GamePhase.RESOLUTION;
-        console.log(`🔥 Reaction Window closed. Resolving stack of ${this.state.actionStack.length} action(s)...`);
+        console.log(`Reaction Window closed. Resolving stack of ${this.state.actionStack.length} action(s)...`);
 
-        const originalAction = this.state.pendingAction;
+        const resolution = resolveReactionQueue(this.state as any);
+        const originalAction = resolution.originalAction;
 
-        // Build the reactions array in chronological order (oldest first).
-        // Our internal stack has stack[0] = newest reaction, stack[N-1] = original action.
-        const chainStack = [...this.state.actionStack].reverse();
-
-        // The first element is the original action. The rest are reactions.
-        const reactions = chainStack.slice(1);
-
-        // Run the full LIFO resolution queue using Agent 3's API
-        let result: IResolveQueueResult | null = null;
-        try {
-            if (originalAction) {
-                result = CardEffectParser.resolveQueue(originalAction, reactions, this.state as any);
-            }
-        } catch (err) {
-            console.error("[ROOM] FATAL: Error during CardEffectParser.resolveQueue:", err);
-            result = {
-                success: false,
-                log: ["[resolveQueue] Internal error during resolution. Action cancelled."]
-            };
-        }
-
-        // Apply structural effects that CardEffectParser can't do (Colyseus schema mutations):
         let structuralSuccess = !originalAction?.isCancelled;
         if (originalAction && !originalAction.isCancelled) {
             switch (originalAction.actionType) {
@@ -941,37 +949,28 @@ export class OfficeRoom extends Room<OfficeRoomState> {
                 case ClientMessages.SOLVE_CRISIS:
                     structuralSuccess = this.applyCrisisResolution(originalAction.playerId, originalAction.targetCrisisId!);
                     break;
+                case ClientMessages.PLAY_MAGIC:
+                    structuralSuccess = this.applyMagicResolution(originalAction);
+                    break;
                 default:
                     structuralSuccess = true;
                     break;
             }
         }
 
-        // TASK 2: Consume pending_draw_X tags set by CardEffectParser
-        this.state.players.forEach((player) => {
-            const effects = player.activeEffects as string[];
-            for (let i = effects.length - 1; i >= 0; i--) {
-                const tag = effects[i];
-                if (typeof tag === 'string' && tag.startsWith('pending_draw_')) {
-                    const drawCount = parseInt(tag.replace('pending_draw_', ''), 10);
-                    if (!isNaN(drawCount) && drawCount > 0) {
-                        for (let d = 0; d < drawCount; d++) {
-                            const drawn = DeckManager.drawCard(this.serverDeck);
-                            if (drawn) {
-                                (player.hand as any[]).push(this.createCardStateFromDeckCard(drawn));
-                            }
-                        }
-                        this.state.deckCount = this.serverDeck.length;
-                    }
-                    effects.splice(i, 1); // Consume the tag
-                }
-            }
-        });
+        const drawnCards = consumePendingDrawTags(
+            this.state as any,
+            () => DeckManager.drawCard(this.serverDeck),
+            (card) => this.createCardStateFromDeckCard(card),
+        );
+        if (drawnCards > 0) {
+            this.state.deckCount = this.serverDeck.length;
+        }
 
-        const parserSuccess = result ? result.success : !originalAction?.isCancelled;
-        const success = parserSuccess && structuralSuccess;
-        const log = result ? [...result.log] :
-            (success ? [`Azione originale eseguita con successo.`] : [`Azione annullata.`]);
+        const success = resolution.parserSuccess && structuralSuccess;
+        const log = resolution.log.length > 0
+            ? [...resolution.log]
+            : (success ? [`Azione originale eseguita con successo.`] : [`Azione annullata.`]);
         if (originalAction && originalAction.actionType === ClientMessages.SOLVE_CRISIS && !originalAction.isCancelled) {
             log.push(success
                 ? "Imprevisto risolto con successo."
@@ -980,25 +979,16 @@ export class OfficeRoom extends Room<OfficeRoomState> {
 
         this.broadcast(ServerEvents.ACTION_RESOLVED, { success, log });
 
-        // Cleanup
         this.state.pendingAction = null as any;
         this.state.actionStack = [];
         this.state.reactionEndTime = 0;
         this.reactionTimeout = null;
         this.state.phase = GamePhase.PLAYER_TURN;
 
-        console.log(`   ✅ Resolution complete. Restored PLAYER_TURN.`);
+        console.log(`Resolution complete. Restored PLAYER_TURN.`);
         this.checkWinConditions();
     }
 
-    // ─────────────────────────────────────────────────────
-    //  Structural effect appliers (Colyseus schema mutations)
-    // ─────────────────────────────────────────────────────
-
-    /**
-     * Moves the card from pending limbo → player's company (public area).
-     * Called by resolveReactions when the PLAY_EMPLOYEE action is not cancelled.
-     */
     private applyEmployeeHire(playerId: string, templateId: string): void {
         const player = this.state.players.get(playerId);
         if (!player) return;
@@ -1025,6 +1015,34 @@ export class OfficeRoom extends Room<OfficeRoomState> {
      * - On success: reward + remove crisis
      * - On fail: apply crisis penalty
      */
+    private applyMagicResolution(action: IPendingAction): boolean {
+        const player = this.state.players.get(action.playerId);
+        if (!player) return false;
+        if (!action.targetCardId) return true;
+
+        const template = this.getTemplate(action.targetCardId);
+        if (!template) return false;
+
+        const typeValue = String(template.type ?? "").trim().toLowerCase();
+        if (typeValue !== "item" && typeValue !== "oggetto") {
+            return true;
+        }
+
+        const equipTarget = resolveHeroEquipTarget({
+            player,
+            targetHeroCardId: action.targetHeroCardId,
+            allowFallbackToPlayerLevel: true,
+        });
+        if (!equipTarget.ok) return false;
+        if (!equipTarget.targetHero) {
+            // Temporary compatibility fallback: no explicit hero target, skip structural equip.
+            return true;
+        }
+
+        const itemCard = createItemCardForEquip(template, () => this.generateId());
+        return equipItemOnHero(equipTarget.targetHero, itemCard);
+    }
+
     private applyCrisisResolution(playerId: string, crisisId: string): boolean {
         const player = this.state.players.get(playerId);
         if (!player) return false;
@@ -1039,22 +1057,19 @@ export class OfficeRoom extends Room<OfficeRoomState> {
             ? crisis.targetRoll
             : (typeof template?.targetRoll === "number" ? template.targetRoll : 7);
 
-        const roll1 = 1 + Math.floor(Math.random() * 6);
-        const roll2 = 1 + Math.floor(Math.random() * 6);
         const modifier = this.getCrisisRollModifier(playerId) + (typeof crisis.modifier === "number" ? crisis.modifier : 0);
-        const total = roll1 + roll2 + modifier;
-        const success = total >= targetRoll;
+        const roll = rollCrisisAttempt(targetRoll, modifier);
 
         this.broadcast(ServerEvents.DICE_ROLLED, {
             playerId,
             cardId: crisis.id,
-            roll1,
-            roll2,
-            total,
-            success,
+            roll1: roll.roll1,
+            roll2: roll.roll2,
+            total: roll.total,
+            success: roll.success,
         });
 
-        if (success) {
+        if (roll.success) {
             const reward = template?.effect?.reward;
             if (typeof reward === "string" && reward.startsWith("vp_")) {
                 const gainedVp = parseInt(reward.replace("vp_", ""), 10);
@@ -1063,7 +1078,8 @@ export class OfficeRoom extends Room<OfficeRoomState> {
                 player.score += 1;
             }
             crisisArr.splice(idx, 1);
-            console.log(`   🗑️  Crisis ${crisis.templateId} removed from central table.`);
+            this.refillCentralCrisesToThree();
+            console.log(`   Crisis ${crisis.templateId} removed from central table.`);
             return true;
         }
 
@@ -1156,38 +1172,19 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         if (this.state.phase === GamePhase.GAME_OVER) return;
 
         for (const [sessionId, player] of this.state.players) {
-            // TASK 1: Calculate weighted employee count using win_multiplier_X tags
-            let weightedEmployeeCount = 0;
-            const companyArr = player.company as any[];
-            for (const empCard of companyArr) {
-                let multiplier = 1;
-                const effects = player.activeEffects as string[];
-                for (const eff of effects) {
-                    if (typeof eff === 'string' && eff.startsWith('win_multiplier_')) {
-                        const parsedMul = parseInt(eff.replace('win_multiplier_', ''), 10);
-                        if (!isNaN(parsedMul) && parsedMul > multiplier) {
-                            multiplier = parsedMul;
-                        }
-                    }
-                }
-                weightedEmployeeCount += multiplier;
-            }
+            const evaluation = evaluatePlayerWin(player, WIN_EMPLOYEES, WIN_CRISES);
+            if (!evaluation.won) continue;
 
-            const crisisVP = player.score;
+            this.state.winnerId = sessionId;
+            this.state.phase = GamePhase.GAME_OVER;
 
-            const won = weightedEmployeeCount >= WIN_EMPLOYEES || crisisVP >= WIN_CRISES;
-            if (won) {
-                this.state.winnerId = sessionId;
-                this.state.phase = GamePhase.GAME_OVER;
-
-                this.broadcast(ServerEvents.GAME_WON, {
-                    winnerId: player.sessionId,
-                    winnerName: player.username,
-                    finalScore: player.score
-                } as IGameWonEvent);
-                console.log(`🏆 GAME OVER! Winner: ${player.username} (weighted employees: ${weightedEmployeeCount}, crisisVP: ${crisisVP})`);
-                return;
-            }
+            this.broadcast(ServerEvents.GAME_WON, {
+                winnerId: player.sessionId,
+                winnerName: player.username,
+                finalScore: player.score,
+            } as IGameWonEvent);
+            console.log(`GAME OVER! Winner: ${player.username} (weighted employees: ${evaluation.weightedEmployeeCount}, crisisVP: ${evaluation.crisisVP})`);
+            return;
         }
     }
 
@@ -1196,25 +1193,23 @@ export class OfficeRoom extends Room<OfficeRoomState> {
     // ─────────────────────────────────────────────────────
 
     private checkPlayerTurnAction(client: Client, requiredPA: number): boolean {
-        // TASK 4: Block all actions during GAME_OVER
-        if (this.state.phase === GamePhase.GAME_OVER) {
-            client.send(ServerEvents.ERROR, { code: "GAME_OVER", message: "La partita è terminata." });
-            return false;
-        }
-        if (client.sessionId !== this.state.currentTurnPlayerId) {
-            client.send(ServerEvents.ERROR, { code: "NOT_YOUR_TURN", message: "Non è il tuo turno." });
-            return false;
-        }
-        if (this.state.phase !== GamePhase.PLAYER_TURN) {
-            client.send(ServerEvents.ERROR, { code: "WRONG_PHASE", message: "Fase non corretta." });
-            return false;
-        }
         const player = this.state.players.get(client.sessionId);
-        if (!player || player.actionPoints < requiredPA) {
-            client.send(ServerEvents.ERROR, { code: "NO_PA", message: "Punti Azione insufficienti." });
+        const validation = validateAndSpendTurnAction({
+            phase: this.state.phase,
+            currentTurnPlayerId: this.state.currentTurnPlayerId,
+            requesterPlayerId: client.sessionId,
+            requiredPA,
+            player,
+        });
+
+        if (!validation.ok) {
+            client.send(ServerEvents.ERROR, {
+                code: validation.code ?? "ACTION_DENIED",
+                message: validation.message ?? "Azione non consentita.",
+            });
             return false;
         }
-        player.actionPoints -= requiredPA;
+
         return true;
     }
 
@@ -1274,3 +1269,9 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         return null;
     }
 }
+
+
+
+
+
+

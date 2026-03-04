@@ -22,6 +22,7 @@ class CardState extends schema_1.Schema {
         this.templateId = "";
         this.type = SharedTypes_1.CardType.EMPLOYEE;
         this.equippedItems = new schema_1.ArraySchema();
+        this.subtype = "none";
     }
 }
 exports.CardState = CardState;
@@ -65,6 +66,10 @@ __decorate([
     (0, schema_1.type)([CardState]),
     __metadata("design:type", Array)
 ], CardState.prototype, "equippedItems", void 0);
+__decorate([
+    (0, schema_1.type)("string"),
+    __metadata("design:type", String)
+], CardState.prototype, "subtype", void 0);
 // ═════════════════════════════════════════════════════════
 //  PendingActionState — action context for Reaction Window
 // ═════════════════════════════════════════════════════════
@@ -102,6 +107,10 @@ __decorate([
     (0, schema_1.type)("string"),
     __metadata("design:type", String)
 ], PendingActionState.prototype, "targetPlayerId", void 0);
+__decorate([
+    (0, schema_1.type)("string"),
+    __metadata("design:type", String)
+], PendingActionState.prototype, "targetHeroCardId", void 0);
 __decorate([
     (0, schema_1.type)("number"),
     __metadata("design:type", Number)

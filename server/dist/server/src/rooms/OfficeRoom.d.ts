@@ -9,6 +9,8 @@ export declare class OfficeRoom extends Room<OfficeRoomState> {
     protected serverDeck: ICardData[];
     /** Card template lookup map (templateId → ICardTemplate) built from cards_db.json */
     private cardTemplates;
+    private monsterTemplateIds;
+    private monsterBag;
     onCreate(_options: any): void;
     onAuth(client: Client, options: JoinOptions, _request: any): {
         ceoName: string;
@@ -24,7 +26,9 @@ export declare class OfficeRoom extends Room<OfficeRoomState> {
     private handleJoinGame;
     private handleStartMatch;
     private startGame;
+    private assignPartyLeaders;
     private populateCentralCrises;
+    private refillCentralCrisesToThree;
     private dealInitialHands;
     private createCardStateFromDeckCard;
     private handleEndTurn;
@@ -35,16 +39,18 @@ export declare class OfficeRoom extends Room<OfficeRoomState> {
     private handlePlayMagic;
     private handlePlayReaction;
     private resolvePhase;
-    /**
-     * Moves the card from pending limbo → player's company (public area).
-     * Called by resolveReactions when the PLAY_EMPLOYEE action is not cancelled.
-     */
     private applyEmployeeHire;
     /**
-     * Removes the resolved crisis from centralCrises.
-     * CardEffectParser.resolve already awarded VP via resolveCrisis().
+     * Server-authoritative crisis resolution:
+     * - Roll 2d6 (+ modifiers)
+     * - Broadcast DICE_ROLLED
+     * - On success: reward + remove crisis
+     * - On fail: apply crisis penalty
      */
-    private applyCrisisRemoval;
+    private applyMagicResolution;
+    private applyCrisisResolution;
+    private getCrisisRollModifier;
+    private applyCrisisPenalty;
     private checkWinConditions;
     private checkPlayerTurnAction;
     private handleEmote;

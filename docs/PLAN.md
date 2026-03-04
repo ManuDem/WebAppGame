@@ -1,167 +1,92 @@
-# PLAN
+# PLAN - Stato Milestone
 
-Piano milestone approvato. Focus: mantenere il core loop semplificato Here To Slay e rifinire UX/mobile + testabilita.
+Piano operativo aggiornato come living document.
 
-## Milestone 0 - Baseline & Mapping
+## M0 - Baseline & Mapping
+Stato: `completata`
 
-Output atteso:
-- `docs/ARCHITECTURE.md` aggiornato
-- `AGENTS.md` in root
-- procedura riproduzione partita documentata
-
-File coinvolti:
+Output:
 - `AGENTS.md`
 - `docs/ARCHITECTURE.md`
-- `docs/index.md`
+- mappa avvio/progetto/documentazione
 
-Comandi verifica:
-```bash
-cd server && npm run build
-cd client && npm run build
-```
+Verifica:
+- `cd server && npm.cmd run build`
+- `cd client && npm.cmd run build`
 
-Acceptance:
-- comandi reali presenti
-- mappa scene/network/state/deck chiara
+## M1 - Specifica regole semplificate
+Stato: `completata`
 
-## Milestone 1 - Specifica regole semplificate
-
-Output atteso:
-- `docs/GDD.md` con:
+Output:
+- `docs/GDD.md` compilato con:
   - as-is dal codice
-  - varianti proposte
-  - variante scelta
-  - rischi di bilanciamento + piano test
-
-File coinvolti:
-- `docs/GDD.md`
-- riferimenti: `shared/SharedTypes.ts`, `shared/cards_db.json`, `server/src/rooms/OfficeRoom.ts`
-
-Comandi verifica:
-```bash
-npm test -- --runInBand --forceExit tests/DeckManager.test.ts tests/CardEffectParser.test.ts server/tests/core_loop.test.ts server/tests/reaction_stress.test.ts server/tests/win_conditions.test.ts
-```
+  - variante semplificata scelta
+  - decision log A/B/C
+  - impatto tecnico sui file reali
 
 Acceptance:
-- coerenza documentata tra regole dichiarate e codice reale
-- decisioni bloccanti esplicitate
+- regole allineate all'implementazione corrente
+- nessun placeholder vuoto per le sezioni critiche M1
 
-## Milestone 2 - Refactor logica per testabilita
+## M2 - Refactor logica per testabilità
+Stato: `completata`
 
-Output atteso:
-- separazione logica core dal rendering, dove ragionevole
-- test unitari su turno/azioni/vittoria/effetti base
+Output:
+- logica estratta da `OfficeRoom` verso `server/src/game/*`:
+  - `turnFlow.ts`
+  - `winConditions.ts`
+  - `monsterBoard.ts`
+  - `reactionResolution.ts`
+  - `itemEquip.ts`
+- `OfficeRoom` mantenuta come orchestratore rete/stato authoritative
+- decisioni A/B/C applicate server-side
+- nuovi test mirati:
+  - `server/tests/gameplay_foundation.test.ts`
 
-File coinvolti (target):
-- `server/src/rooms/OfficeRoom.ts`
-- eventuali moduli `server/src/game/*`
-- `server/tests/*`, `tests/*`
-
-Comandi verifica:
-```bash
-cd server && npm run build
-npm test -- --runInBand --forceExit tests/DeckManager.test.ts tests/CardEffectParser.test.ts server/tests/core_loop.test.ts server/tests/reaction_stress.test.ts server/tests/win_conditions.test.ts
-```
-
-Acceptance:
-- smoke suite stabile green
-- nessuna regressione bloccante sul core loop
-
-## Milestone 3 - UI/UX carte
-
-Output atteso:
-- mini-card compatte in mano/tavolo
-- overlay full-card al tap/click (artwork in alto, testo completo sotto)
-- hit areas robuste mobile/desktop
-
-File coinvolti (target):
-- `client/src/gameobjects/CardGameObject.ts`
-- `client/src/scenes/GameScene.ts`
-
-Comandi verifica:
-```bash
-cd client && npm run build
-```
-
-Smoke manuale:
-- tap su carta apre overlay
-- close overlay sempre accessibile
-- drag/tap non confliggono
+Comandi verifica M2:
+- `cd server && npm.cmd run build`
+- `cd client && npm.cmd run build`
+- `npm.cmd test -- --runInBand --forceExit tests/DeckManager.test.ts tests/CardEffectParser.test.ts server/tests/core_loop.test.ts server/tests/reaction_stress.test.ts server/tests/win_conditions.test.ts`
+- `npm.cmd test -- --runInBand --forceExit server/tests/gameplay_foundation.test.ts`
 
 Acceptance:
-- leggibilita migliore su mobile
-- interazione carte stabile
+- smoke suite stabile verde
+- test nuovi verdi su AP, reaction-only, item equip su Hero, monster refill
 
-## Milestone 4 - Pixel art makeover
+## M3 - UI/UX carte
+Stato: `pending`
 
-Output atteso:
-- rendering crisp (no blur)
-- scaling responsivo mobile-first
-- layout con meno overlap e feedback visivo coerente
+Scope previsto:
+- mini-card + overlay carta grande
+- hit areas mobile-first
+- miglioramenti leggibilità board/hand
 
-File coinvolti (target):
-- `client/src/main.ts`
-- `client/src/scenes/*.ts`
-- `client/src/ui/*`
+## M4 - Pixel art makeover
+Stato: `pending`
 
-Comandi verifica:
-```bash
-cd client && npm run build
-```
+Scope previsto:
+- render crisp + scaling
+- feedback visivo coerente
+- layout anti-overlap mobile/landscape
 
-Acceptance:
-- UI leggibile in portrait/landscape
-- stile uniforme 16-bit handheld
+## M5 - i18n IT/EN completo
+Stato: `pending`
 
-## Milestone 5 - i18n IT/EN
-
-Output atteso:
-- tutte le stringhe UI centralizzate
-- default IT, EN selezionabile
+Scope previsto:
+- centralizzazione stringhe residue
+- copertura completa scene UI
 - persistenza lingua
 
-File coinvolti (target):
-- `client/src/i18n.ts`
-- scene/UI client
+## M6 - QA finale
+Stato: `pending`
 
-Comandi verifica:
-```bash
-cd client && npm run build
-```
-
-Smoke manuale:
-- cambio lingua in UI
-- riapertura app mantiene lingua
-- nessuna stringa hardcoded residua in scene principali
-
-Acceptance:
-- copertura IT/EN completa sulle view principali
-
-## Milestone 6 - QA finale
-
-Output atteso:
-- `docs/QA.md` con risultati build/test/smoke/playtest
-- bug bloccanti risolti o tracciati come noti
-
-File coinvolti:
+Scope previsto:
 - `docs/QA.md`
-- eventuali fix tecnici minori
+- playtest checklist completa
+- bug bloccanti finali
 
-Comandi verifica:
-```bash
-cd server && npm run build
-cd client && npm run build
-npm test -- --runInBand --forceExit tests/DeckManager.test.ts tests/CardEffectParser.test.ts server/tests/core_loop.test.ts server/tests/reaction_stress.test.ts server/tests/win_conditions.test.ts
-```
+## Decisioni bloccanti (attive)
 
-Acceptance:
-- build client/server green
-- smoke suite stabile green
-- checklist playtest compilata
-
-## Decisioni bloccanti approvate
-
-- A: `Challenge/Modifier` reaction-only, `Magic` azione attiva.
-- B: `Item` equip su Hero specifico (fallback player-level solo temporaneo per migrazione).
-- C: refill immediato monster per mantenere sempre 3 in tavola.
-
+- A: Challenge/Modifier reaction-only; Magic attiva.
+- B: Item su Hero specifico, fallback player-level solo temporaneo.
+- C: Monster board sempre a 3 con refill immediato.

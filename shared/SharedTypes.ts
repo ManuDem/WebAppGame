@@ -126,6 +126,7 @@ export interface ISolveCrisisPayload {
 export interface IPlayMagicPayload {
     cardId: string;         // ID runtime della carta Magheggio
     targetPlayerId?: string; // SessionId del bersaglio (opzionale, dipende dal tipo di Magheggio)
+    targetHeroCardId?: string; // ID runtime dell'Hero bersaglio per Item equip
 }
 
 /** Payload inviato dal Client con PLAY_REACTION */
@@ -352,6 +353,7 @@ export interface IPendingAction {
     targetCardId?: string;   // Se stava giocando una carta, quale? (es. employee card, o target trick)
     targetCrisisId?: string; // Se stava risolvendo una crisi, quale?
     targetPlayerId?: string; // Se il target era un giocatore
+    targetHeroCardId?: string; // Hero bersaglio per equip Item
     timestamp: number;       // Quando è iniziata la finestra
     isCancelled?: boolean;   // Flag to neutralize action via cancel reactions
 }

@@ -1,95 +1,116 @@
-# GDD - LUCrAre: SEMPRE
+# GDD - LUCrAre: SEMPRE (M1 + M2)
 
-Documento di design operativo (template iniziale).  
-Nota: in questa milestone non vengono cambiate regole nel codice, solo documentazione.
+Documento di design operativo aggiornato al codice attuale (server authoritative Colyseus).
 
-## 1. Scope
+## 1. As-is dal codice (implementato oggi)
 
-- Obiettivo: mantenere il core loop Here To Slay semplificato.
-- Vincoli:
-  - multiplayer web, mobile-first
-  - server authoritative
-  - reaction window + dadi mantenuti
-
-## 2. As-Is Dal Codice (stato implementato)
-
-Riferimenti:
+Riferimenti principali:
 - `server/src/rooms/OfficeRoom.ts`
+- `server/src/game/*`
 - `shared/SharedTypes.ts`
 - `shared/cards_db.json`
 
-### Setup e lobby
+### 1.1 Setup, lobby e avvio
+- Stanza con codice a 4 cifre.
+- Accesso con nome CEO (3-15 alfanumerico).
+- Partita avviabile da host con almeno 2 giocatori connessi e pronti.
+- Mano iniziale: 3 carte.
+- AP di turno: 3.
 
-- Match: 2-10 giocatori
-- Host crea stanza con codice 4 cifre
-- Join con codice + nome CEO
-- Start solo host e solo con giocatori connessi/ready
+### 1.2 Core loop turno
+- Fase standard: `PLAYER_TURN`.
+- Azioni che consumano AP validate lato server.
+- `DRAW_CARD` costa 1 AP e pesca dal deck server-side.
+- Fine turno con passaggio al prossimo giocatore connesso.
 
-### Turno
+### 1.3 Modello carte (5+2)
+- Main deck: `Hero`, `Item`, `Magic`, `Modifier`, `Challenge`.
+- Setup/board: `Monster`, `Party Leader`.
 
-- 3 AP per turno
-- pescare carta costa 1 AP
-- mano iniziale 3 carte
+### 1.4 Reaction window e risoluzione
+- Azioni con finestra reazione: assunzione Hero, risoluzione Monster, Magic.
+- `REACTION_WINDOW` di 5000 ms.
+- Risoluzione coda via `CardEffectParser.resolveQueue` + mutazioni strutturali server.
+- `Challenge`/`Modifier` sono giocabili solo in reaction window.
 
-### Carte e categorie
+### 1.5 Monster flow
+- Board Monster mantiene 3 slot (refill immediato dopo risoluzione riuscita).
+- Tiro crisi: 2d6 + modificatori.
+- Successo: rimozione Monster + reward VP.
+- Fallimento: applicazione penalty.
 
-- Main deck: Hero, Item, Magic, Modifier, Challenge
-- Setup: Monster, Party Leader
+### 1.6 Win conditions
+- Vittoria con 4 Hero in company (conteggio pesato con `win_multiplier_X`).
+- Oppure vittoria con 2 VP da Monster risolti.
 
-### Reazioni
+## 2. Variante semplificata scelta (finale)
 
-- Finestra reazione: 5000 ms
-- Risoluzione stack: LIFO
-- Challenge/Modifier giocati in reaction window
+Obiettivo: mantenere feeling Here To Slay ma con regole più leggibili e robuste lato multiplayer.
 
-### Dadi e crisi/monster
+### 2.1 Decisioni approvate e applicate
+- A) `Challenge` e `Modifier` restano **reaction-only**; `Magic` resta azione attiva.
+- B) `Item` equipaggiato su **Hero specifico**; fallback player-level solo temporaneo (compatibilità client/dati).
+- C) Board Monster sempre a 3 con refill immediato.
 
-- Risoluzione crisi server-authoritative
-- Tiro 2d6 + modificatori
+### 2.2 Loop semplificato target
+- Turno di un giocatore: 3 AP.
+- Azioni principali: pescare, giocare Hero, giocare Magic/Item, tentare Monster, chiudere turno.
+- Reazioni solo nella finestra dedicata, con risoluzione deterministica server.
 
-### Win condition
+### 2.3 Regole Item semplificate
+- Item giocato come azione di turno.
+- Target primario: Hero del proprietario.
+- Equip persistente sull'Hero (`equippedItems`) per modificatori passivi ai tiri.
+- Fallback temporaneo mantenuto per compatibilità quando il target Hero non è esplicito.
 
-- 4 Hero in company
-- oppure 2 Monster risolti
+## 3. Impatto tecnico della variante sui file
 
-## 3. Variante Semplificata Scelta (struttura)
+### 3.1 Nuovi moduli gameplay (testabilità)
+- `server/src/game/turnFlow.ts`
+  - validazione/spesa AP
+  - calcolo prossimo turno connesso
+- `server/src/game/winConditions.ts`
+  - calcolo conteggio Hero pesato
+  - valutazione vittoria
+- `server/src/game/monsterBoard.ts`
+  - bag Monster
+  - draw template Monster
+  - roll 2d6 + modifier
+- `server/src/game/reactionResolution.ts`
+  - orchestrazione resolve queue
+  - consumo tag `pending_draw_X`
+- `server/src/game/itemEquip.ts`
+  - risoluzione target Hero per equip
+  - creazione item equipaggiato
 
-Decisioni approvate:
-- A) Challenge/Modifier reaction-only, Magic attiva
-- B) Item equip su Hero specifico (fallback player-level temporaneo)
-- C) Refill immediato monster per mantenere 3 in tavola
+### 3.2 Refactor orchestrazione room
+- `server/src/rooms/OfficeRoom.ts`
+  - mantiene responsabilità networking/orchestrazione
+  - delega logica core ai moduli `server/src/game/*`
+  - applica A/B/C in modo server-authoritative
 
-Scelta finale prevista (max 1 variante):
-- [TODO] descrivere in modo definitivo una sola variante semplificata da applicare in milestone gameplay.
+### 3.3 Contratti condivisi aggiornati
+- `shared/SharedTypes.ts`
+  - aggiunto `targetHeroCardId` su `IPlayMagicPayload` e `IPendingAction`
+- `server/src/State.ts`
+  - aggiunto `targetHeroCardId` in `PendingActionState`
 
-### 3.1 Pillars (placeholder)
+### 3.4 Surfacing client minimo
+- `client/src/network/ServerManager.ts`
+  - `playMagic(cardId, targetPlayerId?, targetHeroCardId?)`
+- `client/src/scenes/GameScene.ts`
+  - selettore target differenziato per Item (selezione Hero)
+  - blocco implicito play fuori finestra per reaction cards
+- `client/src/i18n.ts`
+  - nuove stringhe per selezione Hero e errori Item target
 
-- [TODO] definire principi UX/gameplay in 5 punti
+## 4. Rischi e follow-up (fuori scope M1+M2)
 
-### 3.2 Turn flow target (placeholder)
+- Bilanciamento Item: alcune effect DSL restano ancora player-level e non hero-scoped puro.
+- UX completa carte/overlay/pixel-art resta in milestone successive.
+- Legacy suite failing non incluse nella smoke stabile restano da trattare in milestone QA finale.
 
-- [TODO] dettagliare sequenza standard turno (AP, azioni, limiti)
+## 5. Decision log
 
-### 3.3 Card interactions (placeholder)
-
-- [TODO] Hero/Item/Magic/Modifier/Challenge/Monster/Leader: regole sintetiche definitive
-
-### 3.4 UI/feedback target (placeholder)
-
-- [TODO] regole di presentazione carte mini/fullscreen e feedback tap
-
-## 4. Rischi Bilanciamento (placeholder)
-
-- [TODO] rischio snowball da hero stacking
-- [TODO] rischio lock da chain reaction
-- [TODO] rischio eccesso RNG sui monster
-
-## 5. Piano Test Bilanciamento (placeholder)
-
-- [TODO] smoke simulazioni rapide 2/3/4 player
-- [TODO] metriche minime (durata match, numero turni medi, win route)
-
-## 6. Decision Log
-
-- 2026-03-04: fissate le decisioni bloccanti A/B/C (solo documentazione, nessun cambio codice).
-- [TODO] aggiungere qui le future decisioni di design approvate.
+- 2026-03-04: approvate A/B/C.
+- 2026-03-04: M1+M2 implementate in server gameplay modules + test dedicati.

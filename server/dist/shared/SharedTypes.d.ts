@@ -86,6 +86,7 @@ export interface ISolveCrisisPayload {
 export interface IPlayMagicPayload {
     cardId: string;
     targetPlayerId?: string;
+    targetHeroCardId?: string;
 }
 /** Payload inviato dal Client con PLAY_REACTION */
 export interface IPlayReactionPayload {
@@ -145,14 +146,21 @@ export interface IStartReactionTimerPayload {
     actionTypeLabel: string;
 }
 export declare enum CardType {
-    EMPLOYEE = "employee",// Impiegati
-    MAGIC = "trick",// Alias legacy: magheggio/trucco
-    CRISIS = "crisis",// Alias legacy: crisi
-    REACTION = "reaction",// Alias legacy: reazione
-    IMPREVISTO = "crisis",// Alias nuovo per contenuti crisi
-    OGGETTO = "item",// Alias nuovo per equipaggiamenti
-    EVENTO = "trick"
+    HERO = "hero",
+    ITEM = "item",
+    MAGIC = "magic",
+    MODIFIER = "modifier",
+    CHALLENGE = "challenge",
+    MONSTER = "monster",
+    PARTY_LEADER = "party_leader",
+    EMPLOYEE = "hero",
+    IMPREVISTO = "monster",
+    OGGETTO = "item",
+    EVENTO = "magic",
+    CRISIS = "monster",
+    REACTION = "challenge"
 }
+export type CardSubtype = "none" | "spell" | "challenge" | "debuff" | "reaction" | "equipment" | "modifier" | "leader" | "monster";
 /** Dati essenziali pubblici di una carta in gioco */
 export interface ICardData {
     id: string;
@@ -165,6 +173,7 @@ export interface ICardData {
     targetRoll?: number;
     modifier?: number;
     equippedItems?: ICardData[];
+    subtype?: CardSubtype;
 }
 /** Visual metadata per representation in the Phaser client */
 export interface ICardVisuals {
@@ -177,9 +186,9 @@ export interface ICardVisuals {
  */
 export type ICardEffect = ICardEffectDSL;
 /** Union of all valid target strings in the DSL */
-export type TargetType = "self" | "opponent" | "opponent_hand" | "employee" | "win_condition" | "trick" | "another_opponent" | "played_card";
+export type TargetType = "self" | "opponent" | "opponent_hand" | "hero" | "employee" | "monster" | "win_condition" | "magic" | "trick" | "another_opponent" | "played_card";
 /** Union of all valid action strings in the DSL */
-export type ActionType = "produce" | "protect" | "passive_bonus" | "discount_cost" | "draw_cards" | "steal_pa" | "steal_card" | "discard" | "trade_random" | "crisis_resolve" | "redirect_effect" | "steal_played_card" | "cancel_effect";
+export type ActionType = "produce" | "protect" | "passive_bonus" | "discount_cost" | "roll_modifier" | "draw_cards" | "steal_pa" | "steal_card" | "discard" | "trade_random" | "crisis_resolve" | "redirect_effect" | "steal_played_card" | "cancel_effect";
 /** Strongly-typed Effect DSL used in cards_db.json and resolved by CardEffectParser */
 export interface ICardEffectDSL {
     action: ActionType;
@@ -202,6 +211,7 @@ export interface ICardTemplate {
     visuals: ICardVisuals;
     targetRoll?: number;
     modifier?: number;
+    subtype?: CardSubtype;
 }
 /** Stato del singolo Giocatore */
 export interface IPlayer {
@@ -227,6 +237,7 @@ export interface IPendingAction {
     targetCardId?: string;
     targetCrisisId?: string;
     targetPlayerId?: string;
+    targetHeroCardId?: string;
     timestamp: number;
     isCancelled?: boolean;
 }

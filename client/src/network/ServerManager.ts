@@ -107,8 +107,8 @@ export class ServerManager {
         this.room?.send(ClientMessages.PLAY_EMPLOYEE, { cardId });
     }
 
-    public playMagic(cardId: string, targetPlayerId?: string) {
-        this.room?.send(ClientMessages.PLAY_MAGIC, { cardId, targetPlayerId });
+    public playMagic(cardId: string, targetPlayerId?: string, targetHeroCardId?: string) {
+        this.room?.send(ClientMessages.PLAY_MAGIC, { cardId, targetPlayerId, targetHeroCardId });
     }
 
     public solveCrisis(_cardId: string, crisisId: string) {

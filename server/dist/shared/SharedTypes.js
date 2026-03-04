@@ -83,12 +83,20 @@ var DropZoneArea;
 // -------------------------------------------------------------------------
 var CardType;
 (function (CardType) {
-    CardType["EMPLOYEE"] = "employee";
-    CardType["MAGIC"] = "trick";
-    CardType["CRISIS"] = "crisis";
-    CardType["REACTION"] = "reaction";
-    CardType["IMPREVISTO"] = "crisis";
+    // Modello target Here-to-Slay Lite (5+2)
+    CardType["HERO"] = "hero";
+    CardType["ITEM"] = "item";
+    CardType["MAGIC"] = "magic";
+    CardType["MODIFIER"] = "modifier";
+    CardType["CHALLENGE"] = "challenge";
+    CardType["MONSTER"] = "monster";
+    CardType["PARTY_LEADER"] = "party_leader";
+    // Alias legacy (compat retroattiva durante la migrazione)
+    CardType["EMPLOYEE"] = "hero";
+    CardType["IMPREVISTO"] = "monster";
     CardType["OGGETTO"] = "item";
-    CardType["EVENTO"] = "trick"; // Alias nuovo per eventi/trucchi
+    CardType["EVENTO"] = "magic";
+    CardType["CRISIS"] = "monster";
+    CardType["REACTION"] = "challenge";
 })(CardType || (exports.CardType = CardType = {}));
 //# sourceMappingURL=SharedTypes.js.map

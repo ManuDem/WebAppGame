@@ -70,6 +70,9 @@ export class PendingActionState extends Schema implements IPendingAction {
     @type("string")
     targetPlayerId?: string;
 
+    @type("string")
+    targetHeroCardId?: string;
+
     @type("number")
     timestamp: number = 0;
 

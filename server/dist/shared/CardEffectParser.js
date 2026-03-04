@@ -52,9 +52,11 @@ class CardEffectParser {
             case "protect":
                 return this.resolveProtect(sourcePlayer, targetPlayer);
             case "passive_bonus":
-                return this.resolvePassiveBonus(effect, sourcePlayer);
+                return this.resolvePassiveBonus(effect, sourcePlayer, targetPlayer);
             case "discount_cost":
                 return this.resolveDiscountCost(effect, sourcePlayer);
+            case "roll_modifier":
+                return this.resolveRollModifier(effect, sourcePlayer, targetPlayer);
             case "trade_random":
                 return this.resolveTradeRandom(sourcePlayer, targetPlayer);
             case "redirect_effect":
@@ -241,48 +243,14 @@ class CardEffectParser {
         return true;
     }
     static resolveCrisis(effect, sourcePlayer, gameState) {
-        // 1. Apply reward to solver
-        if (effect.reward === "vp_1") {
-            sourcePlayer.score += 1;
-            console.log(`[CardEffectParser] crisis_resolve: +1 VP to ${sourcePlayer.username}`);
-        }
-        // 2. Apply penalty to ALL OTHER players (the solver is immune)
-        if (effect.penalty) {
-            const allPlayers = Array.from(gameState.players.values());
-            const victims = allPlayers.filter(p => p.sessionId !== sourcePlayer.sessionId);
-            for (const victim of victims) {
-                switch (effect.penalty) {
-                    case "discard_2":
-                        // Scarta 2 carte random dalla mano della vittima
-                        for (let i = 0; i < 2; i++) {
-                            if (victim.hand.length === 0)
-                                break;
-                            const idx = Math.floor(Math.random() * victim.hand.length);
-                            victim.hand.splice(idx, 1);
-                        }
-                        console.log(`[CardEffectParser] crisis penalty discard_2: ${victim.username} lost up to 2 cards`);
-                        break;
-                    case "lose_employee":
-                        // Rimuovi l'ultimo dipendente dalla company della vittima
-                        if (victim.company.length > 0) {
-                            victim.company.pop();
-                            console.log(`[CardEffectParser] crisis penalty lose_employee: ${victim.username} lost last employee`);
-                        }
-                        break;
-                    case "lock_tricks":
-                        // Aggiungi un tag "locked_tricks" agli activeEffects della vittima
-                        if (!victim.activeEffects)
-                            victim.activeEffects = [];
-                        if (!victim.activeEffects.includes("locked_tricks")) {
-                            victim.activeEffects.push("locked_tricks");
-                        }
-                        console.log(`[CardEffectParser] crisis penalty lock_tricks: ${victim.username} tagged`);
-                        break;
-                    default:
-                        console.warn(`[CardEffectParser] Unknown crisis penalty: ${effect.penalty}`);
-                }
-            }
-        }
+        // Crisis structural resolution is server-authoritative in OfficeRoom:
+        // - dice roll
+        // - success/fail check
+        // - reward/penalty application
+        // The parser only acknowledges the DSL action branch.
+        void effect;
+        void sourcePlayer;
+        void gameState;
         return true;
     }
     /**
@@ -323,14 +291,28 @@ class CardEffectParser {
      * passive_bonus — adds "win_multiplier_X" to sourcePlayer.activeEffects.
      * The win-condition checker on the server reads this tag.
      */
-    static resolvePassiveBonus(effect, sourcePlayer) {
-        const multiplier = effect.multiplier ?? 1;
-        if (!sourcePlayer.activeEffects)
-            sourcePlayer.activeEffects = [];
-        const tag = `win_multiplier_${multiplier}`;
-        sourcePlayer.activeEffects.push(tag);
-        console.log(`[CardEffectParser] passive_bonus: "${tag}" added to ${sourcePlayer.username}`);
-        return true;
+    static resolvePassiveBonus(effect, sourcePlayer, targetPlayer) {
+        const target = String(effect.target ?? "win_condition").toLowerCase();
+        if (target === "win_condition") {
+            const multiplier = effect.multiplier ?? effect.amount ?? 1;
+            if (!sourcePlayer.activeEffects)
+                sourcePlayer.activeEffects = [];
+            const tag = `win_multiplier_${multiplier}`;
+            sourcePlayer.activeEffects.push(tag);
+            console.log(`[CardEffectParser] passive_bonus: "${tag}" added to ${sourcePlayer.username}`);
+            return true;
+        }
+        if (target === "employee" || target === "hero") {
+            const amount = effect.amount ?? effect.multiplier ?? 1;
+            const owner = targetPlayer ?? sourcePlayer;
+            if (!owner.activeEffects)
+                owner.activeEffects = [];
+            const tag = `roll_bonus_${amount}`;
+            owner.activeEffects.push(tag);
+            console.log(`[CardEffectParser] passive_bonus: "${tag}" added to ${owner.username}`);
+            return true;
+        }
+        return false;
     }
     /**
      * discount_cost — adds "discount_trick_X" to sourcePlayer.activeEffects.
@@ -340,9 +322,33 @@ class CardEffectParser {
         const amount = effect.amount ?? 1;
         if (!sourcePlayer.activeEffects)
             sourcePlayer.activeEffects = [];
-        const tag = `discount_trick_${amount}`;
+        const target = String(effect.target ?? "magic").toLowerCase();
+        const tag = target === "trick"
+            ? `discount_trick_${amount}` // legacy support
+            : `discount_magic_${amount}`;
         sourcePlayer.activeEffects.push(tag);
+        if (tag !== `discount_trick_${amount}`) {
+            sourcePlayer.activeEffects.push(`discount_trick_${amount}`);
+        }
         console.log(`[CardEffectParser] discount_cost: "${tag}" added to ${sourcePlayer.username}`);
+        return true;
+    }
+    /**
+     * roll_modifier - one-shot bonus/malus consumed by the next dice roll.
+     */
+    static resolveRollModifier(effect, sourcePlayer, targetPlayer) {
+        const amount = Number(effect.amount ?? 0);
+        if (!Number.isFinite(amount) || amount === 0)
+            return false;
+        const target = String(effect.target ?? "self").toLowerCase();
+        const owner = (target === "opponent" || target === "another_opponent")
+            ? (targetPlayer ?? sourcePlayer)
+            : sourcePlayer;
+        if (!owner.activeEffects)
+            owner.activeEffects = [];
+        const tag = `next_roll_mod_${amount}`;
+        owner.activeEffects.push(tag);
+        console.log(`[CardEffectParser] roll_modifier: "${tag}" added to ${owner.username}`);
         return true;
     }
     /**
@@ -396,7 +402,7 @@ class CardEffectParser {
         sourcePlayer.hand.push({
             id: `stolen_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
             templateId: target.targetCardId,
-            type: SharedTypes_1.CardType.EVENTO // Semplificazione: il server la sovrascriverà se necessario
+            type: SharedTypes_1.CardType.CHALLENGE // Semplificazione: il server la sovrascrivera se necessario
         });
         console.log(`[CardEffectParser] steal_played_card: action ${target.id} cancelled; card added to ${sourcePlayer.username}'s hand`);
         return true;

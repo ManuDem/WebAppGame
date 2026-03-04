@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DeckManager = void 0;
+const SharedTypes_1 = require("./SharedTypes");
 const cards_db_json_1 = __importDefault(require("./cards_db.json"));
 /**
  * DeckManager
@@ -32,13 +33,21 @@ class DeckManager {
                 console.warn("[DeckManager] Skipping invalid template entry in cards_db.json:", template);
                 continue;
             }
+            const normalizedType = this.normalizeType(template.type);
+            // Main deck only: Hero, Item, Magic, Modifier, Challenge.
+            if (!this.isMainDeckType(normalizedType)) {
+                continue;
+            }
             for (let i = 0; i < COPIES_PER_CARD; i++) {
                 const card = {
                     id: this.generateUUID(),
                     templateId: template.id,
-                    type: template.type,
+                    type: normalizedType,
                     costPA: template.cost,
-                    isFaceUp: false // Hidden in deck / hand by default
+                    isFaceUp: false, // Hidden in deck / hand by default
+                    subtype: this.normalizeSubtype(template.subtype, template.type),
+                    targetRoll: typeof template.targetRoll === "number" ? template.targetRoll : undefined,
+                    modifier: typeof template.modifier === "number" ? template.modifier : undefined,
                 };
                 deck.push(card);
             }
@@ -91,6 +100,64 @@ class DeckManager {
             const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
             return v.toString(16);
         });
+    }
+    static normalizeType(rawType) {
+        const value = String(rawType ?? "").trim().toLowerCase();
+        switch (value) {
+            case "hero":
+            case "employee":
+            case "impiegato":
+                return SharedTypes_1.CardType.HERO;
+            case "monster":
+            case "crisis":
+            case "imprevisto":
+                return SharedTypes_1.CardType.MONSTER;
+            case "item":
+            case "oggetto":
+                return SharedTypes_1.CardType.ITEM;
+            case "modifier":
+                return SharedTypes_1.CardType.MODIFIER;
+            case "challenge":
+            case "reaction":
+                return SharedTypes_1.CardType.CHALLENGE;
+            case "party_leader":
+            case "partyleader":
+            case "leader":
+                return SharedTypes_1.CardType.PARTY_LEADER;
+            case "magic":
+            case "event":
+            case "trick":
+            case "evento":
+            default:
+                return SharedTypes_1.CardType.MAGIC;
+        }
+    }
+    static normalizeSubtype(rawSubtype, rawType) {
+        const subtype = String(rawSubtype ?? "").trim().toLowerCase();
+        if (["none", "spell", "challenge", "debuff", "reaction", "equipment", "modifier", "leader", "monster"].includes(subtype)) {
+            return subtype;
+        }
+        const type = String(rawType ?? "").trim().toLowerCase();
+        if (type === "item" || type === "oggetto")
+            return "equipment";
+        if (type === "monster" || type === "crisis" || type === "imprevisto")
+            return "monster";
+        if (type === "challenge" || type === "reaction")
+            return "challenge";
+        if (type === "modifier")
+            return "modifier";
+        if (type === "party_leader" || type === "leader")
+            return "leader";
+        if (type === "hero" || type === "employee")
+            return "none";
+        return "spell";
+    }
+    static isMainDeckType(type) {
+        return type === SharedTypes_1.CardType.HERO
+            || type === SharedTypes_1.CardType.ITEM
+            || type === SharedTypes_1.CardType.MAGIC
+            || type === SharedTypes_1.CardType.MODIFIER
+            || type === SharedTypes_1.CardType.CHALLENGE;
     }
 }
 exports.DeckManager = DeckManager;

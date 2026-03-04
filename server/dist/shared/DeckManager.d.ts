@@ -31,5 +31,8 @@ export declare class DeckManager {
      * Basic UUID generator since we want this pure logic class to be environment-agnostic.
      */
     private static generateUUID;
+    private static normalizeType;
+    private static normalizeSubtype;
+    private static isMainDeckType;
 }
 //# sourceMappingURL=DeckManager.d.ts.map

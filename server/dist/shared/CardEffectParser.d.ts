@@ -61,6 +61,10 @@ export declare class CardEffectParser {
      */
     private static resolveDiscountCost;
     /**
+     * roll_modifier - one-shot bonus/malus consumed by the next dice roll.
+     */
+    private static resolveRollModifier;
+    /**
      * trade_random — bidirectional random card swap.
      * sourcePlayer takes 1 random card from targetPlayer's hand;
      * targetPlayer receives 1 random card from sourcePlayer's hand.
