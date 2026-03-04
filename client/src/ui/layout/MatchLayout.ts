@@ -20,6 +20,7 @@ export interface MatchLayout {
     board: LayoutRect;
     hand: LayoutRect;
     log: LayoutRect;
+    controls: LayoutRect;
     handCards: LayoutRect;
     overlay: LayoutRect;
 }
@@ -57,21 +58,21 @@ export function computeMatchLayout(screenW: number, screenH: number): MatchLayou
     );
 
     let topH = isLandscape
-        ? (compactLandscape ? screenH * 0.22 : screenH * 0.25)
+        ? (compactLandscape ? screenH * 0.2 : screenH * 0.23)
         : screenH * 0.27;
     let handH = isLandscape
-        ? (compactLandscape ? screenH * 0.31 : screenH * 0.32)
+        ? (compactLandscape ? screenH * 0.29 : screenH * 0.27)
         : screenH * 0.4;
 
-    topH = Phaser.Math.Clamp(topH, isLandscape ? (compactLandscape ? 78 : 96) : 116, isLandscape ? (compactLandscape ? 124 : 188) : 220);
-    handH = Phaser.Math.Clamp(handH, isLandscape ? (compactLandscape ? 120 : 132) : 250, isLandscape ? (compactLandscape ? 190 : 240) : 390);
+    topH = Phaser.Math.Clamp(topH, isLandscape ? (compactLandscape ? 72 : 90) : 116, isLandscape ? (compactLandscape ? 118 : 178) : 220);
+    handH = Phaser.Math.Clamp(handH, isLandscape ? (compactLandscape ? 112 : 124) : 250, isLandscape ? (compactLandscape ? 180 : 222) : 390);
 
     let boardH = screenH - topH - handH;
-    const minBoard = isLandscape ? (compactLandscape ? 150 : 138) : 230;
+    const minBoard = isLandscape ? (compactLandscape ? 164 : 154) : 230;
     if (boardH < minBoard) {
         const deficit = minBoard - boardH;
         const topMin = isLandscape ? (compactLandscape ? 70 : 84) : 96;
-        const handMin = isLandscape ? (compactLandscape ? 108 : 116) : 176;
+        const handMin = isLandscape ? (compactLandscape ? 98 : 108) : 176;
         const handShrink = Math.min(deficit * 0.7, Math.max(0, handH - handMin));
         handH -= handShrink;
         const topShrink = Math.min(deficit - handShrink, Math.max(0, topH - topMin));
@@ -83,20 +84,33 @@ export function computeMatchLayout(screenW: number, screenH: number): MatchLayou
     const board = rect(content.x, topBar.y + topBar.h, content.w, Math.round(boardH));
     const hand = rect(content.x, board.y + board.h, content.w, Math.round(handH));
 
-    const logDockW = Phaser.Math.Clamp(content.w * (isLandscape ? 0.36 : 0.62), 190, isLandscape ? 420 : 470);
-    const logDockH = Phaser.Math.Clamp(topBar.h * (isLandscape ? 0.28 : 0.25), 34, 56);
-    const log = clampRectToContent(
-        rect(
-            content.x + content.w - logDockW - 12,
-            topBar.y + 10,
+    const logDockW = Phaser.Math.Clamp(content.w * (isLandscape ? 0.28 : 0.62), 190, isLandscape ? 360 : 470);
+    const logDockH = Phaser.Math.Clamp((isLandscape ? board.h : topBar.h) * 0.16, 34, 56);
+    const logBaseRect = isLandscape
+        ? rect(
+            content.x + content.w - logDockW - safe,
+            board.y + safe,
             logDockW,
             logDockH,
-        ),
-        topBar,
-    );
+        )
+        : rect(
+            content.x + content.w - logDockW - safe,
+            topBar.y + safe,
+            logDockW,
+            logDockH,
+        );
+    const log = clampRectToContent(logBaseRect, isLandscape ? board : topBar);
 
+    let controlsH = Phaser.Math.Clamp(
+        hand.h * (isLandscape ? (compactLandscape ? 0.42 : 0.4) : 0.34),
+        isLandscape ? (compactLandscape ? 62 : 68) : 80,
+        isLandscape ? (compactLandscape ? 88 : 102) : 124,
+    );
+    const controls = clampRectToContent(rect(hand.x + 8, hand.y + 8, hand.w - 16, controlsH), hand);
+
+    const handCardsTop = controls.y + controls.h + 8;
     const handCards = clampRectToContent(
-        rect(hand.x + 8, hand.y + 66, hand.w - 16, hand.h - 74),
+        rect(hand.x + 8, handCardsTop, hand.w - 16, hand.h - (handCardsTop - hand.y) - 8),
         hand,
     );
 
@@ -113,6 +127,7 @@ export function computeMatchLayout(screenW: number, screenH: number): MatchLayou
         board,
         hand,
         log,
+        controls,
         handCards,
         overlay: rect(0, 0, screenW, screenH),
     };
@@ -135,6 +150,7 @@ export function drawMatchLayoutDebug(
     strokeRect(layout.board, 0xf6d288);
     strokeRect(layout.hand, 0x9ca8ff);
     strokeRect(layout.log, 0xff9fb8);
+    strokeRect(layout.controls, 0xf9c5ff);
     strokeRect(layout.handCards, 0xc8f2ff, 0.72);
 
     textBounds.forEach((b) => strokeRect(b, 0xffffff, 0.55));

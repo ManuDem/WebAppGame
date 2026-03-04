@@ -173,3 +173,36 @@ Comandi verifica:
 - A: Challenge/Modifier reaction-only; Magic attiva.
 - B: Item su Hero specifico, fallback player-level solo temporaneo.
 - C: Monster board sempre a 3 con refill immediato.
+
+## M9 - Match UX Clarity + Landscape Fix
+Stato: `completata`
+
+Output:
+- modularizzazione della logica azioni in modulo testabile:
+  - `client/src/ui/match/MatchActionState.ts`
+- `GameScene` aggiornata per:
+  - pannello stato azioni (turno/attacco/pesca/fine turno + motivi blocco)
+  - bottone `ATTACCA` esplicito sotto ogni Imprevisto
+  - feedback bloccanti espliciti su draw/end turn/attack
+  - rimozione attacco Imprevisto via drag-drop ambiguo
+- layout manager potenziato:
+  - `controls` area dedicata in `MatchLayout`
+  - hand ridotta e board espansa in landscape
+  - log riposizionato in board (landscape) per ridurre overlap top HUD
+- pipeline artwork reale:
+  - mapping manifest in `CardArtworkResolver`
+  - integrazione PNG reali in `client/public/cards/`
+- QA tooling:
+  - script screenshot responsive `client/qa/capture-responsive.mjs`
+
+Comandi verifica M9:
+- `cd client && npm.cmd run build`
+- `cd server && npm.cmd run build`
+- `npm.cmd test -- --runInBand --forceExit tests/MatchActionState.test.ts tests/PendingPlayModel.test.ts tests/TextFitModel.test.ts tests/I18nCoverage.test.ts tests/CardPresentationModel.test.ts tests/DeckManager.test.ts tests/CardEffectParser.test.ts server/tests/core_loop.test.ts server/tests/reaction_stress.test.ts server/tests/win_conditions.test.ts server/tests/room_connection.test.ts`
+
+Acceptance M9:
+- in landscape la schermata match non mostra overlap critici nei pannelli toccati
+- draw/end/attacco mostrano motivi blocco chiari
+- attacco Imprevisti comprensibile (CTA dedicata) e non ambiguo via drag
+- carte piu compatte in board/hand su viewport landscape
+- artwork PNG reali usati dove disponibili, fallback invariato altrove

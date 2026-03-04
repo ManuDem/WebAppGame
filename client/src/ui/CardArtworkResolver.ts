@@ -9,9 +9,11 @@ export interface CardArtworkManifestEntry {
 const CARD_ART_BASE_PATH = '/cards';
 const CARD_ART_TEXTURE_PREFIX = 'card-art-';
 
-// Add real PNG mappings here as assets are produced, for example:
-// { templateId: 'emp_01', file: 'emp_01.png' }
-const CARD_ARTWORK_MANIFEST: CardArtworkManifestEntry[] = [];
+// Real PNG mappings currently available in repository assets.
+const CARD_ARTWORK_MANIFEST: CardArtworkManifestEntry[] = [
+    { templateId: 'emp_01', file: 'hero_luca.png' },
+    { templateId: 'emp_07', file: 'hero_marco.png' },
+];
 
 const manifestPathById = new Map<string, string>();
 const requestedTextureKeys = new Set<string>();

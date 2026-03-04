@@ -258,3 +258,37 @@ npm test -- --runInBand
     - `server build` OK
     - test nuovi OK (`8/8`)
     - smoke suite stabile OK (`35/35`)
+- 2026-03-04 (milestone match UX clarity + landscape fix):
+  - modularizzazione stato azioni:
+    - nuovo modulo `client/src/ui/match/MatchActionState.ts`
+    - ragioni blocco centralizzate (turno/fase/AP/mazzo/monster/game over)
+    - test dedicati `tests/MatchActionState.test.ts`
+  - `GameScene`:
+    - pannello azioni persistente con messaggi chiari su:
+      - turno corrente
+      - attacco Imprevisti disponibile/bloccato
+      - pesca disponibile/bloccata
+      - fine turno disponibile/bloccata
+    - draw/end turn sempre cliccabili con feedback esplicito se bloccati
+    - attacco Imprevisti ora esplicito con CTA `ATTACCA` sotto ogni crisi
+    - drag su zona crisi disabilitato come trigger attacco (riduce ambiguita UX)
+    - hit area bottoni stabilizzate (>=44px sui controlli principali toccati)
+  - layout/landscape:
+    - `MatchLayout` esteso con area `controls`
+    - hand ridotta e board ampliata in landscape
+    - carte in mano/board ulteriormente compattate
+    - game log riposizionato in board su landscape per evitare overlap con HUD top
+  - artwork pipeline:
+    - manifest reale in `CardArtworkResolver`
+    - mapping:
+      - `emp_01 -> hero_luca.png`
+      - `emp_07 -> hero_marco.png`
+    - PNG copiati in `client/public/cards/` con fallback invariato
+  - QA:
+    - aggiunto script screenshot responsive `client/qa/capture-responsive.mjs`
+    - script npm: `qa:capture:responsive`
+    - aggiornati `docs/PLAN.md`, `docs/QA.md`, `docs/ui/MATCH_UI_SPEC.md`
+  - verifica:
+    - `client build` OK
+    - `server build` OK
+    - test + smoke suite OK (`56/56`)

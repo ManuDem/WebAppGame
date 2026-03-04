@@ -19,10 +19,11 @@ Zone:
 1. `top bar`
 2. `board centrale`
 3. `hand bottom`
-4. `event feed` (all'interno della zona hand, collassabile/espandibile)
-5. `overlay layer` (inspect carta, target selector, dice toast, reaction overlay)
+4. `controls/action bar` (all'interno della hand)
+5. `event feed` (collassabile/espandibile)
+6. `overlay layer` (inspect carta, target selector, dice toast, reaction overlay)
 
-Regola hard: le carte della mano usano solo l'area `handCards` (sotto al log) e non invadono la board.
+Regola hard: le carte della mano usano solo l'area `handCards` (sotto ai controls) e non invadono la board.
 
 ## 3) Breakpoint minimi supportati
 Layout verificato/targettizzato per:
@@ -46,8 +47,9 @@ Regole obbligatorie:
 Strategia applicata:
 - wrapping esplicito per HUD/log/inspect
 - riduzione gerarchica delle info su viewport compatti
-- aumento spazi verticali in landscape compatto
-- log collassabile per liberare area mano
+- aumento area board e riduzione hand in landscape compatto
+- controls dedicati in hand per evitare collisione testi/pulsanti
+- log collassabile e spostato in board su landscape per ridurre overlap con titolo/turno
 - indicatori sintetici su row avversari
 
 ## 5) Layering
@@ -106,6 +108,8 @@ Quando arriva `ServerEvents.DICE_ROLLED`:
 
 Per crisis/monster:
 - badge mini `ROLL X+` sopra la carta in board.
+- CTA esplicita `ATTACCA` sotto ogni Imprevisto (no drag ambiguo su crisi).
+- su azione non consentita: feedback bloccante con motivo (`turno`, `fase`, `PA`, `mazzo`, `nessun target`).
 
 ## 10) Vincoli testo e tipografia
 - font UI non pixelato (nitidezza prioritaria)

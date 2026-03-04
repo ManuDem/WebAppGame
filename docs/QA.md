@@ -142,3 +142,41 @@ Esito:
 
 - Nessun blocco P0 aperto nelle aree toccate.
 - Da rifinire in follow-up: stress test visuale su nickname estremamente lunghi su dispositivi piccoli reali.
+
+## 9) M9 - Match UX Clarity + Landscape Fix
+
+Fix principali validati:
+- action state centralizzato (`MatchActionState`) con motivi blocco localizzati.
+- draw/end turn sempre cliccabili con feedback esplicito quando bloccati.
+- attacco Imprevisti reso esplicito con CTA `ATTACCA` su ogni carta crisi.
+- drag su zona crisi disabilitato come azione di attacco (messaggio guida dedicato).
+- layout landscape alleggerito:
+  - area board ampliata
+  - hand e carte compatte
+  - log spostato dalla top bar alla board su landscape
+- pipeline artwork: mapping reale `emp_01 -> hero_luca.png`, `emp_07 -> hero_marco.png`.
+
+Checklist flow aggiornata (manuale):
+1. Avvio match e verifica turno corrente nel pannello azioni.
+2. Tap su `MAZZO` con AP > 0 e turno attivo: richiesta accettata.
+3. Tap su `MAZZO` fuori turno / AP 0 / mazzo vuoto: messaggio blocco con motivo.
+4. Tap su `ATTACCA` su Imprevisto con AP sufficienti: richiesta inviata.
+5. Tap su `ATTACCA` senza requisiti: messaggio blocco con motivo.
+6. Verifica passaggio turno e aggiornamento pannello azioni.
+7. Verifica inspect carta da hand/company/crisi.
+8. Verifica no overlap evidente in viewport:
+   - 360x640
+   - 390x844
+   - 414x896
+   - 768x1024
+   - 896x414
+   - 1024x768
+   - 1366x768
+
+Tool QA aggiunto:
+- `cd client && npm.cmd run qa:capture:responsive`
+  - cattura screenshot multi-viewport per audit visuale rapido.
+  - nota ambiente sandbox corrente (2026-03-04):
+    - Playwright/Chrome/Edge headless fallisce con `spawn EPERM`.
+    - avvio server puo fallire con `EADDRINUSE` su `:2567` se un processo locale e gia attivo.
+    - in questi casi usare checklist manuale su browser reale.

@@ -11,6 +11,12 @@ import { requestCardArtwork, resolveCardArtworkTexture } from '../ui/CardArtwork
 import { fitTextToBox } from '../ui/text/FitText';
 import { buildInspectPresentation } from '../ui/cards/CardPresentationModel';
 import {
+    ActionBlockReasonKey,
+    MatchActionState,
+    evaluateMatchActionState,
+    evaluateSingleMonsterAttack,
+} from '../ui/match/MatchActionState';
+import {
     acceptPendingCard,
     createPendingPlayState,
     reconcilePendingWithHand,
@@ -32,9 +38,13 @@ import {
 const FONT_UI = APP_FONT_FAMILY;
 
 type CrisisView = {
+    crisis: ICardData;
     zone: Phaser.GameObjects.Zone;
     card: CardGameObject;
     meta?: Phaser.GameObjects.Text;
+    actionBg?: Phaser.GameObjects.Graphics;
+    actionHit?: Phaser.GameObjects.Rectangle;
+    actionLabel?: Phaser.GameObjects.Text;
 };
 
 export class GameScene extends Phaser.Scene {
@@ -117,6 +127,10 @@ export class GameScene extends Phaser.Scene {
 
     private handTitle!: Phaser.GameObjects.Text;
     private paLabel!: Phaser.GameObjects.Text;
+    private actionPanel!: Phaser.GameObjects.Graphics;
+    private actionPanelTitle!: Phaser.GameObjects.Text;
+    private actionPanelHint!: Phaser.GameObjects.Text;
+    private actionPanelDetail!: Phaser.GameObjects.Text;
     private paOrbs: Phaser.GameObjects.Arc[] = [];
     private playersIcon!: Phaser.GameObjects.Image;
     private apIcon!: Phaser.GameObjects.Image;
@@ -344,6 +358,9 @@ export class GameScene extends Phaser.Scene {
         this.lobbyTitle.setText(this.tr('game_lobby'));
         this.handTitle.setText(this.tr('game_hand'));
         this.paLabel.setText(this.tr('game_ap'));
+        this.actionPanelTitle.setText(this.tr('game_action_panel_title'));
+        this.actionPanelHint.setText(this.tr('game_action_panel_waiting'));
+        this.actionPanelDetail.setText('');
         this.gameLogTitle.setText(this.tr('game_log_title'));
         this.gameLogToggleLabel.setText(this.gameLogExpanded ? this.tr('game_log_less') : this.tr('game_log_more'));
         this.reactionTitle.setText(this.tr('game_reaction_title'));
@@ -389,6 +406,85 @@ export class GameScene extends Phaser.Scene {
         const key = codeToKey[code];
         if (key) return this.tr(key);
         return String(message?.message ?? this.tr('game_action_denied'));
+    }
+
+    private localizeActionBlockReason(reasonKey?: ActionBlockReasonKey): string {
+        if (!reasonKey) return this.tr('game_action_denied');
+        return this.tr(reasonKey);
+    }
+
+    private tryDrawCard() {
+        const room = this.serverManager?.room;
+        if (!room) {
+            this.floatText(this.tr('game_no_connection'), '#ff9aa7');
+            return;
+        }
+        const state = room.state as IGameState;
+        const me = (state.players as unknown as Map<string, IPlayer>).get(room.sessionId);
+        if (!state || !me) {
+            this.floatText(this.tr('game_no_connection'), '#ff9aa7');
+            return;
+        }
+
+        const action = evaluateMatchActionState({ state, me, myId: room.sessionId });
+        if (!action.canDraw) {
+            const reason = this.localizeActionBlockReason(action.drawReasonKey);
+            this.floatText(this.tr('game_draw_blocked', { reason }), '#ff9aa7');
+            this.appendGameLog(this.tr('game_draw_blocked_log', { reason }));
+            return;
+        }
+
+        this.serverManager.drawCard();
+        this.floatText(this.tr('game_draw_sent', { cost: action.drawCost }), '#9edcff', this.deckHit.x, this.deckHit.y - 42);
+    }
+
+    private tryEndTurn() {
+        const room = this.serverManager?.room;
+        if (!room) {
+            this.floatText(this.tr('game_no_connection'), '#ff9aa7');
+            return;
+        }
+        const state = room.state as IGameState;
+        const me = (state.players as unknown as Map<string, IPlayer>).get(room.sessionId);
+        if (!state || !me) {
+            this.floatText(this.tr('game_no_connection'), '#ff9aa7');
+            return;
+        }
+
+        const action = evaluateMatchActionState({ state, me, myId: room.sessionId });
+        if (!action.canEndTurn) {
+            const reason = this.localizeActionBlockReason(action.endReasonKey);
+            this.floatText(this.tr('game_end_turn_blocked', { reason }), '#ff9aa7');
+            return;
+        }
+
+        this.serverManager.endTurn();
+    }
+
+    private tryAttackCrisis(crisis: ICardData) {
+        const room = this.serverManager?.room;
+        if (!room) {
+            this.floatText(this.tr('game_no_connection'), '#ff9aa7');
+            return;
+        }
+        const state = room.state as IGameState;
+        const me = (state.players as unknown as Map<string, IPlayer>).get(room.sessionId);
+        if (!state || !me) {
+            this.floatText(this.tr('game_no_connection'), '#ff9aa7');
+            return;
+        }
+
+        const attack = evaluateSingleMonsterAttack({ state, me, myId: room.sessionId }, crisis);
+        if (!attack.canAttack) {
+            const reason = this.localizeActionBlockReason(attack.reasonKey);
+            this.floatText(this.tr('game_attack_blocked', { reason }), '#ff9aa7');
+            this.showCardInspect(crisis);
+            return;
+        }
+
+        this.serverManager.solveCrisis('', String(crisis.id));
+        this.floatText(this.tr('game_attack_sent', { cost: attack.cost }), '#9ff3c2');
+        this.appendGameLog(this.tr('game_attack_sent_log', { name: String(crisis.name ?? this.tr('game_card_unknown')) }));
     }
 
     private createUiObjects() {
@@ -592,6 +688,31 @@ export class GameScene extends Phaser.Scene {
             letterSpacing: 1,
         }).setOrigin(0, 0.5);
 
+        this.actionPanel = this.add.graphics().setDepth(18);
+        this.actionPanelTitle = this.add.text(0, 0, this.tr('game_action_panel_title'), {
+            fontFamily: FONT_UI,
+            fontSize: '11px',
+            color: '#f7e3ba',
+            fontStyle: '700',
+            letterSpacing: 0.8,
+        }).setOrigin(0, 0.5).setDepth(19);
+        this.actionPanelHint = this.add.text(0, 0, '', {
+            fontFamily: FONT_UI,
+            fontSize: '11px',
+            color: '#dceeff',
+            fontStyle: '700',
+            lineSpacing: 2,
+            wordWrap: { width: 280 },
+        }).setOrigin(0, 0).setDepth(19);
+        this.actionPanelDetail = this.add.text(0, 0, '', {
+            fontFamily: FONT_UI,
+            fontSize: '10px',
+            color: '#bcd1e7',
+            fontStyle: '600',
+            lineSpacing: 2,
+            wordWrap: { width: 280 },
+        }).setOrigin(0, 0).setDepth(19);
+
         this.playersIcon = this.add.image(0, 0, this.textures.exists('ui-players') ? 'ui-players' : 'retro-grid').setDepth(23).setScale(0.3).setAlpha(0.95);
         this.deckIcon = this.add.image(0, 0, this.textures.exists('ui-deck') ? 'ui-deck' : 'retro-grid').setDepth(23).setScale(0.26).setAlpha(0.95);
         this.apIcon = this.add.image(0, 0, this.textures.exists('ui-ap') ? 'ui-ap' : 'retro-grid').setDepth(16).setScale(0.23).setAlpha(0.95);
@@ -635,6 +756,9 @@ export class GameScene extends Phaser.Scene {
             this.gameLogToggleLabel,
             this.handTitle,
             this.paLabel,
+            this.actionPanelTitle,
+            this.actionPanelHint,
+            this.actionPanelDetail,
         );
     }
     private createOverlay() {
@@ -764,14 +888,14 @@ export class GameScene extends Phaser.Scene {
             this,
             this.deckHit,
             [this.deckButton, this.deckLabel, this.deckCountText],
-            { onClick: () => this.serverManager.drawCard() },
+            { onClick: () => this.tryDrawCard() },
         );
 
         this.endButtonFx = createSimpleButtonFx(
             this,
             this.endHit,
             [this.endButton, this.endButtonText],
-            { onClick: () => this.serverManager.endTurn() },
+            { onClick: () => this.tryEndTurn() },
         );
 
         this.readyButtonFx = createSimpleButtonFx(
@@ -874,21 +998,7 @@ export class GameScene extends Phaser.Scene {
             }
 
             if (zoneType === 'crisis') {
-                const crisisId = String(zone.getData('crisisId') ?? '');
-                if (!crisisId) {
-                    this.snapBack(card, this.tr('game_invalid_crisis_target'));
-                    return;
-                }
-                this.serverManager.solveCrisis(card.cardData.id, crisisId);
-                this.tweens.add({
-                    targets: card,
-                    x: card.homeX,
-                    y: card.homeY,
-                    scaleX: 1,
-                    scaleY: 1,
-                    duration: 180,
-                    ease: 'Cubic.Out',
-                });
+                this.snapBack(card, this.tr('game_attack_use_button'));
                 return;
             }
 
@@ -1044,35 +1154,35 @@ export class GameScene extends Phaser.Scene {
         this.crisisTitle.setVisible((!compactPortrait || this.centerH > 250) && !compactLandscape);
         this.companyTitle.setVisible((!compactPortrait || this.centerH > 250) && !compactLandscape);
 
+        const controls = this.matchLayout.controls;
+        const controlsY = controls.y + controls.h * 0.5;
         const deckW = this.isLandscapeLayout
-            ? Phaser.Math.Clamp(this.centerH * (compactLandscape ? 0.18 : 0.22), compactLandscape ? 56 : 66, compactLandscape ? 72 : 82)
-            : Phaser.Math.Clamp(this.centerH * 0.24, 74, 92);
-        const deckH = deckW * 1.36;
-        const controlsY = bottomY + Phaser.Math.Clamp(this.bottomH * (compactLandscape ? 0.2 : 0.26), compactLandscape ? 40 : 54, 86);
-        const deckX = this.uiX + this.uiW - deckW * 0.72 - 16;
-        this.deckHit.setSize(deckW, deckH).setPosition(deckX, controlsY);
+            ? Phaser.Math.Clamp(controls.h * (compactLandscape ? 0.68 : 0.78), 52, 72)
+            : Phaser.Math.Clamp(controls.h * 0.72, 66, 86);
+        const deckH = deckW * 1.32;
+        const deckX = controls.x + controls.w - deckW * 0.5 - 10;
+
+        this.deckHit.setSize(Math.max(48, deckW), Math.max(62, deckH)).setPosition(deckX, controlsY);
         this.deckButton.setPosition(deckX, controlsY);
         this.deckLabel
-            .setPosition(deckX, controlsY - deckH * 0.38)
-            .setFontSize(`${Phaser.Math.Clamp(deckW * 0.19, 10, 14)}px`);
+            .setPosition(deckX, controlsY - deckH * 0.37)
+            .setFontSize(`${Phaser.Math.Clamp(deckW * 0.18, 10, 13)}px`);
         this.deckCountText
-            .setPosition(deckX, controlsY + deckH * 0.29)
-            .setFontSize(`${Phaser.Math.Clamp(deckW * 0.34, 20, 28)}px`);
+            .setPosition(deckX, controlsY + deckH * 0.27)
+            .setFontSize(`${Phaser.Math.Clamp(deckW * 0.33, 18, 24)}px`);
         if (this.showDeckIcon) {
-            const iconSize = deckW * 0.38;
+            const iconSize = deckW * 0.34;
             this.deckIcon
-                .setPosition(deckX, controlsY - deckH * 0.13)
+                .setPosition(deckX, controlsY - deckH * 0.11)
                 .setDisplaySize(iconSize, iconSize);
         }
 
         const endW = this.isLandscapeLayout
-            ? Phaser.Math.Clamp(deckW * (compactLandscape ? 1.54 : 1.7), compactLandscape ? 92 : 110, compactLandscape ? 124 : 138)
-            : Phaser.Math.Clamp(deckW * 1.8, 118, 152);
-        const endH = this.isLandscapeLayout
-            ? Phaser.Math.Clamp(deckH * (compactLandscape ? 0.36 : 0.42), 44, 54)
-            : Phaser.Math.Clamp(deckH * 0.44, 44, 54);
-        const endX = deckX - (deckW * 0.5 + endW * 0.5 + (this.isLandscapeLayout ? 18 : 14));
-        this.endHit.setSize(endW, endH).setPosition(endX, controlsY);
+            ? Phaser.Math.Clamp(deckW * (compactLandscape ? 1.64 : 1.78), 96, 132)
+            : Phaser.Math.Clamp(deckW * 1.85, 122, 154);
+        const endH = Phaser.Math.Clamp(deckH * 0.44, 46, 56);
+        const endX = deckX - (deckW * 0.5 + endW * 0.5 + 12);
+        this.endHit.setSize(Math.max(48, endW), Math.max(46, endH)).setPosition(endX, controlsY);
         this.endButton.setPosition(endX, controlsY);
         this.endButtonText
             .setPosition(endX, controlsY)
@@ -1117,29 +1227,47 @@ export class GameScene extends Phaser.Scene {
             .setFontSize(`${Phaser.Math.Clamp(readyW * 0.08, 13, 17)}px`);
         this.startIcon.setPosition(lobbyX - readyW * 0.36, readyY).setDisplaySize(20, 20);
 
-        const bottomTop = bottomY + 2;
-        const handTitleY = bottomTop + Phaser.Math.Clamp(this.bottomH * (compactLandscape ? 0.11 : 0.12), compactLandscape ? 14 : 20, 34);
-        const apY = handTitleY + Phaser.Math.Clamp(this.bottomH * (compactLandscape ? 0.11 : 0.12), compactLandscape ? 14 : 18, 30);
+        const handTitleY = controls.y + Phaser.Math.Clamp(controls.h * 0.2, 12, 18);
+        const apY = controls.y + Phaser.Math.Clamp(controls.h * 0.43, 24, 34);
         this.handTitle
-            .setPosition(this.uiX + 24, handTitleY)
+            .setPosition(controls.x + 14, handTitleY)
             .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.012, 12, 16)}px`);
         this.paLabel
-            .setPosition(this.uiX + (this.showApIcon ? 52 : 14), apY)
+            .setPosition(controls.x + (this.showApIcon ? 42 : 14), apY)
             .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.0105, 11, 14)}px`);
         if (this.showApIcon) {
-            this.apIcon.setPosition(this.uiX + 26, apY + 2).setDisplaySize(18, 18);
+            this.apIcon.setPosition(controls.x + 20, apY + 2).setDisplaySize(18, 18);
         }
-        const orbStart = this.uiX + (this.showApIcon ? 116 : 44);
+        const orbStart = controls.x + (this.showApIcon ? 106 : 44);
         const orbGap = Phaser.Math.Clamp(this.uiW * 0.018, 22, 28);
         this.paOrbs.forEach((orb, index) => orb.setPosition(orbStart + index * orbGap, apY + 2));
 
-        const controlsBottom = controlsY + Math.max(deckH * 0.58, endH * 0.5) + (compactLandscape ? 6 : 10);
-        const handInfoBottom = Math.max(apY + 16, controlsBottom);
+        const actionLeft = controls.x + 10;
+        const actionRight = endX - endW * 0.5 - 12;
+        const actionAvailable = Math.max(120, actionRight - actionLeft);
+        const actionW = Phaser.Math.Clamp(actionAvailable, 120, this.isLandscapeLayout ? 540 : 420);
+        const actionH = Math.max(46, controls.h - 10);
+        const actionY = controls.y + 5;
+        this.actionPanel.clear();
+        this.actionPanel.fillStyle(0x1a2736, 0.92);
+        this.actionPanel.fillRoundedRect(actionLeft, actionY, actionW, actionH, 10);
+        this.actionPanel.lineStyle(1, 0x89a8c7, 0.72);
+        this.actionPanel.strokeRoundedRect(actionLeft, actionY, actionW, actionH, 10);
+
+        this.actionPanelTitle
+            .setPosition(actionLeft + 10, actionY + 10)
+            .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.0098, 10, 12)}px`);
+        this.actionPanelHint
+            .setPosition(actionLeft + 10, actionY + 20)
+            .setWordWrapWidth(Math.max(80, actionW - 20), true)
+            .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.0098, 10, 13)}px`);
+        this.actionPanelDetail
+            .setPosition(actionLeft + 10, actionY + actionH * 0.56)
+            .setWordWrapWidth(Math.max(80, actionW - 20), true)
+            .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.0088, 9, 12)}px`);
+
         this.handCardsRect = {
-            x: this.uiX + 12,
-            y: Phaser.Math.Clamp(handInfoBottom + 6, bottomTop + 54, bottomY + this.bottomH - 82),
-            w: this.uiW - 24,
-            h: Math.max(60, bottomY + this.bottomH - 8 - Phaser.Math.Clamp(handInfoBottom + 6, bottomTop + 54, bottomY + this.bottomH - 82)),
+            ...this.matchLayout.handCards,
         };
 
         this.layoutGameLog();
@@ -1208,21 +1336,20 @@ export class GameScene extends Phaser.Scene {
         if (!log) return;
 
         const content = this.matchLayout.content;
-        const topBar = this.matchLayout.topBar;
 
         const pad = 8;
         const compactPortrait = !this.isLandscapeLayout && this.uiW < 470;
-        const collapsedW = Phaser.Math.Clamp(log.w, 180, this.isLandscapeLayout ? 420 : 500);
+        const collapsedW = Phaser.Math.Clamp(log.w, 180, this.isLandscapeLayout ? 360 : 500);
         const collapsedH = Phaser.Math.Clamp(log.h, 34, 52);
-        const expandedW = Phaser.Math.Clamp(content.w * (this.isLandscapeLayout ? 0.62 : 0.9), 280, 760);
-        const expandedH = Phaser.Math.Clamp(this.matchLayout.board.h * (this.isLandscapeLayout ? 0.78 : 0.56), 180, 360);
+        const expandedW = Phaser.Math.Clamp(content.w * (this.isLandscapeLayout ? 0.56 : 0.9), 280, 760);
+        const expandedH = Phaser.Math.Clamp(this.matchLayout.board.h * (this.isLandscapeLayout ? 0.72 : 0.56), 180, 360);
         const logH = this.gameLogExpanded ? expandedH : collapsedH;
         const x = this.gameLogExpanded
             ? content.x + (content.w - expandedW) * 0.5
-            : log.x + log.w - collapsedW;
+            : log.x + Math.max(0, log.w - collapsedW);
         const y = this.gameLogExpanded
             ? this.matchLayout.board.y + Math.max(8, this.matchLayout.board.h * 0.08)
-            : topBar.y + 8;
+            : log.y;
         const w = this.gameLogExpanded ? expandedW : collapsedW;
         const headerH = this.gameLogExpanded ? 28 : collapsedH;
 
@@ -1291,6 +1418,15 @@ export class GameScene extends Phaser.Scene {
             this.toLayoutRect(this.hudStateText.getBounds()),
             this.toLayoutRect(this.hudReactionText.getBounds()),
             this.toLayoutRect(this.gameLogBody.getBounds()),
+            this.toLayoutRect(this.actionPanelHint.getBounds()),
+            this.toLayoutRect(this.actionPanelDetail.getBounds()),
+            this.toLayoutRect(this.deckHit.getBounds()),
+            this.toLayoutRect(this.endHit.getBounds()),
+            this.toLayoutRect(this.gameLogToggleHit.getBounds()),
+            ...this.crisisViews
+                .map((view) => view.actionHit)
+                .filter((hit): hit is Phaser.GameObjects.Rectangle => Boolean(hit))
+                .map((hit) => this.toLayoutRect(hit.getBounds())),
         ];
         drawMatchLayoutDebug(this.layoutDebugGfx, this.matchLayout, textBounds);
         this.layoutDebugGfx.setVisible(true);
@@ -1842,20 +1978,18 @@ export class GameScene extends Phaser.Scene {
     }
 
     private updateControls(state: IGameState, me: IPlayer, myId: string) {
-        const isMyTurn = state.currentTurnPlayerId === myId;
-        const canDraw = isMyTurn && state.phase === GamePhase.PLAYER_TURN && me.actionPoints >= 1 && state.deckCount > 0;
-        const canEnd = isMyTurn && state.phase === GamePhase.PLAYER_TURN;
+        const actionState = evaluateMatchActionState({ state, me, myId });
 
-        if (this.deckHit.input) this.deckHit.input.enabled = canDraw;
-        if (this.endHit.input) this.endHit.input.enabled = canEnd;
+        if (this.deckHit.input) this.deckHit.input.enabled = true;
+        if (this.endHit.input) this.endHit.input.enabled = true;
 
-        this.drawDeckButton(canDraw);
-        this.drawEndButton(canEnd);
-        if (!canDraw) this.deckButtonFx?.reset();
-        if (!canEnd) this.endButtonFx?.reset();
+        this.drawDeckButton(actionState.canDraw);
+        this.drawEndButton(actionState.canEndTurn);
+        if (!actionState.canDraw) this.deckButtonFx?.reset();
+        if (!actionState.canEndTurn) this.endButtonFx?.reset();
 
         const canReact = state.phase === GamePhase.REACTION_WINDOW && state.pendingAction?.playerId !== myId;
-        const canPlayTurn = state.phase === GamePhase.PLAYER_TURN && isMyTurn;
+        const canPlayTurn = actionState.isMyTurn && state.phase === GamePhase.PLAYER_TURN;
 
         this.handCards.forEach((card) => {
             const canPlayThisCard = canPlayTurn || (canReact && this.isReactionCard(card.cardData));
@@ -1864,6 +1998,78 @@ export class GameScene extends Phaser.Scene {
             }
             if (card.input) card.input.enabled = true;
             this.input.setDraggable(card as unknown as Phaser.GameObjects.GameObject, canPlayThisCard);
+        });
+
+        this.updateActionPanel(state, me, myId, actionState);
+        this.updateCrisisActionButtons(state, me, myId);
+    }
+
+    private updateActionPanel(state: IGameState, _me: IPlayer, myId: string, actionState: MatchActionState) {
+        const active = (state.players as unknown as Map<string, IPlayer>).get(state.currentTurnPlayerId);
+        const turnInfo = actionState.isMyTurn
+            ? this.tr('game_action_turn_you')
+            : this.tr('game_action_turn_other', { name: String(active?.username ?? this.tr('game_unknown_player')) });
+        const attackText = actionState.canAttackMonster
+            ? this.tr('game_action_attack_ready', { cost: actionState.attackCost })
+            : this.tr('game_action_attack_blocked', {
+                reason: this.localizeActionBlockReason(actionState.attackReasonKey),
+            });
+        const drawText = actionState.canDraw
+            ? this.tr('game_action_draw_ready', { cost: actionState.drawCost })
+            : this.tr('game_action_draw_blocked_panel', {
+                reason: this.localizeActionBlockReason(actionState.drawReasonKey),
+            });
+        const endText = actionState.canEndTurn
+            ? this.tr('game_action_end_ready')
+            : this.tr('game_action_end_blocked', {
+                reason: this.localizeActionBlockReason(actionState.endReasonKey),
+            });
+
+        this.actionPanelHint.setText(attackText);
+        this.actionPanelDetail.setText(`${drawText}\n${turnInfo} • ${endText}`);
+
+        const hintWrap = Number((this.actionPanelHint.style as any)?.wordWrapWidth ?? 240);
+        const detailWrap = Number((this.actionPanelDetail.style as any)?.wordWrapWidth ?? 240);
+        fitTextToBox(this.actionPanelHint, this.actionPanelHint.text, hintWrap, Math.max(18, this.matchLayout.controls.h * 0.38), {
+            maxLines: 2,
+            ellipsis: true,
+        });
+        fitTextToBox(this.actionPanelDetail, this.actionPanelDetail.text, detailWrap, Math.max(18, this.matchLayout.controls.h * 0.46), {
+            maxLines: 2,
+            ellipsis: true,
+        });
+
+        if (this.targetSelectorOverlay?.visible && state.currentTurnPlayerId !== myId) {
+            this.hideTargetSelector();
+        }
+    }
+
+    private updateCrisisActionButtons(state: IGameState, me: IPlayer, myId: string) {
+        this.crisisViews.forEach((view) => {
+            if (!view.actionBg || !view.actionHit || !view.actionLabel) return;
+            const evalAttack = evaluateSingleMonsterAttack({ state, me, myId }, view.crisis);
+            const hit = view.actionHit;
+            const w = Math.max(82, hit.width);
+            const h = Math.max(44, hit.height);
+            view.actionBg.clear();
+            paintRetroButton(
+                view.actionBg,
+                { width: w, height: h, radius: 10, borderWidth: 1.1 },
+                {
+                    base: evalAttack.canAttack ? 0x3c7a57 : 0x334455,
+                    border: evalAttack.canAttack ? 0xc4f4d8 : 0x7f97b0,
+                    glossAlpha: evalAttack.canAttack ? 0.2 : 0.08,
+                },
+            );
+            view.actionBg.setPosition(hit.x, hit.y);
+            view.actionLabel
+                .setText(
+                    evalAttack.canAttack
+                        ? this.tr('game_attack_cta_cost', { cost: evalAttack.cost })
+                        : this.tr('game_attack_cta_locked'),
+                )
+                .setColor(evalAttack.canAttack ? '#f6fff8' : '#c7d6e6');
+            fitTextToBox(view.actionLabel, view.actionLabel.text, w - 10, h - 6, { maxLines: 1, ellipsis: true });
         });
     }
 
@@ -2021,10 +2227,13 @@ export class GameScene extends Phaser.Scene {
     }
 
     private rebuildCrises(crises: ICardData[]) {
-        this.crisisViews.forEach(({ zone, card, meta }) => {
+        this.crisisViews.forEach(({ zone, card, meta, actionBg, actionHit, actionLabel }) => {
             zone.destroy();
             card.destroy();
             meta?.destroy();
+            actionBg?.destroy();
+            actionHit?.destroy();
+            actionLabel?.destroy();
         });
         this.crisisViews = [];
 
@@ -2038,9 +2247,9 @@ export class GameScene extends Phaser.Scene {
         );
         const available = this.centerDropW * (this.isLandscapeLayout ? (compactLandscape ? 0.82 : 0.88) : 0.94);
         const scale = this.isLandscapeLayout
-            ? Phaser.Math.Clamp(available / Math.max(1, crises.length * 128), compactLandscape ? 0.42 : 0.46, compactLandscape ? 0.56 : 0.62)
-            : Phaser.Math.Clamp(available / Math.max(1, crises.length * 128), 0.56, 0.74);
-        const spacing = 114 * scale;
+            ? Phaser.Math.Clamp(available / Math.max(1, crises.length * 128), compactLandscape ? 0.34 : 0.4, compactLandscape ? 0.52 : 0.58)
+            : Phaser.Math.Clamp(available / Math.max(1, crises.length * 128), 0.52, 0.7);
+        const spacing = 108 * scale;
         const total = (crises.length - 1) * spacing;
         const startX = this.uiX + this.uiW * 0.5 - total * 0.5;
 
@@ -2078,7 +2287,23 @@ export class GameScene extends Phaser.Scene {
                 ellipsis: true,
             });
 
-            this.crisisViews.push({ zone, card, meta });
+            const actionBg = this.add.graphics().setDepth(43);
+            const actionLabel = this.add.text(0, 0, '', {
+                fontFamily: FONT_UI,
+                fontSize: `${Phaser.Math.Clamp(this.uiW * 0.0088, 9, 12)}px`,
+                color: '#f4f8ff',
+                fontStyle: '700',
+                letterSpacing: 0.4,
+            }).setOrigin(0.5).setDepth(44).setResolution(this.textResolution);
+            const actionHit = this.add.rectangle(0, 0, 92, 44, 0x000000, 0)
+                .setDepth(45)
+                .setInteractive({ useHandCursor: true });
+            const actionY = y + card.displayHeight * 0.52 + 12;
+            actionHit.setPosition(x, actionY);
+            actionLabel.setPosition(x, actionY);
+            actionHit.on('pointerdown', () => this.tryAttackCrisis(cr));
+
+            this.crisisViews.push({ crisis: cr, zone, card, meta, actionBg, actionHit, actionLabel });
         });
     }
 
@@ -2108,7 +2333,7 @@ export class GameScene extends Phaser.Scene {
         );
         const available = this.uiW * (this.isLandscapeLayout ? 0.72 : 0.86);
         const scale = this.isLandscapeLayout
-            ? Phaser.Math.Clamp(available / Math.max(1, cards.length * 126), compactLandscape ? 0.44 : 0.5, compactLandscape ? 0.68 : 0.78)
+            ? Phaser.Math.Clamp(available / Math.max(1, cards.length * 126), compactLandscape ? 0.38 : 0.44, compactLandscape ? 0.6 : 0.7)
             : Phaser.Math.Clamp(available / Math.max(1, cards.length * 126), 0.56, 0.86);
         const spacing = 110 * scale;
         const total = (cards.length - 1) * spacing;
@@ -2153,12 +2378,12 @@ export class GameScene extends Phaser.Scene {
         let scale = this.isLandscapeLayout
             ? Phaser.Math.Clamp(
                 available / Math.max(1, cardsPerRow * (baseCardW * (compactLandscape ? 0.98 : 0.94))),
-                compactLandscape ? 0.54 : 0.62,
-                compactLandscape ? 0.82 : 0.92,
+                compactLandscape ? 0.48 : 0.56,
+                compactLandscape ? 0.74 : 0.86,
             )
             : Phaser.Math.Clamp(available / Math.max(1, cardsPerRow * (baseCardW * 0.9)), 0.68, 0.96);
         if (useTwoRows) {
-            scale = Math.max(scale, this.isLandscapeLayout ? (compactLandscape ? 0.56 : 0.64) : 0.7);
+            scale = Math.max(scale, this.isLandscapeLayout ? (compactLandscape ? 0.5 : 0.58) : 0.7);
         }
 
         const spacing = cardsPerRow > 1
@@ -2238,6 +2463,11 @@ export class GameScene extends Phaser.Scene {
             duration: 190,
             ease: 'Sine.Out',
         });
+
+        const cost = Math.max(0, Number(card.cardData?.costPA ?? 0));
+        if (cost > 0) {
+            this.floatText(this.tr('game_ap_spend_preview', { cost }), '#ffd6a3', this.centerDropX, this.centerDropY - 36);
+        }
     }
 
     private rollbackPendingCardVisual(showFeedback: boolean) {
