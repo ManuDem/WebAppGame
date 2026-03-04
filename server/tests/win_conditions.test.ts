@@ -36,25 +36,23 @@ const createDummyRoom = () => {
     room.state.actionStack = [];
     room["buildCardTemplateLookup"](); // Internal method to load templates
 
-    // Ensure clock exists
-    if (!room.clock) {
-        let currentTime = 0;
-        room.clock = {
-            setTimeout: (cb: any, ms: number) => {
-                let timeoutId = setTimeout(cb, ms);
-                if (!(room as any)["__timeouts"]) (room as any)["__timeouts"] = [];
-                (room as any)["__timeouts"].push({ id: timeoutId, cb, time: currentTime + ms });
-                return { clear: () => clearTimeout(timeoutId) };
-            },
-            tick: (ms: number) => {
-                currentTime += ms;
-                const toRun = (room as any)["__timeouts"]?.filter((t: any) => t.time <= currentTime) || [];
-                (room as any)["__timeouts"] = (room as any)["__timeouts"]?.filter((t: any) => t.time > currentTime) || [];
-                toRun.forEach((t: any) => { clearTimeout(t.id); t.cb(); });
-            },
-            clear: () => { }
-        } as any;
-    }
+    // Ensure clock is mocked
+    let currentTime = 0;
+    (room as any).clock = {
+        setTimeout: (cb: any, ms: number) => {
+            let timeoutId = setTimeout(cb, ms);
+            if (!(room as any)["__timeouts"]) (room as any)["__timeouts"] = [];
+            (room as any)["__timeouts"].push({ id: timeoutId, cb, time: currentTime + ms });
+            return { clear: () => clearTimeout(timeoutId) };
+        },
+        tick: (ms: number) => {
+            currentTime += ms;
+            const toRun = (room as any)["__timeouts"]?.filter((t: any) => t.time <= currentTime) || [];
+            (room as any)["__timeouts"] = (room as any)["__timeouts"]?.filter((t: any) => t.time > currentTime) || [];
+            toRun.forEach((t: any) => { clearTimeout(t.id); t.cb(); });
+        },
+        clear: () => { }
+    };
 
     return room;
 };
