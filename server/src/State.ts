@@ -33,6 +33,15 @@ export class CardState extends Schema implements ICardData {
 
     @type("string")
     description?: string;
+
+    @type("uint8")
+    targetRoll?: number;
+
+    @type("int8")
+    modifier?: number;
+
+    @type([CardState])
+    equippedItems?: ICardData[] = new ArraySchema<CardState>() as any;
 }
 
 // ═════════════════════════════════════════════════════════
@@ -110,7 +119,7 @@ export class PlayerState extends Schema implements IPlayer {
 export class OfficeRoomState extends Schema implements IGameState {
 
     @type("string")
-    phase: GamePhase = GamePhase.WAITING_FOR_PLAYERS;
+    phase: GamePhase = GamePhase.PRE_LOBBY;
 
     @type({ map: PlayerState })
     players: Map<string, IPlayer> = new MapSchema<PlayerState>() as any;

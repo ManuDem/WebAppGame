@@ -116,7 +116,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
             console.warn("[AUTH] Rejected: ceoName already connected", ceoName);
             throw new ServerError(409, "Nome CEO già in uso in questa stanza.");
         }
-        if (this.state.phase !== GamePhase.WAITING_FOR_PLAYERS && !existing) {
+        if (this.state.phase !== GamePhase.WAITING_FOR_PLAYERS && this.state.phase !== GamePhase.PRE_LOBBY && !existing) {
             console.warn("[AUTH] Rejected: match already started and no reconnect slot for", ceoName);
             throw new ServerError(403, "Partita già in corso. Puoi rientrare solo con un nome già presente.");
         }
@@ -222,7 +222,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
                 } else {
                     this.state.currentTurnPlayerId = "";
                     this.state.turnIndex = 0;
-                    this.state.phase = GamePhase.WAITING_FOR_PLAYERS;
+                    this.state.phase = GamePhase.PRE_LOBBY;
                 }
             }
             return;
@@ -293,7 +293,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
     // ─────────────────────────────────────────────────────
 
     private handleJoinGame(client: Client, _data: any): void {
-        if (this.state.phase !== GamePhase.WAITING_FOR_PLAYERS) {
+        if (this.state.phase !== GamePhase.WAITING_FOR_PLAYERS && this.state.phase !== GamePhase.PRE_LOBBY) {
             client.send(ServerEvents.ERROR, { message: "Il gioco è già iniziato." });
             return;
         }
@@ -305,7 +305,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
     }
 
     private handleStartMatch(client: Client): void {
-        if (this.state.phase !== GamePhase.WAITING_FOR_PLAYERS) {
+        if (this.state.phase !== GamePhase.WAITING_FOR_PLAYERS && this.state.phase !== GamePhase.PRE_LOBBY) {
             client.send(ServerEvents.ERROR, { code: "GAME_ALREADY_STARTED", message: "La partita e gia iniziata." });
             return;
         }

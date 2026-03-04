@@ -244,8 +244,11 @@ class CardEffectParser {
     static resolveDrawCards(effect, sourcePlayer) {
         if (!effect.amount)
             return false;
-        // Actual deck pop handled by the server caller; we just signal intent.
-        console.log(`[CardEffectParser] draw_cards: ${sourcePlayer.username} should draw ${effect.amount} card(s) — caller handles deck pop.`);
+        if (!sourcePlayer.activeEffects)
+            sourcePlayer.activeEffects = [];
+        // Il server leggerà questo tag e pescherà N carte dal deck reale
+        sourcePlayer.activeEffects.push(`pending_draw_${effect.amount}`);
+        console.log(`[CardEffectParser] draw_cards: tagged ${sourcePlayer.username} with pending_draw_${effect.amount}`);
         return true;
     }
     static resolveDiscard(effect, targetPlayer) {
@@ -260,10 +263,49 @@ class CardEffectParser {
         console.log(`[CardEffectParser] discard: ${targetPlayer.username} discarded ${effect.amount} card(s)`);
         return true;
     }
-    static resolveCrisis(effect, sourcePlayer, _gameState) {
+    static resolveCrisis(effect, sourcePlayer, gameState) {
+        // 1. Apply reward to solver
         if (effect.reward === "vp_1") {
             sourcePlayer.score += 1;
             console.log(`[CardEffectParser] crisis_resolve: +1 VP to ${sourcePlayer.username}`);
+        }
+        // 2. Apply penalty to ALL OTHER players (the solver is immune)
+        if (effect.penalty) {
+            const allPlayers = Array.from(gameState.players.values());
+            const victims = allPlayers.filter(p => p.sessionId !== sourcePlayer.sessionId);
+            for (const victim of victims) {
+                switch (effect.penalty) {
+                    case "discard_2":
+                        // Scarta 2 carte random dalla mano della vittima
+                        for (let i = 0; i < 2; i++) {
+                            if (victim.hand.length === 0)
+                                break;
+                            const idx = Math.floor(Math.random() * victim.hand.length);
+                            victim.hand.splice(idx, 1);
+                        }
+                        console.log(`[CardEffectParser] crisis penalty discard_2: ${victim.username} lost up to 2 cards`);
+                        break;
+                    case "lose_employee":
+                        // Rimuovi l'ultimo dipendente dalla company della vittima
+                        if (victim.company.length > 0) {
+                            victim.company.pop();
+                            victim.score = victim.company.length;
+                            console.log(`[CardEffectParser] crisis penalty lose_employee: ${victim.username} lost last employee`);
+                        }
+                        break;
+                    case "lock_tricks":
+                        // Aggiungi un tag "locked_tricks" agli activeEffects della vittima
+                        if (!victim.activeEffects)
+                            victim.activeEffects = [];
+                        if (!victim.activeEffects.includes("locked_tricks")) {
+                            victim.activeEffects.push("locked_tricks");
+                        }
+                        console.log(`[CardEffectParser] crisis penalty lock_tricks: ${victim.username} tagged`);
+                        break;
+                    default:
+                        console.warn(`[CardEffectParser] Unknown crisis penalty: ${effect.penalty}`);
+                }
+            }
         }
         return true;
     }
@@ -378,7 +420,7 @@ class CardEffectParser {
         sourcePlayer.hand.push({
             id: `stolen_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
             templateId: target.targetCardId,
-            type: SharedTypes_1.CardType.MAGIC // Semplificazione: il server la sovrascriverà se necessario
+            type: SharedTypes_1.CardType.EVENTO // Semplificazione: il server la sovrascriverà se necessario
         });
         console.log(`[CardEffectParser] steal_played_card: action ${target.id} cancelled; card added to ${sourcePlayer.username}'s hand`);
         return true;

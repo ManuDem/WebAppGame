@@ -34,6 +34,7 @@ export declare class PlayerState extends Schema implements IPlayer {
 export declare class OfficeRoomState extends Schema implements IGameState {
     phase: GamePhase;
     players: Map<string, IPlayer>;
+    hostSessionId: string;
     playerOrder: string[];
     currentTurnPlayerId: string;
     centralCrises: ICardData[];

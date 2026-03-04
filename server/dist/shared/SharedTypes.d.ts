@@ -9,15 +9,19 @@
  */
 export interface JoinOptions {
     ceoName: string;
+    roomCode: string;
 }
 /** Punti Azione massimi concessi ad ogni giocatore all'inizio del proprio turno */
 export declare const MAX_ACTION_POINTS = 3;
 /** Costo in PA dell'azione "Pescare una carta" */
 export declare const DRAW_CARD_COST = 1;
+/** Numero minimo di giocatori pronti per avviare la partita */
+export declare const MIN_PLAYERS_TO_START = 2;
 /** Durata della Reaction Window in millisecondi */
 export declare const REACTION_WINDOW_MS = 5000;
 /** Fasi principali della partita gestite dalla Macchina a Stati del Server */
 export declare enum GamePhase {
+    PRE_LOBBY = "PRE_LOBBY",// Fase in cui si può selezionare mazzo/personaggio
     WAITING_FOR_PLAYERS = "WAITING_FOR_PLAYERS",
     PLAYER_TURN = "PLAYER_TURN",
     REACTION_WINDOW = "REACTION_WINDOW",// Finestra di 5 secondi per reazioni
@@ -27,11 +31,13 @@ export declare enum GamePhase {
 /** Tipi di Messaggio dal Client al Server. Il Server risponderà modificando lo Stato o inviando Errori. */
 export declare enum ClientMessages {
     JOIN_GAME = "JOIN_GAME",
+    START_MATCH = "START_MATCH",
     DRAW_CARD = "DRAW_CARD",
     PLAY_EMPLOYEE = "PLAY_EMPLOYEE",// Assumere dipendente (Triggera Reaction)
     PLAY_MAGIC = "PLAY_MAGIC",// Magheggio immediato
     SOLVE_CRISIS = "SOLVE_CRISIS",// Risolvere crisi (Triggera Reaction)
     PLAY_REACTION = "PLAY_REACTION",// Giocato durante la Reaction Window dagli avversari
+    ROLL_DICE = "ROLL_DICE",// Richiesta di tirare i dadi
     END_TURN = "END_TURN",
     EMOTE = "EMOTE"
 }
@@ -111,6 +117,15 @@ export interface IGameWonEvent {
     winnerName: string;
     finalScore: number;
 }
+/** Payload broadcast dal Server con DICE_ROLLED */
+export interface IDiceRolledEvent {
+    playerId: string;
+    cardId?: string;
+    roll1: number;
+    roll2: number;
+    total: number;
+    success: boolean;
+}
 /** Payload per ServerEvents.SHOW_ANIMATION */
 export interface IVisualAnimationPayload {
     animationId: string;
@@ -130,10 +145,13 @@ export interface IStartReactionTimerPayload {
     actionTypeLabel: string;
 }
 export declare enum CardType {
-    EMPLOYEE = "employee",
-    MAGIC = "trick",
-    CRISIS = "crisis",
-    REACTION = "reaction"
+    EMPLOYEE = "employee",// Impiegati
+    MAGIC = "trick",// Alias legacy: magheggio/trucco
+    CRISIS = "crisis",// Alias legacy: crisi
+    REACTION = "reaction",// Alias legacy: reazione
+    IMPREVISTO = "crisis",// Alias nuovo per contenuti crisi
+    OGGETTO = "item",// Alias nuovo per equipaggiamenti
+    EVENTO = "trick"
 }
 /** Dati essenziali pubblici di una carta in gioco */
 export interface ICardData {
@@ -144,6 +162,9 @@ export interface ICardData {
     isFaceUp?: boolean;
     name?: string;
     description?: string;
+    targetRoll?: number;
+    modifier?: number;
+    equippedItems?: ICardData[];
 }
 /** Visual metadata per representation in the Phaser client */
 export interface ICardVisuals {
@@ -179,6 +200,8 @@ export interface ICardTemplate {
     description: string;
     effect: ICardEffect;
     visuals: ICardVisuals;
+    targetRoll?: number;
+    modifier?: number;
 }
 /** Stato del singolo Giocatore */
 export interface IPlayer {
@@ -211,6 +234,7 @@ export interface IPendingAction {
 export interface IGameState {
     phase: GamePhase;
     players: Map<string, IPlayer>;
+    hostSessionId: string;
     playerOrder: string[];
     currentTurnPlayerId: string;
     turnIndex: number;

@@ -5,7 +5,7 @@
  * Contiene interfacce, Enumeratori di messaggi, Tipi di carte e Strutture Dati.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CardType = exports.DropZoneArea = exports.ServerEvents = exports.ClientMessages = exports.GamePhase = exports.REACTION_WINDOW_MS = exports.DRAW_CARD_COST = exports.MAX_ACTION_POINTS = void 0;
+exports.CardType = exports.DropZoneArea = exports.ServerEvents = exports.ClientMessages = exports.GamePhase = exports.REACTION_WINDOW_MS = exports.MIN_PLAYERS_TO_START = exports.DRAW_CARD_COST = exports.MAX_ACTION_POINTS = void 0;
 // -------------------------------------------------------------------------
 // COSTANTI DI GIOCO
 // -------------------------------------------------------------------------
@@ -13,6 +13,8 @@ exports.CardType = exports.DropZoneArea = exports.ServerEvents = exports.ClientM
 exports.MAX_ACTION_POINTS = 3;
 /** Costo in PA dell'azione "Pescare una carta" */
 exports.DRAW_CARD_COST = 1;
+/** Numero minimo di giocatori pronti per avviare la partita */
+exports.MIN_PLAYERS_TO_START = 2;
 /** Durata della Reaction Window in millisecondi */
 exports.REACTION_WINDOW_MS = 5000;
 // -------------------------------------------------------------------------
@@ -21,6 +23,7 @@ exports.REACTION_WINDOW_MS = 5000;
 /** Fasi principali della partita gestite dalla Macchina a Stati del Server */
 var GamePhase;
 (function (GamePhase) {
+    GamePhase["PRE_LOBBY"] = "PRE_LOBBY";
     GamePhase["WAITING_FOR_PLAYERS"] = "WAITING_FOR_PLAYERS";
     GamePhase["PLAYER_TURN"] = "PLAYER_TURN";
     GamePhase["REACTION_WINDOW"] = "REACTION_WINDOW";
@@ -31,11 +34,13 @@ var GamePhase;
 var ClientMessages;
 (function (ClientMessages) {
     ClientMessages["JOIN_GAME"] = "JOIN_GAME";
+    ClientMessages["START_MATCH"] = "START_MATCH";
     ClientMessages["DRAW_CARD"] = "DRAW_CARD";
     ClientMessages["PLAY_EMPLOYEE"] = "PLAY_EMPLOYEE";
     ClientMessages["PLAY_MAGIC"] = "PLAY_MAGIC";
     ClientMessages["SOLVE_CRISIS"] = "SOLVE_CRISIS";
     ClientMessages["PLAY_REACTION"] = "PLAY_REACTION";
+    ClientMessages["ROLL_DICE"] = "ROLL_DICE";
     ClientMessages["END_TURN"] = "END_TURN";
     ClientMessages["EMOTE"] = "EMOTE"; // Eventuali interazioni non-gameplay (BMing)
 })(ClientMessages || (exports.ClientMessages = ClientMessages = {}));
@@ -82,5 +87,8 @@ var CardType;
     CardType["MAGIC"] = "trick";
     CardType["CRISIS"] = "crisis";
     CardType["REACTION"] = "reaction";
+    CardType["IMPREVISTO"] = "crisis";
+    CardType["OGGETTO"] = "item";
+    CardType["EVENTO"] = "trick"; // Alias nuovo per eventi/trucchi
 })(CardType || (exports.CardType = CardType = {}));
 //# sourceMappingURL=SharedTypes.js.map

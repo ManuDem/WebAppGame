@@ -14,20 +14,24 @@ const cards_db_json_1 = __importDefault(require("../../../shared/cards_db.json")
 //  Constants
 // ─────────────────────────────────────────────────────────
 const MAX_PLAYERS = 10;
-const MIN_PLAYERS = 3;
+const STARTING_HAND_SIZE = 3;
 /** Win conditions */
-const WIN_EMPLOYEES = 5; // Monopolio Umano: 5 dipendenti in company
-const WIN_CRISES = 3; // Problem Solver: 3 crisi risolte (VP score)
+const WIN_EMPLOYEES = 4; // Modalita semplificata: 4 dipendenti in company
+const WIN_CRISES = 2; // Modalita semplificata: 2 crisi risolte (VP score)
 // ═════════════════════════════════════════════════════════
 //  OfficeRoom — the authoritative game room
 // ═════════════════════════════════════════════════════════
 class OfficeRoom extends colyseus_1.Room {
-    /** Handle to the reaction-window countdown timer */
-    reactionTimeout = null;
-    /** Server-side deck (not synchronized to state) */
-    serverDeck = [];
-    /** Card template lookup map (templateId → ICardTemplate) built from cards_db.json */
-    cardTemplates = new Map();
+    constructor() {
+        super(...arguments);
+        this.roomCode = "0000";
+        /** Handle to the reaction-window countdown timer */
+        this.reactionTimeout = null;
+        /** Server-side deck (not synchronized to state) */
+        this.serverDeck = [];
+        /** Card template lookup map (templateId → ICardTemplate) built from cards_db.json */
+        this.cardTemplates = new Map();
+    }
     // ─────────────────────────────────────────────────────
     //  Lifecycle
     // ─────────────────────────────────────────────────────
@@ -37,10 +41,13 @@ class OfficeRoom extends colyseus_1.Room {
         this.setState(new State_1.OfficeRoomState());
         this.state.pendingAction = null;
         this.maxClients = MAX_PLAYERS;
+        this.roomCode = this.normalizeRoomCode(_options?.roomCode);
+        this.setMetadata({ roomCode: this.roomCode });
         console.log("[ROOM] Max clients set to:", this.maxClients);
         // Build card template lookup from embedded JSON
         this.buildCardTemplateLookup();
         this.onMessage(SharedTypes_1.ClientMessages.JOIN_GAME, (client, data) => this.handleJoinGame(client, data));
+        this.onMessage(SharedTypes_1.ClientMessages.START_MATCH, (client, _data) => this.handleStartMatch(client));
         this.onMessage(SharedTypes_1.ClientMessages.END_TURN, (client, _data) => this.handleEndTurn(client));
         this.onMessage(SharedTypes_1.ClientMessages.DRAW_CARD, (client, _data) => this.handleDrawCard(client));
         this.onMessage(SharedTypes_1.ClientMessages.PLAY_EMPLOYEE, (client, data) => this.handlePlayEmployee(client, data));
@@ -50,10 +57,15 @@ class OfficeRoom extends colyseus_1.Room {
         this.onMessage(SharedTypes_1.ClientMessages.EMOTE, (client, data) => this.handleEmote(client, data));
     }
     onAuth(client, options, _request) {
-        console.log("[AUTH] Incoming auth request from client", client.sessionId, "options:", { ceoName: options?.ceoName });
+        console.log("[AUTH] Incoming auth request from client", client.sessionId, "options:", { ceoName: options?.ceoName, roomCode: options?.roomCode });
         if (!options?.ceoName) {
             console.warn("[AUTH] Rejected: missing ceoName");
             throw new colyseus_1.ServerError(400, "Nome CEO mancante.");
+        }
+        const roomCode = this.normalizeRoomCode(options?.roomCode);
+        if (roomCode !== this.roomCode) {
+            console.warn("[AUTH] Rejected: roomCode mismatch", roomCode, "!=", this.roomCode);
+            throw new colyseus_1.ServerError(404, "Codice stanza non valido.");
         }
         const ceoName = options.ceoName;
         if (typeof ceoName !== "string") {
@@ -68,11 +80,53 @@ class OfficeRoom extends colyseus_1.Room {
             console.warn("[AUTH] Rejected: ceoName invalid characters", ceoName);
             throw new colyseus_1.ServerError(400, "Il nome CEO può contenere solo caratteri alfanumerici (niente spazi o simboli).");
         }
-        console.log("[AUTH] Accepted client", client.sessionId, "ceoName:", ceoName);
-        return { ceoName };
+        const existing = this.findPlayerByName(ceoName);
+        if (existing && existing.player.isConnected) {
+            console.warn("[AUTH] Rejected: ceoName already connected", ceoName);
+            throw new colyseus_1.ServerError(409, "Nome CEO già in uso in questa stanza.");
+        }
+        if (this.state.phase !== SharedTypes_1.GamePhase.WAITING_FOR_PLAYERS && !existing) {
+            console.warn("[AUTH] Rejected: match already started and no reconnect slot for", ceoName);
+            throw new colyseus_1.ServerError(403, "Partita già in corso. Puoi rientrare solo con un nome già presente.");
+        }
+        console.log("[AUTH] Accepted client", client.sessionId, "ceoName:", ceoName, "rejoinFrom:", existing?.sessionId ?? null);
+        return { ceoName, rejoinFromSessionId: existing?.sessionId ?? null };
     }
     onJoin(client, options, auth) {
         console.log(`👤 Player connected: ${client.sessionId}`);
+        const rejoinFrom = auth?.rejoinFromSessionId ?? null;
+        if (rejoinFrom && this.state.players.has(rejoinFrom)) {
+            const player = this.state.players.get(rejoinFrom);
+            this.state.players.delete(rejoinFrom);
+            player.sessionId = client.sessionId;
+            player.isConnected = true;
+            this.state.players.set(client.sessionId, player);
+            const orderIndex = this.state.playerOrder.indexOf(rejoinFrom);
+            if (orderIndex !== -1) {
+                this.state.playerOrder.splice(orderIndex, 1, client.sessionId);
+            }
+            if (this.state.currentTurnPlayerId === rejoinFrom) {
+                this.state.currentTurnPlayerId = client.sessionId;
+            }
+            if (this.state.pendingAction) {
+                if (this.state.pendingAction.playerId === rejoinFrom) {
+                    this.state.pendingAction.playerId = client.sessionId;
+                }
+                if (this.state.pendingAction.targetPlayerId === rejoinFrom) {
+                    this.state.pendingAction.targetPlayerId = client.sessionId;
+                }
+            }
+            this.state.actionStack = this.state.actionStack.map((action) => ({
+                ...action,
+                playerId: action.playerId === rejoinFrom ? client.sessionId : action.playerId,
+                targetPlayerId: action.targetPlayerId === rejoinFrom ? client.sessionId : action.targetPlayerId,
+            }));
+            if (this.state.hostSessionId === rejoinFrom) {
+                this.state.hostSessionId = client.sessionId;
+            }
+            console.log("[JOIN] Reconnected by name:", player.username, "oldSession:", rejoinFrom, "newSession:", client.sessionId);
+            return;
+        }
         const player = new State_1.PlayerState();
         player.sessionId = client.sessionId;
         player.username = auth?.ceoName || options?.ceoName || `CEO_${client.sessionId.substring(0, 4)}`;
@@ -80,12 +134,16 @@ class OfficeRoom extends colyseus_1.Room {
         player.isConnected = true;
         player.isReady = false;
         this.state.players.set(client.sessionId, player);
+        if (!this.state.hostSessionId) {
+            this.state.hostSessionId = client.sessionId;
+        }
         console.log("[JOIN] onJoin for session", client.sessionId, "username:", player.username);
         console.log("[JOIN] Current players:", Array.from(this.state.players.keys()));
     }
     async onLeave(client, consented) {
         console.log("[LEAVE] onLeave for session", client.sessionId, "consented:", consented);
         const player = this.state.players.get(client.sessionId);
+        const wasCurrentTurn = this.state.currentTurnPlayerId === client.sessionId;
         if (player) {
             player.isConnected = false;
         }
@@ -93,7 +151,7 @@ class OfficeRoom extends colyseus_1.Room {
         // Check if it's their turn. If so, start a 5s fallback to automatically skip
         // their turn so the game isn't completely paralyzed
         let skipTimeout = null;
-        if (this.state.currentTurnPlayerId === client.sessionId && this.state.phase === SharedTypes_1.GamePhase.PLAYER_TURN) {
+        if (!consented && this.state.currentTurnPlayerId === client.sessionId && this.state.phase === SharedTypes_1.GamePhase.PLAYER_TURN) {
             console.log(`   ⏱️  Active player disconnected. Waiting 5s before advancing turn...`);
             skipTimeout = this.clock.setTimeout(() => {
                 const p = this.state.players.get(client.sessionId);
@@ -102,6 +160,29 @@ class OfficeRoom extends colyseus_1.Room {
                     this.advanceTurn();
                 }
             }, 5000);
+        }
+        if (consented) {
+            this.state.players.delete(client.sessionId);
+            const orderIndex = this.state.playerOrder.indexOf(client.sessionId);
+            if (orderIndex !== -1)
+                this.state.playerOrder.splice(orderIndex, 1);
+            if (this.state.hostSessionId === client.sessionId) {
+                this.assignNextHost();
+            }
+            if (skipTimeout) {
+                skipTimeout.clear();
+            }
+            if (wasCurrentTurn && this.state.phase === SharedTypes_1.GamePhase.PLAYER_TURN) {
+                if (this.state.playerOrder.length > 0) {
+                    this.advanceTurn();
+                }
+                else {
+                    this.state.currentTurnPlayerId = "";
+                    this.state.turnIndex = 0;
+                    this.state.phase = SharedTypes_1.GamePhase.WAITING_FOR_PLAYERS;
+                }
+            }
+            return;
         }
         if (!consented) {
             try {
@@ -126,6 +207,9 @@ class OfficeRoom extends colyseus_1.Room {
                 const orderIndex = this.state.playerOrder.indexOf(client.sessionId);
                 if (orderIndex !== -1)
                     this.state.playerOrder.splice(orderIndex, 1);
+                if (this.state.hostSessionId === client.sessionId) {
+                    this.assignNextHost();
+                }
             }
         }
     }
@@ -165,29 +249,60 @@ class OfficeRoom extends colyseus_1.Room {
         const player = this.state.players.get(client.sessionId);
         if (player && !player.isReady) {
             player.isReady = true;
-            this.state.playerOrder.push(client.sessionId);
             console.log(`   ${client.sessionId} is ready!`);
         }
-        if (this.state.playerOrder.length >= MIN_PLAYERS) {
-            const allReady = Array.from(this.state.players.values()).every(p => p.isReady);
-            if (allReady && this.state.phase === SharedTypes_1.GamePhase.WAITING_FOR_PLAYERS) {
-                this.startGame();
-            }
-        }
     }
-    startGame() {
+    handleStartMatch(client) {
+        if (this.state.phase !== SharedTypes_1.GamePhase.WAITING_FOR_PLAYERS) {
+            client.send(SharedTypes_1.ServerEvents.ERROR, { code: "GAME_ALREADY_STARTED", message: "La partita e gia iniziata." });
+            return;
+        }
+        if (client.sessionId !== this.state.hostSessionId) {
+            client.send(SharedTypes_1.ServerEvents.ERROR, { code: "HOST_ONLY", message: "Solo l'host puo avviare la partita." });
+            return;
+        }
+        const connectedEntries = this.getConnectedPlayerEntries();
+        if (connectedEntries.length < SharedTypes_1.MIN_PLAYERS_TO_START) {
+            client.send(SharedTypes_1.ServerEvents.ERROR, {
+                code: "NOT_ENOUGH_PLAYERS",
+                message: `Servono almeno ${SharedTypes_1.MIN_PLAYERS_TO_START} giocatori connessi.`,
+            });
+            return;
+        }
+        const allConnectedReady = connectedEntries.every((entry) => entry.player.isReady);
+        if (!allConnectedReady) {
+            client.send(SharedTypes_1.ServerEvents.ERROR, {
+                code: "PLAYERS_NOT_READY",
+                message: "Tutti i giocatori connessi devono confermare prima di iniziare.",
+            });
+            return;
+        }
+        this.startGame(connectedEntries.map((entry) => entry.sessionId));
+    }
+    startGame(participantIds) {
+        const connectedReadyIds = participantIds.filter((sessionId) => {
+            const player = this.state.players.get(sessionId);
+            return Boolean(player && player.isConnected && player.isReady);
+        });
+        if (connectedReadyIds.length < SharedTypes_1.MIN_PLAYERS_TO_START) {
+            this.broadcast(SharedTypes_1.ServerEvents.ERROR, {
+                code: "NOT_ENOUGH_READY",
+                message: `Servono almeno ${SharedTypes_1.MIN_PLAYERS_TO_START} giocatori pronti.`,
+            });
+            return;
+        }
         this.state.phase = SharedTypes_1.GamePhase.PLAYER_TURN;
         // Fisher-Yates shuffle of player order
-        const players = Array.from(this.state.playerOrder);
+        const players = Array.from(connectedReadyIds);
         for (let i = players.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [players[i], players[j]] = [players[j], players[i]];
         }
         while (this.state.playerOrder.length > 0)
             this.state.playerOrder.pop();
-        players.forEach(p => this.state.playerOrder.push(p));
+        players.forEach((p) => this.state.playerOrder.push(p));
         this.state.turnIndex = 0;
-        this.state.currentTurnPlayerId = this.state.playerOrder[0] ?? "";
+        this.state.currentTurnPlayerId = this.state.playerOrder.at(0) ?? "";
         this.state.turnNumber = 1;
         // Build real deck via DeckManager
         try {
@@ -215,11 +330,13 @@ class OfficeRoom extends colyseus_1.Room {
         console.log(`🃏 Deck ready: ${this.state.deckCount} cards`);
         // Populate central crises (crisis type only, up to 3)
         this.populateCentralCrises();
+        // Deal an initial hand to keep the first turns fast and readable (casual mode).
+        this.dealInitialHands(players, STARTING_HAND_SIZE);
         // Give PA to first active player
         const activePlayer = this.state.players.get(this.state.currentTurnPlayerId);
         if (activePlayer)
             activePlayer.actionPoints = SharedTypes_1.MAX_ACTION_POINTS;
-        console.log(`🎮 Game started! First turn: ${this.state.currentTurnPlayerId}`);
+        console.log(`🎮 Game started! First turn: ${this.state.currentTurnPlayerId} | starting hand: ${STARTING_HAND_SIZE}`);
         this.broadcast(SharedTypes_1.ServerEvents.TURN_STARTED, {
             playerId: this.state.currentTurnPlayerId,
             turnNumber: this.state.turnNumber,
@@ -234,13 +351,47 @@ class OfficeRoom extends colyseus_1.Room {
             const card = new State_1.CardState();
             card.id = this.generateId();
             card.templateId = t.id;
-            card.type = SharedTypes_1.CardType.CRISIS;
+            card.type = SharedTypes_1.CardType.IMPREVISTO;
             card.costPA = t.cost;
             card.isFaceUp = true;
             card.name = t.name;
             this.state.centralCrises.push(card);
         }
         console.log(`🏦 Central crises populated: ${this.state.centralCrises.length}`);
+    }
+    dealInitialHands(participantIds, cardsPerPlayer) {
+        if (cardsPerPlayer <= 0 || participantIds.length === 0)
+            return;
+        for (let round = 0; round < cardsPerPlayer; round++) {
+            for (const sessionId of participantIds) {
+                const player = this.state.players.get(sessionId);
+                if (!player || !player.isConnected)
+                    continue;
+                const drawnCard = DeckManager_1.DeckManager.drawCard(this.serverDeck);
+                if (!drawnCard) {
+                    console.warn("[ROOM] Deck exhausted during initial hand distribution.");
+                    this.state.deckCount = this.serverDeck.length;
+                    return;
+                }
+                player.hand.push(this.createCardStateFromDeckCard(drawnCard));
+            }
+        }
+        this.state.deckCount = this.serverDeck.length;
+    }
+    createCardStateFromDeckCard(drawnCard) {
+        const card = new State_1.CardState();
+        card.id = drawnCard.id;
+        card.templateId = drawnCard.templateId;
+        card.type = drawnCard.type;
+        if (drawnCard.costPA !== undefined)
+            card.costPA = drawnCard.costPA;
+        card.isFaceUp = false;
+        const tmpl = this.getTemplate(drawnCard.templateId);
+        if (tmpl) {
+            card.name = tmpl.name;
+            card.description = tmpl.description;
+        }
+        return card;
     }
     // ─────────────────────────────────────────────────────
     //  Turn Management
@@ -265,7 +416,7 @@ class OfficeRoom extends colyseus_1.Room {
         let nextPlayerId = "";
         do {
             nextIndex = (nextIndex + 1) % playerCount;
-            nextPlayerId = this.state.playerOrder[nextIndex] ?? "";
+            nextPlayerId = this.state.playerOrder.at(nextIndex) ?? "";
             attempts++;
             if (attempts >= playerCount)
                 break;
@@ -277,12 +428,20 @@ class OfficeRoom extends colyseus_1.Room {
         const nextPlayer = this.state.players.get(this.state.currentTurnPlayerId);
         if (nextPlayer)
             nextPlayer.actionPoints = SharedTypes_1.MAX_ACTION_POINTS;
+        // TASK 3: Reset locked_tricks on all players at turn boundary
+        this.state.players.forEach((player) => {
+            const effects = player.activeEffects;
+            const idx = effects.indexOf("locked_tricks");
+            if (idx !== -1)
+                effects.splice(idx, 1);
+        });
         console.log(`➡️  Turn ${this.state.turnNumber}: ${this.state.currentTurnPlayerId}`);
         this.broadcast(SharedTypes_1.ServerEvents.TURN_STARTED, {
             playerId: this.state.currentTurnPlayerId,
             turnNumber: this.state.turnNumber,
             actionPoints: SharedTypes_1.MAX_ACTION_POINTS
         });
+        this.checkWinConditions();
     }
     // ─────────────────────────────────────────────────────
     //  DRAW_CARD — uses DeckManager.drawCard
@@ -302,20 +461,7 @@ class OfficeRoom extends colyseus_1.Room {
         this.state.deckCount = this.serverDeck.length;
         const player = this.state.players.get(client.sessionId);
         if (player) {
-            const card = new State_1.CardState();
-            card.id = drawnCard.id;
-            card.templateId = drawnCard.templateId;
-            card.type = drawnCard.type;
-            if (drawnCard.costPA !== undefined)
-                card.costPA = drawnCard.costPA;
-            card.isFaceUp = false;
-            // Enrich with template name (visible only to owner via Fog of War filter)
-            const tmpl = this.getTemplate(drawnCard.templateId);
-            if (tmpl) {
-                card.name = tmpl.name;
-                card.description = tmpl.description;
-            }
-            player.hand.push(card);
+            player.hand.push(this.createCardStateFromDeckCard(drawnCard));
         }
         console.log(`📥 DRAW_CARD by ${client.sessionId}. Deck left: ${this.state.deckCount}`);
         client.send(SharedTypes_1.ServerEvents.CARD_DRAWN, {
@@ -425,6 +571,14 @@ class OfficeRoom extends colyseus_1.Room {
         const player = this.state.players.get(client.sessionId);
         if (!player)
             return;
+        // TASK 3: Check locked_tricks tag
+        if (player.activeEffects.includes("locked_tricks")) {
+            client.send(SharedTypes_1.ServerEvents.ERROR, {
+                code: "TRICKS_LOCKED",
+                message: "I Trucchi sono bloccati per questo turno!"
+            });
+            return;
+        }
         const handArr = player.hand;
         const cardIdx = handArr.findIndex((c) => c.id === cardId);
         if (cardIdx === -1) {
@@ -434,6 +588,26 @@ class OfficeRoom extends colyseus_1.Room {
         const cardInHand = handArr[cardIdx];
         const template = this.getTemplate(cardInHand.templateId);
         const cost = template?.cost ?? 1;
+        // TASK 3: Validate targetPlayerId for targeted tricks
+        const needsTarget = template?.effect?.action &&
+            ["steal_pa", "steal_card", "discard", "trade_random"].includes(template.effect.action);
+        if (needsTarget && !targetPlayerId) {
+            client.send(SharedTypes_1.ServerEvents.ERROR, {
+                code: "MISSING_TARGET",
+                message: "Questa carta richiede di scegliere un bersaglio."
+            });
+            return;
+        }
+        if (targetPlayerId) {
+            if (targetPlayerId === client.sessionId) {
+                client.send(SharedTypes_1.ServerEvents.ERROR, { code: "SELF_TARGET", message: "Non puoi bersagliare te stesso." });
+                return;
+            }
+            if (!this.state.players.has(targetPlayerId)) {
+                client.send(SharedTypes_1.ServerEvents.ERROR, { code: "INVALID_TARGET", message: "Il giocatore bersaglio non esiste." });
+                return;
+            }
+        }
         if (!this.checkPlayerTurnAction(client, cost))
             return;
         // Deduct PA and remove from hand immediately
@@ -552,6 +726,26 @@ class OfficeRoom extends colyseus_1.Room {
                     break;
             }
         }
+        // TASK 2: Consume pending_draw_X tags set by CardEffectParser
+        this.state.players.forEach((player) => {
+            const effects = player.activeEffects;
+            for (let i = effects.length - 1; i >= 0; i--) {
+                const tag = effects[i];
+                if (typeof tag === 'string' && tag.startsWith('pending_draw_')) {
+                    const drawCount = parseInt(tag.replace('pending_draw_', ''), 10);
+                    if (!isNaN(drawCount) && drawCount > 0) {
+                        for (let d = 0; d < drawCount; d++) {
+                            const drawn = DeckManager_1.DeckManager.drawCard(this.serverDeck);
+                            if (drawn) {
+                                player.hand.push(this.createCardStateFromDeckCard(drawn));
+                            }
+                        }
+                        this.state.deckCount = this.serverDeck.length;
+                    }
+                    effects.splice(i, 1); // Consume the tag
+                }
+            }
+        });
         const success = result ? result.success : !originalAction?.isCancelled;
         const log = result ? result.log :
             (success ? [`Azione originale eseguita con successo.`] : [`Azione annullata.`]);
@@ -611,19 +805,33 @@ class OfficeRoom extends colyseus_1.Room {
         if (this.state.phase === SharedTypes_1.GamePhase.GAME_OVER)
             return;
         for (const [sessionId, player] of this.state.players) {
-            const employeeCount = player.company.length;
+            // TASK 1: Calculate weighted employee count using win_multiplier_X tags
+            let weightedEmployeeCount = 0;
+            const companyArr = player.company;
+            for (const empCard of companyArr) {
+                let multiplier = 1;
+                const effects = player.activeEffects;
+                for (const eff of effects) {
+                    if (typeof eff === 'string' && eff.startsWith('win_multiplier_')) {
+                        const parsedMul = parseInt(eff.replace('win_multiplier_', ''), 10);
+                        if (!isNaN(parsedMul) && parsedMul > multiplier) {
+                            multiplier = parsedMul;
+                        }
+                    }
+                }
+                weightedEmployeeCount += multiplier;
+            }
             const crisisVP = player.score;
-            const won = employeeCount >= WIN_EMPLOYEES || crisisVP >= WIN_CRISES;
+            const won = weightedEmployeeCount >= WIN_EMPLOYEES || crisisVP >= WIN_CRISES;
             if (won) {
                 this.state.winnerId = sessionId;
                 this.state.phase = SharedTypes_1.GamePhase.GAME_OVER;
-                const payload = {
+                this.broadcast(SharedTypes_1.ServerEvents.GAME_WON, {
                     winnerId: player.sessionId,
                     winnerName: player.username,
                     finalScore: player.score
-                };
-                this.broadcast(SharedTypes_1.ServerEvents.GAME_WON, payload);
-                console.log(`🏆 GAME OVER! Winner: ${player.username} (employees: ${employeeCount}, score: ${crisisVP})`);
+                });
+                console.log(`🏆 GAME OVER! Winner: ${player.username} (weighted employees: ${weightedEmployeeCount}, crisisVP: ${crisisVP})`);
                 return;
             }
         }
@@ -632,6 +840,11 @@ class OfficeRoom extends colyseus_1.Room {
     //  Triple Validation Helper
     // ─────────────────────────────────────────────────────
     checkPlayerTurnAction(client, requiredPA) {
+        // TASK 4: Block all actions during GAME_OVER
+        if (this.state.phase === SharedTypes_1.GamePhase.GAME_OVER) {
+            client.send(SharedTypes_1.ServerEvents.ERROR, { code: "GAME_OVER", message: "La partita è terminata." });
+            return false;
+        }
         if (client.sessionId !== this.state.currentTurnPlayerId) {
             client.send(SharedTypes_1.ServerEvents.ERROR, { code: "NOT_YOUR_TURN", message: "Non è il tuo turno." });
             return false;
@@ -661,6 +874,41 @@ class OfficeRoom extends colyseus_1.Room {
             const v = c === "x" ? r : (r & 0x3 | 0x8);
             return v.toString(16);
         });
+    }
+    getConnectedPlayerEntries() {
+        const connected = [];
+        for (const [sessionId, player] of this.state.players) {
+            const typedPlayer = player;
+            if (typedPlayer.isConnected) {
+                connected.push({ sessionId, player: typedPlayer });
+            }
+        }
+        return connected;
+    }
+    assignNextHost() {
+        const connected = this.getConnectedPlayerEntries();
+        if (connected.length > 0) {
+            this.state.hostSessionId = connected[0].sessionId;
+            return;
+        }
+        const firstAny = this.state.players.keys().next();
+        this.state.hostSessionId = firstAny.done ? "" : firstAny.value;
+    }
+    normalizeRoomCode(raw) {
+        const code = String(raw ?? "").trim();
+        if (!/^\d{4}$/.test(code)) {
+            throw new colyseus_1.ServerError(400, "Il codice stanza deve avere 4 cifre.");
+        }
+        return code;
+    }
+    findPlayerByName(name) {
+        const target = name.trim().toLowerCase();
+        for (const [sessionId, player] of this.state.players) {
+            if ((player.username ?? "").trim().toLowerCase() === target) {
+                return { sessionId, player: player };
+            }
+        }
+        return null;
     }
 }
 exports.OfficeRoom = OfficeRoom;

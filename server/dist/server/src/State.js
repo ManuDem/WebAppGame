@@ -16,13 +16,12 @@ const SharedTypes_1 = require("../../shared/SharedTypes");
 //  CardState — a single card instance (implements ICardData)
 // ═════════════════════════════════════════════════════════
 class CardState extends schema_1.Schema {
-    id = "";
-    templateId = "";
-    type = SharedTypes_1.CardType.EMPLOYEE;
-    costPA;
-    isFaceUp;
-    name;
-    description;
+    constructor() {
+        super(...arguments);
+        this.id = "";
+        this.templateId = "";
+        this.type = SharedTypes_1.CardType.EMPLOYEE;
+    }
 }
 exports.CardState = CardState;
 __decorate([
@@ -57,14 +56,13 @@ __decorate([
 //  PendingActionState — action context for Reaction Window
 // ═════════════════════════════════════════════════════════
 class PendingActionState extends schema_1.Schema {
-    id = "";
-    playerId = "";
-    actionType = SharedTypes_1.ClientMessages.PLAY_EMPLOYEE;
-    targetCardId;
-    targetCrisisId;
-    targetPlayerId;
-    timestamp = 0;
-    isCancelled;
+    constructor() {
+        super(...arguments);
+        this.id = "";
+        this.playerId = "";
+        this.actionType = SharedTypes_1.ClientMessages.PLAY_EMPLOYEE;
+        this.timestamp = 0;
+    }
 }
 exports.PendingActionState = PendingActionState;
 __decorate([
@@ -103,18 +101,21 @@ __decorate([
 //  PlayerState — one connected player (implements IPlayer)
 // ═════════════════════════════════════════════════════════
 class PlayerState extends schema_1.Schema {
-    sessionId = "";
-    username = "";
-    isReady = false;
-    isConnected = true;
-    actionPoints = 3;
-    // ── Hidden from other clients (server-authoritative / Fog of War) ──
-    hand = new schema_1.ArraySchema();
-    // ── Public area — "Azienda" (hired employees visible to all) ──
-    company = new schema_1.ArraySchema();
-    score = 0;
-    victories = 0;
-    activeEffects = new schema_1.ArraySchema();
+    constructor() {
+        super(...arguments);
+        this.sessionId = "";
+        this.username = "";
+        this.isReady = false;
+        this.isConnected = true;
+        this.actionPoints = 3;
+        // ── Hidden from other clients (server-authoritative / Fog of War) ──
+        this.hand = new schema_1.ArraySchema();
+        // ── Public area — "Azienda" (hired employees visible to all) ──
+        this.company = new schema_1.ArraySchema();
+        this.score = 0;
+        this.victories = 0;
+        this.activeEffects = new schema_1.ArraySchema();
+    }
 }
 exports.PlayerState = PlayerState;
 __decorate([
@@ -164,22 +165,25 @@ __decorate([
 //  OfficeRoomState — ROOT state (implements IGameState)
 // ═════════════════════════════════════════════════════════
 class OfficeRoomState extends schema_1.Schema {
-    phase = SharedTypes_1.GamePhase.WAITING_FOR_PLAYERS;
-    players = new schema_1.MapSchema();
-    playerOrder = new schema_1.ArraySchema();
-    currentTurnPlayerId = "";
-    centralCrises = new schema_1.ArraySchema();
-    deckCount = 0;
-    // ── Reaction Window ──
-    // actionStack is server-private (not synced), but we expose pendingAction + reactionEndTime
-    pendingAction = new PendingActionState();
-    reactionEndTime = 0;
-    turnNumber = 0;
-    turnIndex = 0;
-    winnerId;
-    // actionStack is NOT synced to clients (server-private LIFO queue)
-    // It is exposed on the interface for CardEffectParser but not decorated with @type
-    actionStack = [];
+    constructor() {
+        super(...arguments);
+        this.phase = SharedTypes_1.GamePhase.WAITING_FOR_PLAYERS;
+        this.players = new schema_1.MapSchema();
+        this.hostSessionId = "";
+        this.playerOrder = new schema_1.ArraySchema();
+        this.currentTurnPlayerId = "";
+        this.centralCrises = new schema_1.ArraySchema();
+        this.deckCount = 0;
+        // ── Reaction Window ──
+        // actionStack is server-private (not synced), but we expose pendingAction + reactionEndTime
+        this.pendingAction = new PendingActionState();
+        this.reactionEndTime = 0;
+        this.turnNumber = 0;
+        this.turnIndex = 0;
+        // actionStack is NOT synced to clients (server-private LIFO queue)
+        // It is exposed on the interface for CardEffectParser but not decorated with @type
+        this.actionStack = [];
+    }
 }
 exports.OfficeRoomState = OfficeRoomState;
 __decorate([
@@ -190,6 +194,10 @@ __decorate([
     (0, schema_1.type)({ map: PlayerState }),
     __metadata("design:type", Map)
 ], OfficeRoomState.prototype, "players", void 0);
+__decorate([
+    (0, schema_1.type)("string"),
+    __metadata("design:type", String)
+], OfficeRoomState.prototype, "hostSessionId", void 0);
 __decorate([
     (0, schema_1.type)(["string"]),
     __metadata("design:type", Array)
