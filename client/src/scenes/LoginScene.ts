@@ -383,7 +383,7 @@ export class LoginScene extends Phaser.Scene {
             : t(this.lang, 'login_choose_mode'));
         this.roomCodeLabel.setText(t(this.lang, 'login_room_code_label'));
         this.backButtonText.setText(t(this.lang, 'login_back'));
-        this.nameInput.placeholder = `Es: ${this.nameExample}`;
+        this.nameInput.placeholder = t(this.lang, 'login_name_example', { name: this.nameExample });
         this.roomCodeInput.placeholder = t(this.lang, 'login_room_code_hint');
         this.roomCodeValue.setText(this.activeRoomCode);
 
@@ -936,7 +936,7 @@ export class LoginScene extends Phaser.Scene {
 
             this.time.delayedCall(340, () => {
                 this.cleanupInput();
-                this.scene.start('GameScene', {
+                this.scene.start('PreLobbyScene', {
                     serverManager: this.serverManager,
                     lang: this.lang,
                     roomCode,

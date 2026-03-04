@@ -132,6 +132,7 @@ export class GameScene extends Phaser.Scene {
     private endButtonFx?: SimpleButtonController;
     private readyButtonFx?: SimpleButtonController;
     private previousAP = -1;
+    private redirectingToPreLobby = false;
 
     // Target Selector state
     private targetSelectorOverlay?: Phaser.GameObjects.Rectangle;
@@ -146,6 +147,7 @@ export class GameScene extends Phaser.Scene {
         this.lang = sanitizeLanguage(data?.lang ?? localStorage.getItem('lucrare_lang'));
         this.roomCode = String(data?.roomCode ?? '');
         this.visualQueue = new VisualEventQueue();
+        this.redirectingToPreLobby = false;
 
         if (this.serverManager) {
             this.serverManager.onStateChange = this.handleStateChange.bind(this);
@@ -280,26 +282,40 @@ export class GameScene extends Phaser.Scene {
     }
 
     private localizeServerError(message: any): string {
-        if (this.lang === 'it') {
-            return String(message?.message ?? this.tr('game_action_denied'));
-        }
-
         const code = String(message?.code ?? '');
-        switch (code) {
-            case 'NOT_YOUR_TURN': return 'It is not your turn.';
-            case 'WRONG_PHASE': return 'Action not allowed in this phase.';
-            case 'NO_PA': return 'Not enough action points.';
-            case 'CARD_NOT_IN_HAND': return 'Card is not in your hand.';
-            case 'CRISIS_NOT_FOUND': return 'Crisis not found on table.';
-            case 'NO_REACTION_WINDOW': return 'No active reaction window.';
-            case 'SELF_REACTION': return 'You cannot react to your own action.';
-            case 'HOST_ONLY': return 'Only the host can start the match.';
-            case 'PLAYERS_NOT_READY': return 'All connected players must confirm first.';
-            case 'NOT_ENOUGH_PLAYERS': return 'At least two connected players are required.';
-            case 'NOT_ENOUGH_READY': return 'At least two ready players are required.';
-            default:
-                return String(message?.message ?? this.tr('game_action_denied'));
-        }
+        const codeToKey: Record<string, string> = {
+            GAME_ALREADY_STARTED: 'game_error_game_already_started',
+            HOST_ONLY: 'game_error_host_only',
+            NOT_ENOUGH_PLAYERS: 'game_error_not_enough_players',
+            PLAYERS_NOT_READY: 'game_error_players_not_ready',
+            NOT_ENOUGH_READY: 'game_error_not_enough_ready',
+            DECK_INIT_FAILED: 'game_error_deck_init_failed',
+            DECK_EMPTY_INIT: 'game_error_deck_empty_init',
+            NOT_YOUR_TURN: 'game_error_not_your_turn',
+            WRONG_PHASE: 'game_error_wrong_phase',
+            DECK_EMPTY: 'game_error_deck_empty',
+            MISSING_CARD_ID: 'game_error_missing_card_id',
+            CARD_NOT_IN_HAND: 'game_error_card_not_in_hand',
+            NOT_HERO_CARD: 'game_error_not_hero_card',
+            MISSING_CRISIS_ID: 'game_error_missing_crisis_id',
+            CRISIS_NOT_FOUND: 'game_error_crisis_not_found',
+            TRICKS_LOCKED: 'game_error_tricks_locked',
+            USE_PLAY_EMPLOYEE: 'game_error_use_play_employee',
+            INVALID_CARD_TYPE: 'game_error_invalid_card_type',
+            REACTION_ONLY_WINDOW: 'game_error_reaction_only_window',
+            MISSING_TARGET: 'game_error_missing_target',
+            SELF_TARGET: 'game_error_self_target',
+            INVALID_TARGET: 'game_error_invalid_target',
+            NO_REACTION_WINDOW: 'game_error_no_reaction_window',
+            SELF_REACTION: 'game_error_self_reaction',
+            NOT_REACTION_CARD: 'game_error_not_reaction_card',
+            GAME_OVER: 'game_error_game_over',
+            NO_PA: 'game_error_no_pa',
+        };
+
+        const key = codeToKey[code];
+        if (key) return this.tr(key);
+        return String(message?.message ?? this.tr('game_action_denied'));
     }
 
     private createUiObjects() {
@@ -1074,7 +1090,7 @@ export class GameScene extends Phaser.Scene {
     private showCardInspect(card: ICardData) {
         const typeLabel = String(card.type ?? '').toUpperCase();
         this.inspectedCard = card;
-        this.cardInspectTitle.setText(card.name ?? card.templateId ?? 'CARD');
+        this.cardInspectTitle.setText(card.name ?? card.templateId ?? this.tr('game_card_unknown'));
         this.cardInspectType.setText(`${typeLabel}  |  ${card.templateId ?? ''}`);
         const lines: string[] = [];
         if (card.description && card.description.trim().length > 0) {
@@ -1083,13 +1099,14 @@ export class GameScene extends Phaser.Scene {
             lines.push(this.tr('game_no_card_description'));
         }
         if (typeof card.targetRoll === 'number') {
-            lines.push(`Target dado: ${card.targetRoll}+`);
+            lines.push(this.tr('game_card_target_roll', { value: card.targetRoll }));
         }
         if (typeof card.modifier === 'number' && card.modifier !== 0) {
-            lines.push(`Modificatore: ${card.modifier > 0 ? '+' : ''}${card.modifier}`);
+            const value = `${card.modifier > 0 ? '+' : ''}${card.modifier}`;
+            lines.push(this.tr('game_card_modifier', { value }));
         }
         if (card.subtype) {
-            lines.push(`Sottotipo: ${String(card.subtype).toUpperCase()}`);
+            lines.push(this.tr('game_card_subtype', { value: String(card.subtype).toUpperCase() }));
         }
         this.cardInspectBody.setText(lines.join('\n\n'));
         this.cardInspectHint.setText(this.tr('game_close_hint'));
@@ -1142,6 +1159,11 @@ export class GameScene extends Phaser.Scene {
     }
 
     private applyState(state: IGameState, me: IPlayer) {
+        if (this.isPreLobbyPhase(state.phase)) {
+            this.redirectToPreLobby();
+            return;
+        }
+
         const myId = this.serverManager.room?.sessionId ?? '';
 
         this.deckCountText.setText(`${state.deckCount ?? 0}`);
@@ -1166,6 +1188,16 @@ export class GameScene extends Phaser.Scene {
         if (state.phase !== GamePhase.REACTION_WINDOW && this.reactionVisible) {
             this.hideReactionOverlay();
         }
+    }
+
+    private redirectToPreLobby() {
+        if (this.redirectingToPreLobby) return;
+        this.redirectingToPreLobby = true;
+        this.scene.start('PreLobbyScene', {
+            serverManager: this.serverManager,
+            lang: this.lang,
+            roomCode: this.roomCode,
+        });
     }
 
     private updateTurn(state: IGameState, myId: string) {
@@ -1655,7 +1687,7 @@ export class GameScene extends Phaser.Scene {
                 this.visualQueue.enqueue(() => new Promise((resolve) => {
                     const code = String(message?.code ?? '');
                     if (code === 'TRICKS_LOCKED') {
-                        this.floatText(this.lang === 'en' ? 'Tricks are locked this turn!' : 'I Trucchi sono bloccati questo turno!', '#ff5566');
+                        this.floatText(this.tr('game_error_tricks_locked'), '#ff5566');
                         this.cameras.main.shake(200, 0.005);
                     } else {
                         this.floatText(this.localizeServerError(message), '#ff8293');
@@ -1668,9 +1700,7 @@ export class GameScene extends Phaser.Scene {
             case ServerEvents.START_REACTION_TIMER:
                 this.visualQueue.enqueue(() => new Promise((resolve) => {
                     const duration = Number(message?.durationMs ?? message?.duration ?? 5000);
-                    const label = this.lang === 'en'
-                        ? this.tr('game_reaction_subtitle')
-                        : String(message?.actionTypeLabel ?? this.tr('game_reaction_subtitle'));
+                    const label = this.tr('game_reaction_subtitle');
                     this.showReactionOverlay(duration, label);
                     resolve();
                 }));
@@ -1809,7 +1839,7 @@ export class GameScene extends Phaser.Scene {
     // ─────────────────────────────────────────────────────────
     private showVictoryScreen(event: { winnerId?: string; winnerName?: string; finalScore?: number }) {
         this.visualQueue.enqueue(() => new Promise((_resolve) => {
-            const winnerName = String(event.winnerName ?? 'Unknown');
+            const winnerName = String(event.winnerName ?? this.tr('game_unknown_player'));
             const score = Number(event.finalScore ?? 0);
             const isMe = event.winnerId === this.serverManager.room?.sessionId;
             const cx = this.screenW * 0.5;

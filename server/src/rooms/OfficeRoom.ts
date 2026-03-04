@@ -294,7 +294,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
 
     private handleJoinGame(client: Client, _data: any): void {
         if (this.state.phase !== GamePhase.WAITING_FOR_PLAYERS && this.state.phase !== GamePhase.PRE_LOBBY) {
-            client.send(ServerEvents.ERROR, { message: "Il gioco è già iniziato." });
+            client.send(ServerEvents.ERROR, { code: "GAME_ALREADY_STARTED", message: "Il gioco è già iniziato." });
             return;
         }
         const player = this.state.players.get(client.sessionId);

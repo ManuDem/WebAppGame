@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { BootScene } from './scenes/BootScene';
 import { LoginScene } from './scenes/LoginScene';
+import { PreLobbyScene } from './scenes/PreLobbyScene';
 import { GameScene } from './scenes/GameScene';
 
 const deviceResolution = Math.max(1.5, Math.min((window.devicePixelRatio || 1) * 1.25, 4));
@@ -29,7 +30,7 @@ const config = {
     dom: {
         createContainer: true,
     },
-    scene: [BootScene, LoginScene, GameScene],
+    scene: [BootScene, LoginScene, PreLobbyScene, GameScene],
 } as Phaser.Types.Core.GameConfig;
 
 const game = new Phaser.Game(config);

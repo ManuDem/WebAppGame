@@ -176,3 +176,21 @@ npm test -- --runInBand
   - verifica:
     - build server/client OK
     - test mirati OK (`31/31` pass)
+- 2026-03-04 (sessione pre-lobby separata + audit traduzioni):
+  - flow client aggiornato:
+    - nuova scena `client/src/scenes/PreLobbyScene.ts` inserita tra Login e Game
+    - `LoginScene` ora entra in `PreLobbyScene` dopo create/join stanza
+    - `main.ts` registra `PreLobbyScene` nella pipeline scene
+    - `GameScene` ora reindirizza automaticamente alla pre-lobby se la fase server e `PRE_LOBBY` o `WAITING_FOR_PLAYERS`
+  - pre-lobby migliorata:
+    - regole e lista utenti con layout piu leggibile (desktop/mobile)
+    - lista giocatori ordinata e resa compatta su viewport piccole
+  - i18n completato e ricontrollato:
+    - parita chiavi IT/EN: `128/128`
+    - nessuna chiave mancante tra le lingue
+    - aggiunte traduzioni per errori server (tutti i codici gameplay principali), inspect carta e placeholder esempio nome
+  - server:
+    - `OfficeRoom` invia ora `code: GAME_ALREADY_STARTED` anche nel blocco join tardivo (migliore localizzazione lato client)
+  - build:
+    - client build OK
+    - server build OK
