@@ -1,17 +1,18 @@
 import Phaser from 'phaser';
 import { ServerManager } from '../network/ServerManager';
+import { DEFAULT_LANGUAGE, sanitizeLanguage, SupportedLanguage, t } from '../i18n';
+import { drawPokemonBackdrop, ensurePokemonTextures } from '../ui/PokemonVisuals';
+import { applyBrandTypography, BRAND_SUBTITLE_STYLE, BRAND_TITLE_STYLE, BRAND_TITLE_TEXT, placeBrandHeader } from '../ui/Branding';
+import { APP_FONT_FAMILY } from '../ui/Typography';
 
-const FONT_DISPLAY = 'Bebas Neue, Barlow Condensed, Impact, sans-serif';
-const FONT_UI = 'Sora, Trebuchet MS, sans-serif';
+const FONT_UI = APP_FONT_FAMILY;
 
 export class BootScene extends Phaser.Scene {
     private serverManager!: ServerManager;
 
     private bg!: Phaser.GameObjects.Graphics;
-    private glowA!: Phaser.GameObjects.Ellipse;
-    private glowB!: Phaser.GameObjects.Ellipse;
-    private glowC!: Phaser.GameObjects.Ellipse;
-    private ring!: Phaser.GameObjects.Arc;
+    private cloudLayer!: Phaser.GameObjects.TileSprite;
+    private ditherLayer!: Phaser.GameObjects.TileSprite;
 
     private title!: Phaser.GameObjects.Text;
     private subtitle!: Phaser.GameObjects.Text;
@@ -22,43 +23,52 @@ export class BootScene extends Phaser.Scene {
     private progressLabel!: Phaser.GameObjects.Text;
 
     private progressValue = 0;
+    private lang: SupportedLanguage = DEFAULT_LANGUAGE;
+    private readonly textResolution = Math.max(2, Math.min((window.devicePixelRatio || 1) * 1.5, 4));
 
     constructor() {
         super({ key: 'BootScene' });
     }
 
+    preload() {
+        const iconEntries: Array<[string, string]> = [
+            ['ui-ap', '/icons/ap.svg'],
+            ['ui-deck', '/icons/deck.svg'],
+            ['ui-players', '/icons/players.svg'],
+            ['ui-start', '/icons/start.svg'],
+        ];
+
+        iconEntries.forEach(([key, path]) => {
+            if (!this.textures.exists(key)) {
+                this.load.image(key, path);
+            }
+        });
+    }
+
     create() {
+        this.lang = sanitizeLanguage(localStorage.getItem('lucrare_lang'));
         this.serverManager = new ServerManager();
 
         this.bg = this.add.graphics();
+        ensurePokemonTextures(this);
+        this.cloudLayer = this.add.tileSprite(0, 0, 256, 128, 'poke-clouds')
+            .setOrigin(0)
+            .setAlpha(0.33)
+            .setDepth(-60);
+        this.ditherLayer = this.add.tileSprite(0, 0, 64, 64, 'poke-dither')
+            .setOrigin(0)
+            .setAlpha(0.2)
+            .setDepth(-59);
 
-        this.glowA = this.add.ellipse(0, 0, 100, 100, 0x35b3ff, 0.17).setBlendMode(Phaser.BlendModes.ADD);
-        this.glowB = this.add.ellipse(0, 0, 100, 100, 0x56f2b3, 0.14).setBlendMode(Phaser.BlendModes.ADD);
-        this.glowC = this.add.ellipse(0, 0, 100, 100, 0xffb454, 0.12).setBlendMode(Phaser.BlendModes.ADD);
+        this.title = this.add.text(0, 0, BRAND_TITLE_TEXT, BRAND_TITLE_STYLE).setOrigin(0.5).setAlpha(0);
+        this.subtitle = this.add.text(0, 0, t(this.lang, 'brand_subtitle'), BRAND_SUBTITLE_STYLE).setOrigin(0.5).setAlpha(0);
 
-        this.ring = this.add.circle(0, 0, 80)
-            .setStrokeStyle(2, 0x8ad7ff, 0.55)
-            .setFillStyle(0x000000, 0);
-
-        this.title = this.add.text(0, 0, 'LUCrAre', {
-            fontFamily: FONT_DISPLAY,
-            fontSize: '86px',
-            color: '#f2f9ff',
-            letterSpacing: 3,
-        }).setOrigin(0.5).setAlpha(0);
-
-        this.subtitle = this.add.text(0, 0, 'SEMPRE', {
-            fontFamily: FONT_UI,
-            fontSize: '24px',
-            color: '#9cd4f5',
-            fontStyle: '700',
-            letterSpacing: 8,
-        }).setOrigin(0.5).setAlpha(0);
-
-        this.status = this.add.text(0, 0, 'Loading assets and network...', {
+        this.status = this.add.text(0, 0, t(this.lang, 'boot_loading'), {
             fontFamily: FONT_UI,
             fontSize: '14px',
-            color: '#95a6b8',
+            color: '#163b57',
+            stroke: '#eff6ff',
+            strokeThickness: 1,
             fontStyle: '600',
             letterSpacing: 0.5,
         }).setOrigin(0.5).setAlpha(0.92);
@@ -69,9 +79,12 @@ export class BootScene extends Phaser.Scene {
         this.progressLabel = this.add.text(0, 0, '0%', {
             fontFamily: FONT_UI,
             fontSize: '13px',
-            color: '#d6e6f2',
+            color: '#143955',
+            stroke: '#eef6ff',
+            strokeThickness: 1,
             fontStyle: '700',
         }).setOrigin(0.5);
+        this.boostText(this.title, this.subtitle, this.status, this.progressLabel);
 
         this.scale.on('resize', this.handleResize, this);
         this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -85,23 +98,6 @@ export class BootScene extends Phaser.Scene {
         this.tweens.add({ targets: this.title, alpha: 1, y: this.title.y - 8, duration: 520, ease: 'Sine.Out' });
         this.tweens.add({ targets: this.subtitle, alpha: 1, y: this.subtitle.y + 4, duration: 520, delay: 160, ease: 'Sine.Out' });
 
-        this.tweens.add({
-            targets: this.ring,
-            angle: 360,
-            duration: 6400,
-            repeat: -1,
-            ease: 'Linear',
-        });
-
-        this.tweens.add({
-            targets: [this.glowA, this.glowB, this.glowC],
-            alpha: '+=0.08',
-            duration: 1800,
-            yoyo: true,
-            repeat: -1,
-            ease: 'Sine.InOut',
-        });
-
         const progressProxy = { value: 0 };
         this.tweens.add({
             targets: progressProxy,
@@ -114,7 +110,7 @@ export class BootScene extends Phaser.Scene {
                 this.redrawProgress();
             },
             onComplete: () => {
-                this.status.setText('Ready. Opening lobby...');
+                this.status.setText(t(this.lang, 'boot_ready'));
                 this.time.delayedCall(260, () => this.leaveScene());
             },
         });
@@ -136,6 +132,13 @@ export class BootScene extends Phaser.Scene {
         });
     }
 
+    update() {
+        this.cloudLayer.tilePositionX += 0.09;
+        this.cloudLayer.tilePositionY += 0.01;
+        this.ditherLayer.tilePositionX += 0.035;
+        this.ditherLayer.tilePositionY += 0.007;
+    }
+
     private handleResize(gameSize: Phaser.Structs.Size) {
         const w = gameSize.width;
         const h = gameSize.height;
@@ -144,20 +147,11 @@ export class BootScene extends Phaser.Scene {
         const cy = h * 0.5;
 
         this.redrawBackground(w, h);
+        this.cloudLayer.setSize(w, h);
+        this.ditherLayer.setSize(w, h);
 
-        this.glowA.setPosition(w * 0.22, h * 0.3).setSize(minSide * 0.6, minSide * 0.6);
-        this.glowB.setPosition(w * 0.78, h * 0.68).setSize(minSide * 0.7, minSide * 0.7);
-        this.glowC.setPosition(w * 0.5, h * 0.15).setSize(minSide * 0.4, minSide * 0.4);
-
-        this.ring.setPosition(cx, cy * 0.72).setRadius(Math.max(74, minSide * 0.1));
-
-        this.title
-            .setPosition(cx, cy * 0.68)
-            .setFontSize(`${Phaser.Math.Clamp(minSide * 0.108, 56, 106)}px`);
-
-        this.subtitle
-            .setPosition(cx, cy * 0.77)
-            .setFontSize(`${Phaser.Math.Clamp(minSide * 0.034, 18, 30)}px`);
+        placeBrandHeader(this.title, this.subtitle, cx, cy * 0.68, minSide);
+        applyBrandTypography(this.title, this.subtitle, minSide);
 
         this.status
             .setPosition(cx, cy * 1.11)
@@ -171,23 +165,7 @@ export class BootScene extends Phaser.Scene {
     }
 
     private redrawBackground(w: number, h: number) {
-        this.bg.clear();
-
-        this.bg.fillStyle(0x080d14, 1);
-        this.bg.fillRect(0, 0, w, h);
-
-        const steps = 18;
-        for (let i = 0; i < steps; i++) {
-            const t = i / (steps - 1);
-            const alpha = 0.2 * (1 - t);
-            const y = h * t;
-            this.bg.fillStyle(0x0e1a29, alpha);
-            this.bg.fillRect(0, y, w, h / steps + 2);
-        }
-
-        this.bg.fillStyle(0x79d7ff, 0.04);
-        this.bg.fillRect(w * 0.12, h * 0.08, w * 0.76, h * 0.002 + 2);
-        this.bg.fillRect(w * 0.2, h * 0.92, w * 0.6, h * 0.002 + 2);
+        drawPokemonBackdrop(this.bg, w, h, 0.62);
     }
 
     private redrawProgress() {
@@ -201,15 +179,19 @@ export class BootScene extends Phaser.Scene {
         const y = h * 0.64 + minSide * 0.22;
 
         this.progressTrack.clear();
-        this.progressTrack.fillStyle(0x162331, 0.88);
+        this.progressTrack.fillStyle(0x2a3243, 0.9);
         this.progressTrack.fillRoundedRect(x, y, barW, barH, barH * 0.5);
-        this.progressTrack.lineStyle(1, 0x355874, 0.75);
+        this.progressTrack.lineStyle(1, 0x96836a, 0.8);
         this.progressTrack.strokeRoundedRect(x, y, barW, barH, barH * 0.5);
 
         this.progressFill.clear();
-        this.progressFill.fillStyle(0x66d1ff, 0.95);
+        this.progressFill.fillStyle(0xe2b980, 0.95);
         this.progressFill.fillRoundedRect(x + 2, y + 2, Math.max(0, (barW - 4) * this.progressValue), barH - 4, (barH - 4) * 0.5);
 
         this.progressLabel.setText(`${Math.round(this.progressValue * 100)}%`);
+    }
+
+    private boostText(...texts: Phaser.GameObjects.Text[]) {
+        texts.forEach((text) => text.setResolution(this.textResolution));
     }
 }

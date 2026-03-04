@@ -5,12 +5,21 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>LUCrAre: SEMPRE</title>
+  <link rel="icon" type="image/svg+xml" href="/icons/favicon.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
-    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&family=Outfit:wght@400;500;700;900&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&display=swap"
     rel="stylesheet" />
   <style>
+    :root {
+      --bg-deep: #0f1219;
+      --bg-mid: #1c222e;
+      --bg-accent: #2f2a1f;
+      --canvas-border: #7c8b9f;
+      --canvas-glow: rgba(255, 210, 145, 0.22);
+    }
+
     *,
     *::before,
     *::after {
@@ -26,13 +35,19 @@
       margin: 0;
       padding: 0;
       overflow: hidden;
-      font-family: 'Outfit', sans-serif;
-      background: radial-gradient(circle at 50% 10%, #0f172a 0%, #05020a 100%) fixed;
+      font-family: 'Sora', 'Trebuchet MS', sans-serif;
+      background:
+        radial-gradient(circle at 18% 14%, rgba(248, 183, 114, 0.13), transparent 46%),
+        radial-gradient(circle at 84% 78%, rgba(132, 177, 232, 0.12), transparent 44%),
+        linear-gradient(145deg, var(--bg-deep) 0%, var(--bg-mid) 62%, var(--bg-accent) 100%);
       user-select: none;
       -webkit-user-select: none;
       -webkit-touch-callout: none;
       -webkit-tap-highlight-color: transparent;
-      touch-action: none;
+      touch-action: manipulation;
+      text-rendering: geometricPrecision;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
     }
 
     #app {
@@ -41,23 +56,53 @@
       display: flex;
       justify-content: center;
       align-items: center;
+      padding: clamp(6px, 1vw, 16px);
+      position: relative;
     }
 
     canvas {
+      width: 100% !important;
+      height: 100% !important;
       max-width: 100%;
       max-height: 100%;
-      /* Premium card-like appearance for the game canvas */
-      border-radius: 16px;
+      border-radius: clamp(10px, 1.1vw, 18px);
+      border: 1px solid rgba(124, 139, 159, 0.72);
       box-shadow:
-        0 0 60px rgba(120, 40, 200, 0.4),
-        0 0 120px rgba(76, 201, 240, 0.15),
-        0 24px 48px rgba(0, 0, 0, 0.7);
+        0 0 48px var(--canvas-glow),
+        0 0 110px rgba(135, 171, 220, 0.12),
+        0 24px 46px rgba(0, 0, 0, 0.58);
       display: block;
+      image-rendering: auto;
+      -webkit-font-smoothing: antialiased;
+      font-smooth: always;
+      transform: translateZ(0);
+      touch-action: none;
     }
 
     /* Style the DOM input injected by Phaser's DOM container */
     input[type="text"] {
-      font-family: 'Outfit', sans-serif !important;
+      font-family: 'Sora', 'Trebuchet MS', sans-serif !important;
+      pointer-events: auto !important;
+      user-select: text !important;
+      -webkit-user-select: text !important;
+      touch-action: manipulation !important;
+      color: #163547 !important;
+      -webkit-text-fill-color: #163547 !important;
+      caret-color: #163547 !important;
+      line-height: 1.2 !important;
+    }
+
+    input[type="text"]::placeholder {
+      color: #4b6377;
+      opacity: 1;
+    }
+
+    input[type="text"]:-webkit-autofill,
+    input[type="text"]:-webkit-autofill:hover,
+    input[type="text"]:-webkit-autofill:focus {
+      -webkit-text-fill-color: #163547 !important;
+      box-shadow: 0 0 0 1000px #f5faff inset !important;
+      transition: background-color 9999s ease-in-out 0s;
     }
   </style>
 </head>

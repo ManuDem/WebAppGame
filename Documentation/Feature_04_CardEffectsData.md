@@ -1,44 +1,48 @@
-# Feature 04: Integrazione Effetti delle Carte (Data Layer)
+# Feature 04 - Data Layer Carte ed Effect Parser
 
-## 1. Obiettivo
-In *LUCrAre: SEMPRE*, i comportamenti delle carte sono Data-Driven. Nessuna carta ha la sua logica hardcodata direttamente nei component. La sorgente di verità statica è `cards_db.json`. L'obiettivo del Data Layer (Agente 3) è tradurre il JSON in comportamenti eseguibili da `OfficeRoom` che mutino lo Stato.
+Specifica operativa aggiornata.
 
-## 2. Struttura del Database (cards_db.json)
-Ogni entry in `cards_db.json` contiene un `id` (templateId), `name`, `type`, `cost`, `description` e un nodo `effect`.
-Il nodo `effect` definisce un DSL (Domain Specific Language) semplificato:
-- `action`: La tipologia di comportamento (es. `produce`, `steal_pa`, `cancel_effect`).
-- Altri campi dipendenti dall'azione: `amount`, `target`, `resource`, `penalty`, `reward` ecc.
+## Obiettivo
+Rendere gli effetti carta data-driven:
+- definizione statica in `shared/cards_db.json`
+- risoluzione logica in `shared/CardEffectParser.ts`
+- mutazione authoritative finale in `server/src/rooms/OfficeRoom.ts`
 
-## 3. Parsing e Interfacce (Implementazione Agente 3)
-L'Agente 3 dovrà implementare un CardEffectParser (`server/src/CardEffectParser.ts`) che esporrà metodi statici o istanziati per:
-1. Validare un target.
-2. Eseguire l'effetto della carta.
+## Fonte dati
+`cards_db.json` contiene template con:
+- `id`, `name`, `type`, `cost`, `description`
+- `effect` (DSL)
+- `visuals`
 
-### Modifiche Necessarie a SharedTypes.ts
-Per formalizzare il Data Layer, dovremo estendere il contratto inserendo (o definendo all'interno del DB) i tipi esatti di `Effect` supportati:
+## DSL attuale
+Tipi centrali in `shared/SharedTypes.ts`:
+- `ActionType`
+- `TargetType`
+- `ICardEffectDSL`
 
-```typescript
-export type TargetType = "self" | "opponent" | "opponent_hand" | "employee" | "win_condition" | "trick" | "another_opponent" | "played_card";
-export type ActionType = "produce" | "protect" | "passive_bonus" | "discount_cost" | "draw_cards" | "steal_pa" | "steal_card" | "discard" | "trade_random" | "crisis_resolve" | "redirect_effect" | "steal_played_card" | "cancel_effect";
+Azioni presenti nel parser:
+- `produce`
+- `protect`
+- `passive_bonus`
+- `discount_cost`
+- `draw_cards`
+- `steal_pa`
+- `steal_card`
+- `discard`
+- `trade_random`
+- `crisis_resolve`
+- `redirect_effect`
+- `steal_played_card`
+- `cancel_effect`
 
-export interface ICardEffectDSL {
-    action: ActionType;
-    target?: TargetType;
-    amount?: number;
-    resource?: string;
-    penalty?: string; // Es. "discard_2"
-    reward?: string;  // Es. "vp_1"
-    multiplier?: number;
-}
-```
+## Pipeline runtime
+1. `OfficeRoom` trova il template dal `templateId`.
+2. Durante reaction window crea/aggiorna `pendingAction` e `actionStack`.
+3. In `resolvePhase()` chiama `CardEffectParser.resolveQueue(...)`.
+4. Se necessario applica mutazioni strutturali schema-side (company/crisis).
+5. Consuma tag `pending_draw_X` per pescare carte reali dal deck server.
 
-## 4. Integrazione con OfficeRoom.ts
-Quando un giocatore tenta di giocare una carta (es. tramite `PLAY_EMPLOYEE` e la finestra di reazione ha successo):
-1. Recuperare l'`ICardData` dall'`hand` del giocatore.
-2. Trovare il mapping del suo `templateId` nel DB (`cards_db.json`).
-3. Passare la definizione dell'effetto (`ICardEffectDSL`) e il master state (o dei mutator) al resolver dell'Agente 3:
-   `EffectResolver.resolve(effectDef, currentState, sourcePlayerId, targetCardId)`
-4. L'`EffectResolver` modificherà l'`OfficeRoomState` (es aggiungendo carte pescate o rimuovendo PA).
-
-## 5. Next Steps
-L'Agente 3 dovrà scrivere la Factory o lo Strategy Pattern in TypeScript capace di tradurre questi nodi DSL in chiamate procedurali sicure, mentre l'Agente 0 continuerà a vigilare che non ci siano mutazioni esterne non previste.
+## Note importanti
+- Il parser e logic-first, agnostico da Phaser/Colyseus UI.
+- Alcuni effetti producono tag in `activeEffects` che poi il server consuma.
+- Esiste ancora debito tecnico su type safety (`any`) in alcune zone backend/shared.

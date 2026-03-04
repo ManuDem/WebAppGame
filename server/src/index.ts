@@ -30,6 +30,7 @@ console.log("[BOOT] Colyseus Server instance created");
 //  Register Rooms
 // ─────────────────────────────────────────────────────────
 gameServer.define("office_room", OfficeRoom)
+    .filterBy(["roomCode"])
     .enableRealtimeListing();
 console.log("[BOOT] Registered room 'office_room' with OfficeRoom handler");
 

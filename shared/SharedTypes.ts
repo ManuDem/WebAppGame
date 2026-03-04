@@ -14,6 +14,7 @@
  */
 export interface JoinOptions {
     ceoName: string; // Il nome "CEO" o dell'azienda scelto dal giocatore all'ingresso
+    roomCode: string; // Codice stanza a 4 cifre
 }
 
 // -------------------------------------------------------------------------
@@ -26,6 +27,9 @@ export const MAX_ACTION_POINTS = 3;
 /** Costo in PA dell'azione "Pescare una carta" */
 export const DRAW_CARD_COST = 1;
 
+/** Numero minimo di giocatori pronti per avviare la partita */
+export const MIN_PLAYERS_TO_START = 2;
+
 /** Durata della Reaction Window in millisecondi */
 export const REACTION_WINDOW_MS = 5000;
 
@@ -35,6 +39,7 @@ export const REACTION_WINDOW_MS = 5000;
 
 /** Fasi principali della partita gestite dalla Macchina a Stati del Server */
 export enum GamePhase {
+    PRE_LOBBY = "PRE_LOBBY",             // Fase in cui si può selezionare mazzo/personaggio
     WAITING_FOR_PLAYERS = "WAITING_FOR_PLAYERS",
     PLAYER_TURN = "PLAYER_TURN",
     REACTION_WINDOW = "REACTION_WINDOW", // Finestra di 5 secondi per reazioni
@@ -45,11 +50,13 @@ export enum GamePhase {
 /** Tipi di Messaggio dal Client al Server. Il Server risponderà modificando lo Stato o inviando Errori. */
 export enum ClientMessages {
     JOIN_GAME = "JOIN_GAME",
+    START_MATCH = "START_MATCH",
     DRAW_CARD = "DRAW_CARD",
     PLAY_EMPLOYEE = "PLAY_EMPLOYEE",     // Assumere dipendente (Triggera Reaction)
     PLAY_MAGIC = "PLAY_MAGIC",           // Magheggio immediato
     SOLVE_CRISIS = "SOLVE_CRISIS",       // Risolvere crisi (Triggera Reaction)
     PLAY_REACTION = "PLAY_REACTION",     // Giocato durante la Reaction Window dagli avversari
+    ROLL_DICE = "ROLL_DICE",             // Richiesta di tirare i dadi
     END_TURN = "END_TURN",
     EMOTE = "EMOTE"                      // Eventuali interazioni non-gameplay (BMing)
 }
@@ -157,6 +164,16 @@ export interface IGameWonEvent {
     finalScore: number;     // Punteggio finale del vincitore
 }
 
+/** Payload broadcast dal Server con DICE_ROLLED */
+export interface IDiceRolledEvent {
+    playerId: string;       // Chi ha tirato
+    cardId?: string;        // Quale carta ha scatenato il tiro (opzionale)
+    roll1: number;          // Valore del primo dado (es. d6)
+    roll2: number;          // Valore del secondo dado (es. d6)
+    total: number;          // Somma inclusi modificatori attivi
+    success: boolean;       // Se il tiro ha superato la targetRoll (imprevisto/evento)
+}
+
 // -- PAYLOAD EVENTI PURAMENTE VISIVI --
 
 /** Payload per ServerEvents.SHOW_ANIMATION */
@@ -185,10 +202,13 @@ export interface IStartReactionTimerPayload {
 // -------------------------------------------------------------------------
 
 export enum CardType {
-    EMPLOYEE = "employee",
-    MAGIC = "trick",
-    CRISIS = "crisis",
-    REACTION = "reaction"
+    EMPLOYEE = "employee",      // Impiegati
+    MAGIC = "trick",            // Alias legacy: magheggio/trucco
+    CRISIS = "crisis",          // Alias legacy: crisi
+    REACTION = "reaction",      // Alias legacy: reazione
+    IMPREVISTO = "crisis",      // Alias nuovo per contenuti crisi
+    OGGETTO = "item",           // Alias nuovo per equipaggiamenti
+    EVENTO = "trick"            // Alias nuovo per eventi/trucchi
 }
 
 /** Dati essenziali pubblici di una carta in gioco */
@@ -200,6 +220,9 @@ export interface ICardData {
     isFaceUp?: boolean;      // Per sapere se è visibile agli altri
     name?: string;           // Nome leggibile della carta (popolato dal server dal DB)
     description?: string;    // Descrizione breve della carta (popolato dal server dal DB)
+    targetRoll?: number;     // Target roll (es. 8+) necessario per affrontare la carta/evento
+    modifier?: number;       // Bonus/malus al tiro (+1, -1) fornito passivamente
+    equippedItems?: ICardData[]; // Oggetti equipaggiati a questo impiegato
 }
 
 /** Visual metadata per representation in the Phaser client */
@@ -266,6 +289,8 @@ export interface ICardTemplate {
     description: string;
     effect: ICardEffect;
     visuals: ICardVisuals;
+    targetRoll?: number;     // Es. 8+ per avere successo conto l'imprevisto o evento
+    modifier?: number;       // Bonus passivo ai dadi o altro
 }
 
 // -------------------------------------------------------------------------
@@ -309,6 +334,7 @@ export interface IPendingAction {
 export interface IGameState {
     phase: GamePhase;
     players: Map<string, IPlayer>;     // Map<sessionId, PlayerState>
+    hostSessionId: string;             // SessionId dell'host della lobby/partita
     playerOrder: string[];             // Array di SessionId per determinare l'ordine dei turni
     currentTurnPlayerId: string;       // Chi è di turno ora
     turnIndex: number;                 // Indice corrente nell'array playerOrder (round-robin)

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Players">
+  <rect width="64" height="64" rx="12" fill="#2b3140" />
+  <circle cx="24" cy="24" r="8" fill="#f4d2a1" />
+  <circle cx="40" cy="22" r="7" fill="#c8d8f4" />
+  <path d="M10 49c0-8 6.3-14 14-14s14 6 14 14z" fill="#d8b27d" />
+  <path d="M28 49c0-7 5.4-12 12-12s12 5 12 12z" fill="#8da9d2" />
+</svg>
+

@@ -28,6 +28,7 @@ function makeGameState(players: IPlayer[], overrides: Partial<IGameState> = {}):
     return {
         phase: GamePhase.PLAYER_TURN,
         players: map,
+        hostSessionId: players[0]?.sessionId ?? "",
         playerOrder: players.map(p => p.sessionId),
         currentTurnPlayerId: players[0]?.sessionId ?? "",
         turnIndex: 0,
@@ -103,8 +104,8 @@ describe("CardEffectParser.resolve — individual effects", () => {
         p2.actionPoints = 0;
         const card = makeCardTemplate({ action: "steal_pa", amount: 3 });
         expect(CardEffectParser.resolve(card, p1, p2, state)).toBe(true);
-        expect(p2.actionPoints).toBe(0);   // cannot go below 0
-        expect(p1.actionPoints).toBe(3);   // nothing was stolen
+        expect(p2.actionPoints).toBe(0);
+        expect(p1.actionPoints).toBe(3);
     });
 
     test("steal_pa: target has fewer PA than amount — clamped", () => {
@@ -112,7 +113,7 @@ describe("CardEffectParser.resolve — individual effects", () => {
         const card = makeCardTemplate({ action: "steal_pa", amount: 5 });
         expect(CardEffectParser.resolve(card, p1, p2, state)).toBe(true);
         expect(p2.actionPoints).toBe(0);
-        expect(p1.actionPoints).toBe(4);   // only 1 stolen
+        expect(p1.actionPoints).toBe(4);
     });
 
     test("steal_pa: no target — returns false", () => {
@@ -171,11 +172,10 @@ describe("CardEffectParser.resolve — individual effects", () => {
     // ----- trade_random -----
 
     test("trade_random: bidirectional swap", () => {
-        p1.hand = [{ id: "src_card", templateId: "trk_01", type: CardType.MAGIC }];
-        p2.hand = [{ id: "tgt_card", templateId: "trk_02", type: CardType.MAGIC }];
+        p1.hand = [{ id: "src_card", templateId: "trk_01", type: CardType.EVENTO }];
+        p2.hand = [{ id: "tgt_card", templateId: "trk_02", type: CardType.EVENTO }];
         const card = makeCardTemplate({ action: "trade_random" });
         expect(CardEffectParser.resolve(card, p1, p2, state)).toBe(true);
-        // After trade, each player still has exactly 1 card, but they're swapped
         expect(p1.hand.length).toBe(1);
         expect(p2.hand.length).toBe(1);
         expect(p1.hand[0]?.id).toBe("tgt_card");
@@ -207,6 +207,46 @@ describe("CardEffectParser.resolve — individual effects", () => {
         expect(CardEffectParser.resolve(card, p2, null, state, pa)).toBe(true);
         expect(pa.isCancelled).toBe(true);
     });
+
+    // ----- crisis_resolve with penalty -----
+
+    test("crisis_resolve: penalty 'discard_2' removes 2 cards from other players, not the solver", () => {
+        // Give p2 (the victim) 3 cards
+        p2.hand = [
+            { id: "v1", templateId: "emp_01", type: CardType.EMPLOYEE },
+            { id: "v2", templateId: "emp_02", type: CardType.EMPLOYEE },
+            { id: "v3", templateId: "emp_03", type: CardType.EMPLOYEE },
+        ];
+        // Give p1 (the solver) 2 cards — these must NOT be touched
+        p1.hand = [
+            { id: "s1", templateId: "trk_01", type: CardType.EVENTO },
+            { id: "s2", templateId: "trk_02", type: CardType.EVENTO },
+        ];
+
+        const card = makeCardTemplate({
+            action: "crisis_resolve",
+            reward: "vp_1",
+            penalty: "discard_2"
+        });
+
+        const success = CardEffectParser.resolve(card, p1, null, state);
+        expect(success).toBe(true);
+        // Solver gets +1 VP
+        expect(p1.score).toBe(1);
+        // Solver's hand is untouched (still 2 cards)
+        expect(p1.hand.length).toBe(2);
+        // Victim lost exactly 2 cards (3 → 1)
+        expect(p2.hand.length).toBe(1);
+    });
+
+    // ----- draw_cards -----
+
+    test("draw_cards: adds 'pending_draw_2' tag to activeEffects", () => {
+        const card = makeCardTemplate({ action: "draw_cards", amount: 2 });
+        const success = CardEffectParser.resolve(card, p1, null, state);
+        expect(success).toBe(true);
+        expect(p1.activeEffects).toContain("pending_draw_2");
+    });
 });
 
 // ---------------------------------------------------------------------------
@@ -215,56 +255,38 @@ describe("CardEffectParser.resolve — individual effects", () => {
 
 describe("CardEffectParser.resolveQueue — LIFO reaction chain", () => {
 
-    /**
-     * Scenario:
-     *   originalAction: p1 plays trk_01 (steal_pa 2) targeting p2
-     *   reactions[0]:  p2 plays rea_01 (steal_pa 1 — the first reaction)
-     *   reactions[1]:  p1 plays rea_03 (cancel_effect — last reaction, resolved FIRST)
-     *
-     * LIFO evaluation: cancel_effect runs first → marks originalAction.isCancelled = true
-     * steal_pa reaction also cancelled implicitly because the pending action is already dead.
-     * Final state: p2 should NOT lose PA, no steal happened.
-     */
     test("LIFO: last reaction cancel_effect blocks original steal_pa — success=false, no PA stolen", () => {
         const originalAction = makePendingAction({
             id: "orig_001",
             playerId: "p1",
             actionType: ClientMessages.PLAY_MAGIC,
-            targetCardId: "trk_01",      // templateId of Falso in Bilancio (steal_pa)
+            targetCardId: "trk_01",
             targetPlayerId: "p2"
         });
 
-        // Reaction 0: p2 plays a steal_pa (reaction) — first played
         const reaction0 = makePendingAction({
             id: "reac_000",
             playerId: "p2",
             actionType: ClientMessages.PLAY_REACTION,
-            targetCardId: "rea_steal_pa" // a hypothetical steal_pa reaction card
+            targetCardId: "rea_steal_pa"
         });
 
-        // Reaction 1: p1 plays cancel_effect — last played → resolved FIRST in LIFO
         const reaction1 = makePendingAction({
             id: "reac_001",
             playerId: "p1",
             actionType: ClientMessages.PLAY_REACTION,
-            targetCardId: "rea_03"       // "Non è di mia competenza" (cancel_effect)
+            targetCardId: "rea_03"
         });
 
         const stealPACard = makeCardTemplate({ action: "steal_pa", amount: 2 });
         const cancelCard = makeCardTemplate({ action: "cancel_effect", target: "played_card" });
-        // For simplicity, the "reaction steal_pa" card also references steal_pa effect
         const reactionStealCard = makeCardTemplate({ action: "steal_pa", amount: 1 });
         reactionStealCard.id = "rea_steal_pa";
         cancelCard.id = "rea_03";
         stealPACard.id = "trk_01";
 
-        const cardLookup = (templateId: string): ICardTemplate | undefined => {
-            const db: ICardTemplate[] = [stealPACard, cancelCard, reactionStealCard];
-            return db.find(c => c.id === templateId);
-        };
-
-        const p1Before = p1.actionPoints; // 3
-        const p2Before = p2.actionPoints; // 3
+        const p1Before = p1.actionPoints;
+        const p2Before = p2.actionPoints;
 
         const result = CardEffectParser.resolveQueue(
             originalAction,
@@ -274,7 +296,6 @@ describe("CardEffectParser.resolveQueue — LIFO reaction chain", () => {
 
         expect(result.success).toBe(false);
         expect(originalAction.isCancelled).toBe(true);
-        // No PA was stolen from p2
         expect(p2.actionPoints).toBe(p2Before);
         expect(p1.actionPoints).toBe(p1Before);
     });
@@ -298,8 +319,8 @@ describe("CardEffectParser.resolveQueue — LIFO reaction chain", () => {
         );
 
         expect(result.success).toBe(true);
-        expect(p2.actionPoints).toBe(1); // 3 - 2
-        expect(p1.actionPoints).toBe(5); // 3 + 2
+        expect(p2.actionPoints).toBe(1);
+        expect(p1.actionPoints).toBe(5);
     });
 
     test("resolveQueue: logs are populated and non-empty", () => {
@@ -309,9 +330,6 @@ describe("CardEffectParser.resolveQueue — LIFO reaction chain", () => {
             actionType: ClientMessages.PLAY_MAGIC,
             targetCardId: "emp_01"
         });
-
-        const produceCard = makeCardTemplate({ action: "produce", amount: 1, resource: "pa" });
-        produceCard.id = "trk_produce";
 
         const result = CardEffectParser.resolveQueue(
             originalAction,
@@ -328,14 +346,14 @@ describe("CardEffectParser.resolveQueue — LIFO reaction chain", () => {
             id: "orig_emp_01",
             playerId: "p1",
             actionType: ClientMessages.PLAY_EMPLOYEE,
-            targetCardId: "emp_01" // An employee card
+            targetCardId: "emp_01"
         });
 
         const reactionAction = makePendingAction({
             id: "reac_cancel",
             playerId: "p2",
             actionType: ClientMessages.PLAY_REACTION,
-            targetCardId: "rea_03" // A cancel_effect card
+            targetCardId: "rea_03"
         });
 
         const result = CardEffectParser.resolveQueue(
@@ -346,7 +364,6 @@ describe("CardEffectParser.resolveQueue — LIFO reaction chain", () => {
 
         expect(result.success).toBe(false);
         expect(originalAction.isCancelled).toBe(true);
-        // Guarantee no structural changes happened
         expect(p1.company.length).toBe(0);
         expect(p1.score).toBe(0);
     });

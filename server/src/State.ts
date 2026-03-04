@@ -115,6 +115,9 @@ export class OfficeRoomState extends Schema implements IGameState {
     @type({ map: PlayerState })
     players: Map<string, IPlayer> = new MapSchema<PlayerState>() as any;
 
+    @type("string")
+    hostSessionId: string = "";
+
     @type(["string"])
     playerOrder: string[] = new ArraySchema<string>() as any;
 

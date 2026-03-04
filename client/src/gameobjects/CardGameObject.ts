@@ -11,6 +11,15 @@ interface CardPalette {
     label: string;
 }
 
+const FALLBACK_PALETTE: CardPalette = {
+    body: 0x1b2836,
+    border: 0x8ac5f2,
+    topBand: 0x23364a,
+    badge: 0x34526f,
+    accentText: '#d5edff',
+    label: 'CARD',
+};
+
 const FONT_TITLE = APP_FONT_FAMILY;
 const FONT_META = APP_FONT_FAMILY;
 const TEXT_RESOLUTION = Math.max(2, Math.min((window.devicePixelRatio || 1) * 1.5, 4));
@@ -22,7 +31,7 @@ const ART_Y = -CARD_H * 0.5 + 62;
 const ART_W = CARD_W - 18;
 const ART_H = 56;
 
-const PALETTES: Record<CardType, CardPalette> = {
+const PALETTES: Partial<Record<CardType, CardPalette>> = {
     [CardType.EMPLOYEE]: {
         body: 0x102436,
         border: 0x6fd3ff,
@@ -88,7 +97,11 @@ export class CardGameObject extends Phaser.GameObjects.Container {
     }
 
     private buildVisuals() {
-        const palette = PALETTES[this.cardData.type] ?? PALETTES[CardType.MAGIC];
+        const palette =
+            PALETTES[this.cardData.type]
+            ?? PALETTES[CardType.MAGIC]
+            ?? PALETTES[CardType.EVENTO]
+            ?? FALLBACK_PALETTE;
 
         this.shadow = this.scene.add.graphics();
         this.shadow.fillStyle(0x000000, 0.35);

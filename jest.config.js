@@ -11,7 +11,11 @@ module.exports = {
                 tsconfig: 'tsconfig.json',
             },
         ],
+        '^.+\\.(js|mjs)$': 'babel-jest',
     },
+    transformIgnorePatterns: [
+        '/node_modules/(?!(rou3|@colyseus/better-call)/)',
+    ],
     moduleNameMapper: {
         '^../shared/(.*)$': '<rootDir>/shared/$1',
     },

@@ -122,3 +122,9 @@ npm test -- --runInBand
   - riuso grafico: introdotto `client/src/ui/RetroButtonPainter.ts` e applicato a bottoni Login/Game
   - build aggiornata: `client build` OK, `server build` OK
   - test root: ancora FAIL parziale su suite storiche (`reaction_stress` + dipendenza `express`/`process.exit` test legacy)
+- 2026-03-04 (sessione commit rimanenti):
+  - preparato secondo commit separato con modifiche residue (docs, lobby flow, room code, icone/ui shared)
+  - esclusi dal commit artefatti locali: screenshot `Immagine *.png` e `dist/` non consolidato
+  - fix compatibilita tipi carta: `CardType` esteso con alias legacy/nuovi in `shared/SharedTypes.ts`
+  - fix tipizzazione palette carte in `CardGameObject` con fallback esplicito
+  - verifica finale: `client build` OK, `server build` OK

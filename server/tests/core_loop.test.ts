@@ -12,6 +12,12 @@ const createMockClient = (sessionId: string) => {
     } as unknown as Client;
 };
 
+const disposeRoom = (room: OfficeRoom) => {
+    clearInterval((room as any)._patchInterval);
+    clearTimeout((room as any)._autoDisposeTimeout);
+    room.clock?.clear?.();
+};
+
 describe("Feature 02: Core Loop and Turn Validations", () => {
     let room: OfficeRoom;
 
@@ -38,6 +44,10 @@ describe("Feature 02: Core Loop and Turn Validations", () => {
         // Inizializza il deck
         room["serverDeck"] = [{ id: "c1", templateId: "x", type: "EMPLOYEE" as any }];
         room.state.deckCount = 1;
+    });
+
+    afterEach(() => {
+        disposeRoom(room);
     });
 
     test("Non deve permettere DRAW_CARD se non è il proprio turno", () => {

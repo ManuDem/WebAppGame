@@ -16,10 +16,23 @@ export class ServerManager {
         this.client = new Colyseus.Client(endpoint);
     }
 
-    async joinOfficeRoom(ceoName: string): Promise<Colyseus.Room<IGameState>> {
-        console.log('[ServerManager] joinOfficeRoom – ceoName=', ceoName);
+    async createOfficeRoom(ceoName: string, roomCode: string): Promise<Colyseus.Room<IGameState>> {
+        console.log('[ServerManager] createOfficeRoom – ceoName=', ceoName, 'roomCode=', roomCode);
         try {
-            this.room = await this.client.joinOrCreate<IGameState>('office_room', { ceoName });
+            this.room = await this.client.create<IGameState>('office_room', { ceoName, roomCode });
+            console.log('[ServerManager] joined office_room – id=', this.room.id, 'sessionId=', this.room.sessionId);
+            this.setupListeners();
+            return this.room;
+        } catch (e) {
+            console.error('[ServerManager] Create Error', e);
+            throw e;
+        }
+    }
+
+    async joinOfficeRoom(ceoName: string, roomCode: string): Promise<Colyseus.Room<IGameState>> {
+        console.log('[ServerManager] joinOfficeRoom – ceoName=', ceoName, 'roomCode=', roomCode);
+        try {
+            this.room = await this.client.join<IGameState>('office_room', { ceoName, roomCode });
             console.log('[ServerManager] joined office_room – id=', this.room.id, 'sessionId=', this.room.sessionId);
 
             this.setupListeners();
@@ -27,6 +40,37 @@ export class ServerManager {
         } catch (e) {
             console.error('[ServerManager] Join Error', e);
             throw e;
+        }
+    }
+
+    async suggestRoomCode(): Promise<string> {
+        let rooms: Colyseus.RoomAvailable[] = [];
+        try {
+            rooms = await this.client.getAvailableRooms('office_room');
+        } catch {
+            rooms = [];
+        }
+
+        const used = new Set(
+            rooms
+                .map((room) => String((room.metadata as any)?.roomCode ?? '').trim())
+                .filter((code) => /^\d{4}$/.test(code)),
+        );
+
+        for (let i = 0; i < 40; i++) {
+            const code = `${Math.floor(1000 + Math.random() * 9000)}`;
+            if (!used.has(code)) return code;
+        }
+        return `${Math.floor(1000 + Math.random() * 9000)}`;
+    }
+
+    async roomCodeExists(roomCode: string): Promise<boolean> {
+        try {
+            const rooms = await this.client.getAvailableRooms('office_room');
+            const normalized = String(roomCode ?? '').trim();
+            return rooms.some((room) => String((room.metadata as any)?.roomCode ?? '').trim() === normalized);
+        } catch {
+            return false;
         }
     }
 
@@ -63,8 +107,8 @@ export class ServerManager {
         this.room?.send(ClientMessages.PLAY_EMPLOYEE, { cardId });
     }
 
-    public playMagic(cardId: string) {
-        this.room?.send(ClientMessages.PLAY_MAGIC, { cardId });
+    public playMagic(cardId: string, targetPlayerId?: string) {
+        this.room?.send(ClientMessages.PLAY_MAGIC, { cardId, targetPlayerId });
     }
 
     public solveCrisis(_cardId: string, crisisId: string) {
@@ -77,5 +121,13 @@ export class ServerManager {
 
     public playReaction(cardId: string) {
         this.room?.send(ClientMessages.PLAY_REACTION, { cardId });
+    }
+
+    public joinGame() {
+        this.room?.send(ClientMessages.JOIN_GAME);
+    }
+
+    public startMatch() {
+        this.room?.send(ClientMessages.START_MATCH);
     }
 }

@@ -1,182 +1,175 @@
 import { OfficeRoom } from "../src/rooms/OfficeRoom";
 import { OfficeRoomState, PlayerState, CardState } from "../src/State";
-import { GamePhase, ServerEvents, ClientMessages, CardType } from "../../shared/SharedTypes";
-import assert from "assert";
+import { GamePhase, ServerEvents, CardType } from "../../shared/SharedTypes";
 
-console.log("🏃 Esecuzione Test QA Agente 4 - reaction_stress.test.ts...");
+jest.setTimeout(20000);
+
+const createdRooms: OfficeRoom[] = [];
+
+const disposeRoom = (room: OfficeRoom) => {
+    clearInterval((room as any)._patchInterval);
+    clearTimeout((room as any)._autoDisposeTimeout);
+    room.clock?.clear?.();
+};
+
+type MockClient = {
+    sessionId: string;
+    send: (event: unknown, data: unknown) => void;
+    getLastPacket: () => { event: unknown; data: unknown } | null;
+};
+
+const createMockClient = (sessionId: string): MockClient => {
+    let lastPacket: { event: unknown; data: unknown } | null = null;
+    return {
+        sessionId,
+        send: (event: unknown, data: unknown) => {
+            lastPacket = { event, data };
+        },
+        getLastPacket: () => lastPacket,
+    };
+};
+
+const createManualClock = () => {
+    let now = 0;
+    let nextId = 0;
+    const tasks: Array<{ id: number; due: number; cb: () => void }> = [];
+
+    return {
+        setTimeout(cb: () => void, ms: number) {
+            const task = { id: ++nextId, due: now + ms, cb };
+            tasks.push(task);
+            return task.id;
+        },
+        clear() {
+            tasks.length = 0;
+        },
+        tick(ms: number) {
+            now += ms;
+            const due = tasks
+                .filter((task) => task.due <= now)
+                .sort((a, b) => a.due - b.due);
+
+            for (const task of due) {
+                const index = tasks.findIndex((candidate) => candidate.id === task.id);
+                if (index >= 0) {
+                    tasks.splice(index, 1);
+                    task.cb();
+                }
+            }
+        },
+    };
+};
 
 const createDummyRoom = () => {
     const room = new OfficeRoom();
+    createdRooms.push(room);
     room.state = new OfficeRoomState();
     room.state.phase = GamePhase.PLAYER_TURN;
-
-    // We need to mock broadcast since we're not attached to a server
     room.broadcast = () => { };
 
-    // 1. Setup 3 players
+    const manualClock = createManualClock();
+    room.clock = manualClock as any;
+
     for (let i = 1; i <= 3; i++) {
-        const p = new PlayerState();
-        p.sessionId = `player_${i}`;
-        p.username = `CEO_0${i}`;
-        p.isConnected = true;
-        p.actionPoints = 3;
-        room.state.players.set(p.sessionId, p);
-        room.state.playerOrder.push(p.sessionId);
+        const player = new PlayerState();
+        player.sessionId = `player_${i}`;
+        player.username = `CEO_${i}`;
+        player.isConnected = true;
+        player.actionPoints = 3;
+        room.state.players.set(player.sessionId, player);
+        room.state.playerOrder.push(player.sessionId);
     }
 
     room.state.currentTurnPlayerId = "player_1";
     room.state.turnIndex = 0;
-
-    // Initialize required structures for Room
     room.state.actionStack = [];
-    room["buildCardTemplateLookup"](); // Internal method to load templates
-
-    // Ensure clock exists (Colyseus Room normally instantiates it)
-    if (!room.clock) {
-        room.clock = {
-            setTimeout: (cb: Function, ms: number) => {
-                return setTimeout(cb, ms);
-            },
-            clear: () => { }
-        } as any;
-    }
+    room["buildCardTemplateLookup"]();
 
     return room;
 };
 
-const createMockClient = (sessionId: string) => {
-    let lastPacket: any = null;
-    return {
-        sessionId,
-        send: (ev: any, data: any) => { lastPacket = { ev, data }; },
-        getLastPacket: () => lastPacket,
-        clearPacket: () => { lastPacket = null; }
-    } as any;
-};
+describe("Feature 04: Reaction stress and anti-cheat", () => {
+    afterEach(() => {
+        while (createdRooms.length > 0) {
+            const room = createdRooms.pop()!;
+            disposeRoom(room);
+        }
+    });
 
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-const runTests = async () => {
-    try {
-        console.log("\n▶️ 1. Stress-Test delle Race Conditions (Fase 4)");
-        let room = createDummyRoom();
-
+    test("resolves simultaneous reactions without race conditions", () => {
+        const room = createDummyRoom();
         const client1 = createMockClient("player_1");
         const client2 = createMockClient("player_2");
         const client3 = createMockClient("player_3");
 
-        // Give player 1 an employee card
-        const empCard = new CardState();
-        empCard.id = "card_emp_1";
-        empCard.templateId = "emp_01";
-        empCard.type = CardType.EMPLOYEE;
-        room.state.players.get("player_1")!.hand.push(empCard);
+        const employee = new CardState();
+        employee.id = "card_emp_1";
+        employee.templateId = "emp_01";
+        employee.type = CardType.EMPLOYEE;
+        room.state.players.get("player_1")!.hand.push(employee);
 
-        // Give player 2 and 3 a reaction card
-        const reactCard2 = new CardState();
-        reactCard2.id = "card_react_2";
-        reactCard2.templateId = "reac_01";
-        reactCard2.type = CardType.REACTION;
-        room.state.players.get("player_2")!.hand.push(reactCard2);
+        const reaction2 = new CardState();
+        reaction2.id = "card_react_2";
+        reaction2.templateId = "reac_01";
+        reaction2.type = CardType.EVENTO;
+        room.state.players.get("player_2")!.hand.push(reaction2);
 
-        const reactCard3 = new CardState();
-        reactCard3.id = "card_react_3";
-        reactCard3.templateId = "reac_02";
-        reactCard3.type = CardType.REACTION;
-        room.state.players.get("player_3")!.hand.push(reactCard3);
+        const reaction3 = new CardState();
+        reaction3.id = "card_react_3";
+        reaction3.templateId = "reac_02";
+        reaction3.type = CardType.EVENTO;
+        room.state.players.get("player_3")!.hand.push(reaction3);
 
-        // Player 1 plays employee
-        room["handlePlayEmployee"](client1, { cardId: "card_emp_1" });
-        assert.strictEqual(room.state.phase, GamePhase.REACTION_WINDOW, "Fase deve essere REACTION_WINDOW");
-        assert.ok(room.state.pendingAction, "pendingAction deve essere popolato");
-        assert.strictEqual(room.state.actionStack.length, 1, "actionStack deve avere 1 elemento");
+        room["handlePlayEmployee"](client1 as any, { cardId: "card_emp_1" });
+        expect(room.state.phase).toBe(GamePhase.REACTION_WINDOW);
+        expect(room.state.pendingAction).toBeTruthy();
+        expect(room.state.actionStack.length).toBe(1);
 
-        // Player 2 and 3 send reaction simultaneously
-        await Promise.all([
-            new Promise(resolve => {
-                room["handlePlayReaction"](client2, { cardId: "card_react_2" });
-                resolve(true);
-            }),
-            new Promise(resolve => {
-                room["handlePlayReaction"](client3, { cardId: "card_react_3" });
-                resolve(true);
-            })
-        ]);
+        room["handlePlayReaction"](client2 as any, { cardId: "card_react_2" });
+        room["handlePlayReaction"](client3 as any, { cardId: "card_react_3" });
+        expect(room.state.actionStack.length).toBe(3);
 
-        assert.strictEqual(room.state.actionStack.length, 3, "Entrambe le reazioni devono essere impilate nello stack");
+        (room.clock as any).tick(5100);
+        expect(room.state.phase).toBe(GamePhase.PLAYER_TURN);
+        expect(room.state.pendingAction).toBeNull();
+        expect(room.state.actionStack.length).toBe(0);
+    });
 
-        console.log("  ⏳ Attesa 5.1s per scadenza timer Reaction Window...");
+    test("continues after disconnect during reaction window", () => {
+        const room = createDummyRoom();
+        const client1 = createMockClient("player_1");
 
-        // Let the timeout expire naturally (we used real setTimeout in our mock if Colyseus clock isn't ticking)
-        // Note: For real environment, we'd mock the timer to not wait 5s, but this is a node script to test behavior
-        if (room.clock && typeof room.clock.tick === "function") {
-            room.clock.tick(5100);
-        } else {
-            await sleep(5100);
-        }
+        const employee = new CardState();
+        employee.id = "card_emp_1";
+        employee.templateId = "emp_01";
+        employee.type = CardType.EMPLOYEE;
+        room.state.players.get("player_1")!.hand.push(employee);
 
-        assert.strictEqual(room.state.phase, GamePhase.PLAYER_TURN, "Il gioco deve tornare a PLAYER_TURN");
-        assert.strictEqual(room.state.pendingAction, null, "pendingAction deve essere svuotato");
-        assert.strictEqual(room.state.actionStack.length, 0, "actionStack deve essere svuotato");
-        console.log("  ✅ Reazioni simultanee gestite e risolte correttamente.");
+        room["handlePlayEmployee"](client1 as any, { cardId: "card_emp_1" });
+        expect(room.state.phase).toBe(GamePhase.REACTION_WINDOW);
 
+        room.state.players.get("player_2")!.isConnected = false;
+        (room.clock as any).tick(5100);
 
-        console.log("\n▶️ 2. Test Rage Quit (Disconnessione in Reaction Window)");
-        room = createDummyRoom();
-        const client1Rq = createMockClient("player_1");
+        expect(room.state.phase).toBe(GamePhase.PLAYER_TURN);
+    });
 
-        const empCardRq = new CardState();
-        empCardRq.id = "card_emp_1";
-        empCardRq.templateId = "emp_01";
-        empCardRq.type = CardType.EMPLOYEE;
-        room.state.players.get("player_1")!.hand.push(empCardRq);
+    test("rejects reaction cards outside reaction window", () => {
+        const room = createDummyRoom();
+        const client2 = createMockClient("player_2");
 
-        room["handlePlayEmployee"](client1Rq, { cardId: "card_emp_1" });
-        assert.strictEqual(room.state.phase, GamePhase.REACTION_WINDOW);
+        const reaction = new CardState();
+        reaction.id = "card_react_cheat";
+        reaction.templateId = "reac_01";
+        reaction.type = CardType.EVENTO;
+        room.state.players.get("player_2")!.hand.push(reaction);
 
-        // Player 2 disconnects
-        const p2Session = "player_2";
-        room.state.players.get(p2Session)!.isConnected = false; // Emulate onLeave sync
-        console.log("  🛑 Player_2 disconnesso...");
+        room["handlePlayReaction"](client2 as any, { cardId: "card_react_cheat" });
 
-        console.log("  ⏳ Attesa 5.1s per timer...");
-        if (room.clock && typeof room.clock.tick === "function") {
-            room.clock.tick(5100);
-        } else {
-            await sleep(5100);
-        }
-
-        assert.strictEqual(room.state.phase, GamePhase.PLAYER_TURN, "Timer deve scadere e resettare la fase nonostante la disconnessione");
-        console.log("  ✅ Gioco prosegue senza blocchi (Server non crashato).");
-
-
-        console.log("\n▶️ 3. Test Cheat: PLAY_REACTION fuori Reaction Window");
-        room = createDummyRoom();
-        const clientMalicious = createMockClient("player_2");
-
-        const reactCardCheat = new CardState();
-        reactCardCheat.id = "card_react_cheat";
-        reactCardCheat.templateId = "reac_01";
-        reactCardCheat.type = CardType.REACTION;
-        room.state.players.get("player_2")!.hand.push(reactCardCheat);
-
-        room["handlePlayReaction"](clientMalicious, { cardId: "card_react_cheat" });
-
-        const errorPacket = clientMalicious.getLastPacket();
-        assert.ok(errorPacket, "Il server deve rispondere con un pacchetto");
-        assert.strictEqual(errorPacket.ev, ServerEvents.ERROR, "Deve essere di tipo ERROR");
-        assert.strictEqual(errorPacket.data.code, "NO_REACTION_WINDOW", "Deve restituire NO_REACTION_WINDOW");
-        assert.strictEqual(room.state.players.get("player_2")!.hand.length, 1, "La carta non deve essere stata spesa");
-        console.log("  ✅ Cheat per Reaction fuori tempismo bloccato.");
-
-
-        console.log("\n🧪 TUTTI I TEST DELLO STRESS-TEST SONO PASSATI (Verde)");
-
-    } catch (e: any) {
-        console.error(`\n❌ TEST FALLITO: ${e.message}`);
-        console.error(e);
-        process.exit(1);
-    }
-};
-
-runTests();
+        const packet = client2.getLastPacket();
+        expect(packet).toBeTruthy();
+        expect(packet!.event).toBe(ServerEvents.ERROR);
+        expect((packet!.data as any).code).toBe("NO_REACTION_WINDOW");
+        expect(room.state.players.get("player_2")!.hand.length).toBe(1);
+    });
+});

@@ -1,44 +1,54 @@
-# Feature 01: Connessione e Lobby ("OfficeRoom")
+# Feature 01: Connessione e Lobby (`office_room`)
 
-Questo documento definisce le specifiche tecniche per implementare la connessione iniziale dei giocatori (CEO) alla partita. Le indicazioni qui riportate sono vincolanti per l'Agente 1 (Backend) e l'Agente 2 (Frontend).
+Specifica aggiornata della lobby multiplayer.
+Ultimo aggiornamento: 2026-03-04
 
-## 1. Parametri di Configurazione della Stanza
+## Parametri stanza
+- Nome stanza: `office_room`
+- Capienza massima: `10` giocatori
+- Capienza minima per avvio: `2` giocatori
+- Codice stanza: `roomCode` a 4 cifre numeriche
+- Timeout riconnessione: `30s`
 
-*   **Nome Stanza:** `office_room`
-*   **Capienza Massima:** 10 giocatori (`maxClients = 10`).
-*   **Capienza Minima per Start:** 3 giocatori.
-*   **Timeout Riconnessione:** 30 secondi (per gestire cali di linea temporanei).
+## Backend (Colyseus)
+- `onCreate`:
+  - valida/normalizza `roomCode`
+  - espone metadata stanza con `roomCode`
+  - registra handler messaggi (`JOIN_GAME`, `START_MATCH`, gameplay)
+- `onAuth`:
+  - valida `ceoName` (3-15, alfanumerico)
+  - valida `roomCode`
+  - blocca nuovi nomi se partita gia avviata
+  - consente rejoin con lo stesso nome se il player era gia presente
+- `onJoin`:
+  - nuovo player: crea `PlayerState` con `isReady=false`
+  - rejoin: migra stato sul nuovo `sessionId` mantenendo ordine turni e ownership
+- `onLeave`:
+  - leave consensuale: rimuove player
+  - leave non consensuale: tenta `allowReconnection` per 30s
 
-## 2. Direttive per Agente 1 (Backend - Node.js/Colyseus)
+## Frontend (Phaser)
+- Login in due step:
+  - step 1: scelta `Host` o `Partecipa`
+  - step 2:
+    - Host: mostra codice stanza + nome CEO + crea partita
+    - Partecipa: input codice + nome CEO + partecipa
+- Lingua selezionabile: `it` / `en` (default `it`)
+- Verifica lato client:
+  - nome valido prima del join/create
+  - in join, controllo esistenza stanza per `roomCode` prima della connessione
 
-L'Agente 1 è responsabile della creazione della Room, della validazione dei dati in ingresso e della prima costruzione dello Stato di gioco.
+## Contratti operativi correnti
+- Host:
+  - `create("office_room", { ceoName, roomCode })`
+  - poi `JOIN_GAME` per segnarsi ready
+  - poi `START_MATCH` quando tutti i connessi sono ready
+- Join:
+  - `join("office_room", { ceoName, roomCode })`
+  - poi `JOIN_GAME` per segnarsi ready
 
-*   **Creazione Room**: Mappare `office_room` su una classe `OfficeRoom` che estende `Room<IGameState>`.
-*   **Validazione Input (`onAuth`)**: 
-    *   Il client invierà un payload di tipo `JoinOptions`.
-    *   **Regola**: Validare il campo `ceoName`. Deve essere una stringa non vuota e la sua lunghezza deve essere compresa tra 3 e 15 caratteri alfanumerici.
-    *   In caso di fallimento della validazione, rigettare la connessione lanciando un errore esplicito al client (es. `ServerException`).
-*   **Inizializzazione Giocatore (`onJoin`)**:
-    *   Creare un'istanza conforme a `IPlayer`.
-    *   Popolare `IPlayer.username` con il `ceoName` validato.
-    *   Inizializzare strutture dati di base per il giocatore (Mano vuota, Punti Azione a 0 fino all'inizio effettivo).
-*   **Disconnessioni (`onLeave`)**:
-    *   Impostare `isConnected = false` sul Player. **Non** cancellare il giocatore o svuotare la sua mano.
-    *   Utilizzare il comando di Colyseus `allowReconnection` per metterlo in sospeso. Se non si riconnette entro il timeout, passare il controllo a una funzione di cleanup o terminare il gioco se i giocatori scendono sotto la soglia minima.
-
-## 3. Direttive per Agente 2 (Frontend - Phaser.js)
-
-L'Agente 2 deve occuparsi dell'interfaccia utente (UI) e del feedback per il nuovo arrivato.
-
-*   **Scena di Login**:
-    *   Implementare una Scena `LoginScene` che si carichi appena i placeholder asset sono pronti.
-*   **Input Name**:
-    *   Creare un campo di input testo per raccogliere il `ceoName`. Utilizzare un elemento DOM sovrapposto al Canvas (Phaser DOM Elements) per la massima compatibilità Mobile.
-    *   Aggiungere un pulsante "Entra in Riunione" in cui è vincolata la validazione lato-client preventiva (`ceoName` >= 3 e <= 15).
-*   **Connessione**:
-    *   Istanziare il `Client` di Colyseus.
-    *   Invocare `joinOrCreate("office_room", { ceoName: "IlMioNome" })`.
-*   **Transizione di Scena e Gestione Errori**:
-    *   Rimanere nella schermata di login e bloccare l'interazione finché la promise non si risolve.
-    *   Se il Server rifiuta (Promise `catch`), visualizzare il messaggio restituito dal Server (es. formattazione errata del nome) e sbloccare il tasto.
-    *   Se il join ha successo (Promise `then`), avanzare alla Scena `LobbyScene` e salvare il riferimento alla Room in modo sicuro (es. `scene.registry` o in uno Store Globale TypeScript).
+## Criteri accettazione
+- Due client con codice uguale entrano nella stessa stanza
+- Stanza non esistente in join: errore esplicito
+- Avvio partita consentito solo a host e con almeno 2 connessi ready
+- Rejoin con stesso nome in partita avviata: stato ripristinato
