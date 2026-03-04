@@ -88,12 +88,12 @@ npm run build
 - `server build`: OK
 - `client build`: OK
 - test mirati: OK
-  - comando: `npm test -- --runInBand --forceExit tests/DeckManager.test.ts tests/CardEffectParser.test.ts server/tests/win_conditions.test.ts server/tests/reaction_stress.test.ts`
-  - esito: `31/31` test passed
+  - comando: `npm test -- --runInBand --forceExit tests/DeckManager.test.ts tests/CardEffectParser.test.ts server/tests/core_loop.test.ts server/tests/reaction_stress.test.ts server/tests/win_conditions.test.ts`
+  - esito: `35/35` test passed
 
 ## Documentazione utile
+- `docs/index.md`: indice principale documentazione
+- `docs/ARCHITECTURE.md`: mappa architettura + runbook partita
+- `docs/PLAN.md`: milestone, acceptance e verifiche
+- `docs/GDD.md`: design doc (as-is + struttura variante scelta)
 - `CodexGPT.md`: memoria operativa aggiornata
-- `Documentation/README.md`: indice documentazione
-- `Documentation/LUCrAre_SEMPRE_Master.md`: stato generale progetto
-- `Documentation/Phase_Status_Agente0.md`: stato fasi e rischi
-- `Feature_01_Lobby.md`, `Feature_02_CoreLoop.md`, `Documentation/Feature_03_ReactionWindow.md`: specifiche funzionali
