@@ -85,7 +85,7 @@ class OfficeRoom extends colyseus_1.Room {
             console.warn("[AUTH] Rejected: ceoName already connected", ceoName);
             throw new colyseus_1.ServerError(409, "Nome CEO già in uso in questa stanza.");
         }
-        if (this.state.phase !== SharedTypes_1.GamePhase.WAITING_FOR_PLAYERS && !existing) {
+        if (this.state.phase !== SharedTypes_1.GamePhase.WAITING_FOR_PLAYERS && this.state.phase !== SharedTypes_1.GamePhase.PRE_LOBBY && !existing) {
             console.warn("[AUTH] Rejected: match already started and no reconnect slot for", ceoName);
             throw new colyseus_1.ServerError(403, "Partita già in corso. Puoi rientrare solo con un nome già presente.");
         }
@@ -179,7 +179,7 @@ class OfficeRoom extends colyseus_1.Room {
                 else {
                     this.state.currentTurnPlayerId = "";
                     this.state.turnIndex = 0;
-                    this.state.phase = SharedTypes_1.GamePhase.WAITING_FOR_PLAYERS;
+                    this.state.phase = SharedTypes_1.GamePhase.PRE_LOBBY;
                 }
             }
             return;
@@ -242,7 +242,7 @@ class OfficeRoom extends colyseus_1.Room {
     //  Game Start
     // ─────────────────────────────────────────────────────
     handleJoinGame(client, _data) {
-        if (this.state.phase !== SharedTypes_1.GamePhase.WAITING_FOR_PLAYERS) {
+        if (this.state.phase !== SharedTypes_1.GamePhase.WAITING_FOR_PLAYERS && this.state.phase !== SharedTypes_1.GamePhase.PRE_LOBBY) {
             client.send(SharedTypes_1.ServerEvents.ERROR, { message: "Il gioco è già iniziato." });
             return;
         }
@@ -253,7 +253,7 @@ class OfficeRoom extends colyseus_1.Room {
         }
     }
     handleStartMatch(client) {
-        if (this.state.phase !== SharedTypes_1.GamePhase.WAITING_FOR_PLAYERS) {
+        if (this.state.phase !== SharedTypes_1.GamePhase.WAITING_FOR_PLAYERS && this.state.phase !== SharedTypes_1.GamePhase.PRE_LOBBY) {
             client.send(SharedTypes_1.ServerEvents.ERROR, { code: "GAME_ALREADY_STARTED", message: "La partita e gia iniziata." });
             return;
         }
@@ -781,9 +781,7 @@ class OfficeRoom extends colyseus_1.Room {
         companyCard.isFaceUp = true;
         companyCard.name = template.name;
         player.company.push(companyCard);
-        // Score = number of hired employees (company.length)
-        player.score = player.company.length;
-        console.log(`   👔 ${player.username} hired ${template.name}. Company size: ${player.score}`);
+        console.log(`   👔 ${player.username} hired ${template.name}. Company size: ${player.company.length}`);
     }
     /**
      * Removes the resolved crisis from centralCrises.

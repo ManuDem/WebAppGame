@@ -918,9 +918,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         companyCard.name = template.name;
         player.company.push(companyCard);
 
-        // Score = number of hired employees (company.length)
-        player.score = (player.company as any[]).length;
-        console.log(`   👔 ${player.username} hired ${template.name}. Company size: ${player.score}`);
+        console.log(`   👔 ${player.username} hired ${template.name}. Company size: ${(player.company as any[]).length}`);
     }
 
     /**

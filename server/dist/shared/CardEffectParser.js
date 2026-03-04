@@ -170,34 +170,11 @@ class CardEffectParser {
         log.push(`[resolveQueue] Executing original action: ${originalCard.name} by ${originalSourcePlayer.username}.`);
         const success = this.resolve(originalCard, originalSourcePlayer, originalTargetPlayer, state, pendingAction);
         log.push(`[resolveQueue] Result: ${success ? "SUCCESS" : "FAILED (preconditions not met)"}`);
-        // --- PHASE 4: Apply Structural Effects if no cancellation ---
+        // --- PHASE 4: No longer apply structural effects here ---
+        // Structural effects (Employee Hire, Crisis Removal) are delegated to OfficeRoom.ts
+        // so that Colyseus Schemas are mutated correctly and not duplicated.
         if (success && !pendingAction.isCancelled) {
-            if (pendingAction.actionType === "PLAY_EMPLOYEE" && originalTemplateId) {
-                // Sposta la carta virtualmente nella company (il server aggiornerà le chiavi corrette)
-                const companyCard = {
-                    id: pendingAction.id, // Usa l'ID azione momentaneamente
-                    templateId: originalTemplateId,
-                    type: originalCard.type,
-                    costPA: originalCard.cost,
-                    isFaceUp: true,
-                    name: originalCard.name
-                };
-                if (!originalSourcePlayer.company)
-                    originalSourcePlayer.company = [];
-                originalSourcePlayer.company.push(companyCard);
-                originalSourcePlayer.score = originalSourcePlayer.company.length;
-                log.push(`[resolveQueue] Structural: ${originalCard.name} added to ${originalSourcePlayer.username}'s company.`);
-                console.log(`[resolveQueue] Structural: added to company.`);
-            }
-            else if (pendingAction.actionType === "SOLVE_CRISIS" && pendingAction.targetCrisisId) {
-                // Rimuove la crisi dal tavolo (il server farà lo schema sync corretto)
-                const crisisArr = state.centralCrises;
-                const idx = crisisArr.findIndex((c) => c.id === pendingAction.targetCrisisId);
-                if (idx !== -1) {
-                    crisisArr.splice(idx, 1);
-                    log.push(`[resolveQueue] Structural: Crisis ${pendingAction.targetCrisisId} removed from central table.`);
-                }
-            }
+            log.push(`[resolveQueue] Action successful, delegating structural changes to main Room.`);
         }
         // --- Cleanup ---
         state.actionStack = [];
@@ -289,7 +266,6 @@ class CardEffectParser {
                         // Rimuovi l'ultimo dipendente dalla company della vittima
                         if (victim.company.length > 0) {
                             victim.company.pop();
-                            victim.score = victim.company.length;
                             console.log(`[CardEffectParser] crisis penalty lose_employee: ${victim.username} lost last employee`);
                         }
                         break;

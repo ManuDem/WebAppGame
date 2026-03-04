@@ -75,8 +75,8 @@ const createCard = (id: string, templateId: string, type: CardType) => {
     return card;
 };
 
-const runTests = async () => {
-    try {
+describe("LUCrAre End-to-End Win Conditions", () => {
+    test("Monopolio Umano Win Condition", () => {
         console.log("\n▶️ TASK 1: Test End-to-End Win Condition 'Monopolio Umano'");
         let room = createDummyRoom();
         const client1 = createMockClient("player_1");
@@ -101,9 +101,11 @@ const runTests = async () => {
         assert.strictEqual(winBroadcast.message.winnerId, "player_1");
         console.log("  ✅ Monopolio Umano Win Condition superata.");
 
+        assert.strictEqual(winBroadcast.message.winnerId, "player_1");
+    });
 
-        console.log("\n▶️ TASK 2: Test End-to-End Win Condition 'Problem Solver'");
-        room = createDummyRoom();
+    test("Problem Solver Win Condition", () => {
+        let room = createDummyRoom();
         const client1_2 = createMockClient("player_1");
         // Give 3 crises on the table
         room.state.centralCrises.push(createCard("crs_inst_1", "crs_01", CardType.IMPREVISTO));
@@ -121,9 +123,11 @@ const runTests = async () => {
         assert.strictEqual(room.state.winnerId, "player_1");
         console.log("  ✅ Problem Solver Win Condition superata.");
 
+        assert.strictEqual(room.state.winnerId, "player_1");
+    });
 
-        console.log("\n▶️ TASK 3: Test delle Penalità Crisi");
-        room = createDummyRoom();
+    test("Test delle Penalità Crisi", () => {
+        let room = createDummyRoom();
         const client1_3 = createMockClient("player_1");
         const p1 = room.state.players.get("player_1")!;
         const p2 = room.state.players.get("player_2")!;
@@ -153,9 +157,11 @@ const runTests = async () => {
         assert.strictEqual(p2.company.length, 1, "Player 2 deve aver perso un dipendente nella company");
         console.log("  ✅ Penalità lose_employee applicata correttamente.");
 
+        assert.strictEqual(p2.company.length, 1, "Player 2 deve aver perso un dipendente nella company");
+    });
 
-        console.log("\n▶️ TASK 4: Test del Target Trick");
-        room = createDummyRoom();
+    test("Test del Target Trick", () => {
+        let room = createDummyRoom();
         const client1_4 = createMockClient("player_1");
         const p1_4 = room.state.players.get("player_1")!;
         const p2_4 = room.state.players.get("player_2")!;
@@ -179,15 +185,6 @@ const runTests = async () => {
         assert.strictEqual(lastPacket.data.code, "MISSING_TARGET");
         console.log("  ✅ Errore MISSING_TARGET lanciato correttamente se target obbligatorio omesso.");
 
-
-        console.log("\n🧪 TUTTI I TEST END-TO-END SONO PASSATI (Verde)");
-        process.exit(0);
-
-    } catch (e: any) {
-        console.error(`\n❌ TEST FALLITO: ${e.message}`);
-        console.error(e);
-        process.exit(1);
-    }
-};
-
-runTests();
+        assert.strictEqual(lastPacket.data.code, "MISSING_TARGET");
+    });
+});

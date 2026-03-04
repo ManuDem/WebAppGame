@@ -34,8 +34,14 @@ Ad oggi, abbiamo consolidato l'**infrastruttura di testing Node.js** e abbiamo c
   - Simulata **Race Condition**: `PLAY_EMPLOYEE` di un giocatore e due `PLAY_REACTION` simultanei nello stesso millisecondo. Verificata corretta coda in `actionStack` e deferimento. La suite passa con esito **Verde**.
   - Simulata **Rage Quitting**: Disconnessione improvvisa durante il timer della Reaction Window. Il server non crasha, resetta lo stato e prosegue regolarmente la partita. La suite passa con esito **Verde**.
   - Simulato **Cheat**: Invio di `PLAY_REACTION` fuori dalla finestra temporale (in `PLAYER_TURN`). Il server intercetta, respinge con `NO_REACTION_WINDOW` e mantiene integro lo stato. Mossa malevola bloccata. La suite passa con esito **Verde**.
+* **Creazione Suite "Win Conditions & End-to-End" (Fase 5):**
+  - Implementato `win_conditions.test.ts` in modo nativo su Node.js scavalcando i renderer.
+  - **Monopolio Umano:** Verificato che all'assunzione del 4° dipendente il server emetta correttamente `GAME_WON` ed entri in `GAME_OVER`. Sventato e fixato bug di duplicazione del server state causato da parser/officeroom paralleli.
+  - **Problem Solver:** Verificato che alla risoluzione della 2° crisi il server emetta `GAME_WON` evitando calcoli misti per i VP.
+  - **Penalità Crisi:** Testate `lose_employee` e `discard_2` verificate sull'inventario degli altri giocatori. Funzionante.
+  - **Prevenzione Cheat (Targeted Tricks):** Accertato che omettere un `targetPlayerId` su carte ad personam fa rimbalzare la richiesta con errore `MISSING_TARGET`. Test **Verde**.
 
 ## 4. Task Ancora da Completare
 
-1. **Test sulla validazione delle Azioni Pendenti (Fase 3):**
-   - Dovrò testare che inviare `PLAY_EMPLOYEE` con una carta che **non ho in mano** (o non idonea) venga respinto con errore di validazione `ServerEvents.ERROR`. Attendo il parser definitivo.
+Tutti i foundation tests core ("Fase 1 Lobbies", "Fase 2 Loops", "Fase 4 Reaction", "Fase 5 End-to-End") sono VERDI.
+L'architettura Node è solida. Restano da validare solo i futuri protocolli della Visual Queue di Agent 0.

@@ -21,6 +21,7 @@ class CardState extends schema_1.Schema {
         this.id = "";
         this.templateId = "";
         this.type = SharedTypes_1.CardType.EMPLOYEE;
+        this.equippedItems = new schema_1.ArraySchema();
     }
 }
 exports.CardState = CardState;
@@ -52,6 +53,18 @@ __decorate([
     (0, schema_1.type)("string"),
     __metadata("design:type", String)
 ], CardState.prototype, "description", void 0);
+__decorate([
+    (0, schema_1.type)("uint8"),
+    __metadata("design:type", Number)
+], CardState.prototype, "targetRoll", void 0);
+__decorate([
+    (0, schema_1.type)("int8"),
+    __metadata("design:type", Number)
+], CardState.prototype, "modifier", void 0);
+__decorate([
+    (0, schema_1.type)([CardState]),
+    __metadata("design:type", Array)
+], CardState.prototype, "equippedItems", void 0);
 // ═════════════════════════════════════════════════════════
 //  PendingActionState — action context for Reaction Window
 // ═════════════════════════════════════════════════════════
@@ -167,7 +180,7 @@ __decorate([
 class OfficeRoomState extends schema_1.Schema {
     constructor() {
         super(...arguments);
-        this.phase = SharedTypes_1.GamePhase.WAITING_FOR_PLAYERS;
+        this.phase = SharedTypes_1.GamePhase.PRE_LOBBY;
         this.players = new schema_1.MapSchema();
         this.hostSessionId = "";
         this.playerOrder = new schema_1.ArraySchema();

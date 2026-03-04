@@ -8,6 +8,9 @@ export declare class CardState extends Schema implements ICardData {
     isFaceUp?: boolean;
     name?: string;
     description?: string;
+    targetRoll?: number;
+    modifier?: number;
+    equippedItems?: ICardData[];
 }
 export declare class PendingActionState extends Schema implements IPendingAction {
     id: string;
