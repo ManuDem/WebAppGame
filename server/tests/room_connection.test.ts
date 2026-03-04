@@ -23,7 +23,7 @@ describe("Feature 01: Room Connection and Lobby Validation", () => {
         room = new OfficeRoom();
         // Mock deps per chiamate dirette
         room.state = {
-            phase: GamePhase.WAITING_FOR_PLAYERS,
+            phase: GamePhase.PRE_LOBBY,
             players: new Map(),
         } as any;
         (room as any).roomCode = "1234";
