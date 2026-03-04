@@ -3,7 +3,14 @@ import { GamePhase, IGameState, IPlayer, MIN_PLAYERS_TO_START, ServerEvents } fr
 import { ServerManager } from '../network/ServerManager';
 import { DEFAULT_LANGUAGE, sanitizeLanguage, SupportedLanguage, t } from '../i18n';
 import { drawPokemonBackdrop, ensurePokemonTextures } from '../ui/PokemonVisuals';
-import { applyBrandTypography, BRAND_SUBTITLE_STYLE, BRAND_TITLE_STYLE, BRAND_TITLE_TEXT, placeBrandHeader } from '../ui/Branding';
+import {
+    applyBrandTypography,
+    BRAND_SUBTITLE_STYLE,
+    BRAND_TITLE_STYLE,
+    BRAND_TITLE_TEXT,
+    layoutBrandHeader,
+    placeBrandHeader,
+} from '../ui/Branding';
 import { APP_FONT_FAMILY } from '../ui/Typography';
 import { createSimpleButtonFx, SimpleButtonController } from '../ui/SimpleButtonFx';
 import { paintRetroButton } from '../ui/RetroButtonPainter';
@@ -338,7 +345,8 @@ export class PreLobbyScene extends Phaser.Scene {
         this.ditherLayer.setSize(w, h);
 
         applyBrandTypography(this.title, this.subtitle, minSide);
-        placeBrandHeader(this.title, this.subtitle, cx, Phaser.Math.Clamp(h * 0.08, 48, 94), minSide);
+        const header = layoutBrandHeader(w, h, minSide);
+        placeBrandHeader(this.title, this.subtitle, cx, header.titleY, minSide);
 
         const panelW = Phaser.Math.Clamp(w * (isLandscape ? 0.9 : 0.95), 320, 980);
         const panelH = Phaser.Math.Clamp(h * (isLandscape ? 0.82 : 0.82), 360, 780);

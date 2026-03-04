@@ -8,6 +8,15 @@ import { drawPokemonBackdrop, ensurePokemonTextures } from '../ui/PokemonVisuals
 import { paintRetroButton } from '../ui/RetroButtonPainter';
 import { APP_FONT_FAMILY } from '../ui/Typography';
 import { requestCardArtwork, resolveCardArtworkTexture } from '../ui/CardArtworkResolver';
+import { fitTextToBox } from '../ui/text/FitText';
+import { buildInspectPresentation } from '../ui/cards/CardPresentationModel';
+import {
+    acceptPendingCard,
+    createPendingPlayState,
+    reconcilePendingWithHand,
+    rollbackPendingCard as rollbackPendingModel,
+    stashPendingCard,
+} from '../systems/PendingPlayModel';
 import { computeMatchLayout, drawMatchLayoutDebug, LayoutRect, MatchLayout } from '../ui/layout/MatchLayout';
 import {
     CardType,
@@ -153,8 +162,10 @@ export class GameScene extends Phaser.Scene {
     private crisisViews: CrisisView[] = [];
     private companyCards: CardGameObject[] = [];
     private handCards: CardGameObject[] = [];
+    private liveCardObjects = new Set<CardGameObject>();
 
     private pendingPlayedCard?: CardGameObject;
+    private pendingPlayState = createPendingPlayState();
     private myTurnTween?: Phaser.Tweens.Tween;
     private deckButtonFx?: SimpleButtonController;
     private endButtonFx?: SimpleButtonController;
@@ -184,6 +195,9 @@ export class GameScene extends Phaser.Scene {
         this.roomCode = String(data?.roomCode ?? '');
         this.visualQueue = new VisualEventQueue();
         this.redirectingToPreLobby = false;
+        this.liveCardObjects.clear();
+        this.pendingPlayState = createPendingPlayState();
+        this.pendingPlayedCard = undefined;
 
         if (this.serverManager) {
             this.serverManager.onStateChange = this.handleStateChange.bind(this);
@@ -213,6 +227,7 @@ export class GameScene extends Phaser.Scene {
             this.endButtonFx?.destroy();
             this.readyButtonFx?.destroy();
             this.gameLogToggleFx?.destroy();
+            this.liveCardObjects.clear();
         });
 
         this.handleResize(this.scale.gameSize);
@@ -1157,19 +1172,35 @@ export class GameScene extends Phaser.Scene {
             .setPosition(leftX, line1Y)
             .setWordWrapWidth(hudW * 0.48, true)
             .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.0108, 10, 14)}px`);
+        fitTextToBox(this.hudTurnText, this.hudTurnText.text, hudW * 0.48, hudH * 0.42, {
+            maxLines: 2,
+            ellipsis: true,
+        });
         this.hudReactionText
             .setPosition(rightX, line1Y)
             .setWordWrapWidth(hudW * 0.44, true)
             .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.01, 9, 13)}px`);
+        fitTextToBox(this.hudReactionText, this.hudReactionText.text, hudW * 0.44, hudH * 0.42, {
+            maxLines: 2,
+            ellipsis: true,
+        });
         this.hudStatsText
             .setPosition(leftX, line2Y)
             .setWordWrapWidth(hudW * 0.7, true)
             .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.0098, 9, 13)}px`);
+        fitTextToBox(this.hudStatsText, this.hudStatsText.text, hudW * 0.7, hudH * 0.42, {
+            maxLines: 2,
+            ellipsis: true,
+        });
         this.hudStateText
             .setPosition(rightX, line2Y)
             .setOrigin(1, 0.5)
             .setWordWrapWidth(hudW * 0.3, true)
             .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.0094, 9, 12)}px`);
+        fitTextToBox(this.hudStateText, this.hudStateText.text, hudW * 0.3, hudH * 0.42, {
+            maxLines: 2,
+            ellipsis: true,
+        });
     }
 
     private layoutGameLog() {
@@ -1361,10 +1392,18 @@ export class GameScene extends Phaser.Scene {
             .setWordWrapWidth(panelW - 48)
             .setColor('#202126')
             .setFontSize(`${Phaser.Math.Clamp(panelW * 0.033, 19, 32)}px`);
+        fitTextToBox(this.cardInspectTitle, this.cardInspectTitle.text, panelW - 48, 58, {
+            maxLines: 2,
+            ellipsis: true,
+        });
         this.cardInspectType
             .setPosition(cx, panelY + 68)
             .setColor('#2f5f89')
             .setFontSize(`${Phaser.Math.Clamp(panelW * 0.018, 12, 18)}px`);
+        fitTextToBox(this.cardInspectType, this.cardInspectType.text, panelW - 52, 28, {
+            maxLines: 1,
+            ellipsis: true,
+        });
         this.cardInspectBody
             .setPosition(cx, artY + artH + 18)
             .setWordWrapWidth(panelW - 38)
@@ -1490,48 +1529,11 @@ export class GameScene extends Phaser.Scene {
     }
 
     private showCardInspect(card: ICardData) {
-        const typeLabel = String(card.type ?? '').toUpperCase();
-        const typeValue = String(card.type ?? '').toLowerCase();
         this.inspectedCard = card;
-        this.cardInspectTitle.setText(card.name ?? card.templateId ?? this.tr('game_card_unknown'));
-        const metaParts: string[] = [typeLabel];
-        if (typeof card.costPA === 'number') metaParts.push(`PA ${card.costPA}`);
-        if (card.templateId) metaParts.push(card.templateId);
-        this.cardInspectType.setText(metaParts.join('  |  '));
-        const lines: string[] = [];
-        const shortDesc = String((card as any)?.shortDesc ?? '').trim();
-        if (shortDesc.length > 0) {
-            lines.push(shortDesc);
-        }
-        if (card.description && card.description.trim().length > 0) {
-            lines.push(card.description.trim());
-        } else {
-            lines.push(this.tr('game_no_card_description'));
-        }
-        if (typeof card.targetRoll === 'number') {
-            lines.push(this.tr('game_card_target_roll', { value: card.targetRoll }));
-        }
-        if (typeof card.modifier === 'number' && card.modifier !== 0) {
-            const value = `${card.modifier > 0 ? '+' : ''}${card.modifier}`;
-            lines.push(this.tr('game_card_modifier', { value }));
-        }
-        if (card.subtype) {
-            lines.push(this.tr('game_card_subtype', { value: String(card.subtype).toUpperCase() }));
-        }
-        const equippedCount = Number((card as any)?.equippedItems?.length ?? 0);
-        if (equippedCount > 0) {
-            lines.push(this.tr('game_card_equipped_count', { count: equippedCount }));
-        }
-        if (typeValue === CardType.ITEM || typeValue === CardType.OGGETTO) {
-            lines.push(this.tr('game_card_note_item_target'));
-        } else if (typeValue === CardType.MONSTER || typeValue === CardType.IMPREVISTO || typeValue === CardType.CRISIS) {
-            lines.push(this.tr('game_card_note_monster_target'));
-        } else if (typeValue === CardType.CHALLENGE || typeValue === CardType.MODIFIER || this.isReactionCard(card)) {
-            lines.push(this.tr('game_card_note_reaction_only'));
-        } else if (typeValue === CardType.MAGIC || typeValue === CardType.EVENTO) {
-            lines.push(this.tr('game_card_note_magic_target'));
-        }
-        this.cardInspectBody.setText(lines.join('\n\n'));
+        const presentation = buildInspectPresentation(card, this.tr.bind(this));
+        this.cardInspectTitle.setText(presentation.title);
+        this.cardInspectType.setText(presentation.meta);
+        this.cardInspectBody.setText(presentation.lines.join('\n\n'));
         this.cardInspectHint.setText(this.tr('game_close_hint'));
 
         this.cardInspectVisible = true;
@@ -1605,13 +1607,15 @@ export class GameScene extends Phaser.Scene {
         }
 
         const myId = this.serverManager.room?.sessionId ?? '';
+        const handCards = (me.hand as unknown as ICardData[]) ?? [];
+        this.reconcilePendingCardFromAuthoritativeHand(handCards);
 
         this.deckCountText.setText(`${state.deckCount ?? 0}`);
         this.updateOpponents(state, myId);
         this.rebuildCrises((state.centralCrises as unknown as ICardData[]) ?? []);
         this.rebuildCompany((me.company as unknown as ICardData[]) ?? []);
-        const handCards = (me.hand as unknown as ICardData[]) ?? [];
         this.rebuildHand(handCards);
+        this.cleanupOrphanCardObjects();
         if (handCards.length === 0 && this.cardInspectVisible) {
             this.hideCardInspect();
         }
@@ -1712,6 +1716,16 @@ export class GameScene extends Phaser.Scene {
         this.hudReactionText.setText(reactionText);
 
         this.topTitle.setText(this.tr('game_hud_opponents', { value: oppScore }));
+
+        const getWrap = (textObj: Phaser.GameObjects.Text, fallback: number) => {
+            const raw = Number((textObj.style as any)?.wordWrapWidth ?? fallback);
+            return Number.isFinite(raw) && raw > 0 ? raw : fallback;
+        };
+        fitTextToBox(this.hudTurnText, this.hudTurnText.text, getWrap(this.hudTurnText, this.uiW * 0.46), Math.max(20, this.topH * 0.18), { maxLines: 2, ellipsis: true });
+        fitTextToBox(this.hudReactionText, this.hudReactionText.text, getWrap(this.hudReactionText, this.uiW * 0.4), Math.max(20, this.topH * 0.18), { maxLines: 2, ellipsis: true });
+        fitTextToBox(this.hudStatsText, this.hudStatsText.text, getWrap(this.hudStatsText, this.uiW * 0.66), Math.max(20, this.topH * 0.18), { maxLines: 2, ellipsis: true });
+        fitTextToBox(this.hudStateText, this.hudStateText.text, getWrap(this.hudStateText, this.uiW * 0.28), Math.max(20, this.topH * 0.18), { maxLines: 2, ellipsis: true });
+        fitTextToBox(this.topTitle, this.topTitle.text, getWrap(this.topTitle, this.uiW * 0.54), Math.max(22, this.topH * 0.24), { maxLines: 2, ellipsis: true });
     }
 
     private estimateDiscardCount(state: IGameState): number {
@@ -1977,14 +1991,15 @@ export class GameScene extends Phaser.Scene {
                 fontStyle: '700',
                 wordWrap: { width: panelW - 26 },
             }).setOrigin(0, 0.5).setResolution(this.textResolution);
+            fitTextToBox(name, opp.username, panelW - 24, 18, { maxLines: 1, ellipsis: true });
 
             const companyLen = (opp.company as unknown as ICardData[])?.length ?? 0;
             const showStats = panelH >= (compactTop ? 48 : 56);
             const statsLabel = this.isPreLobbyPhase(state.phase)
                 ? `${opp.isReady ? this.tr('game_status_ready') : this.tr('game_status_waiting_short')} | ${opp.isConnected ? this.tr('game_status_online_short') : this.tr('game_status_offline_short')}`
                 : compactTop
-                    ? `VP ${opp.score ?? 0} | ${this.tr('game_ap')} ${opp.actionPoints} | H ${companyLen}`
-                    : `VP ${opp.score ?? 0} | ${this.tr('game_hand_short')} ${(opp.hand as any)?.length ?? 0} | ${this.tr('game_ap')} ${opp.actionPoints} | H ${companyLen}`;
+                    ? `${this.tr('game_vp_short')} ${opp.score ?? 0} | ${this.tr('game_ap')} ${opp.actionPoints} | ${this.tr('game_heroes_short')} ${companyLen}`
+                    : `${this.tr('game_vp_short')} ${opp.score ?? 0} | ${this.tr('game_hand_short')} ${(opp.hand as any)?.length ?? 0} | ${this.tr('game_ap')} ${opp.actionPoints} | ${this.tr('game_heroes_short')} ${companyLen}`;
 
             const stats = this.add.text(-panelW * 0.5 + 10, panelH * 0.2, statsLabel, {
                 fontFamily: FONT_UI,
@@ -1993,6 +2008,7 @@ export class GameScene extends Phaser.Scene {
                 fontStyle: '700',
                 wordWrap: { width: panelW - 24 },
             }).setOrigin(0, 0.5).setResolution(this.textResolution);
+            fitTextToBox(stats, statsLabel, panelW - 24, 20, { maxLines: 1, ellipsis: true });
             stats.setVisible(showStats);
             if (!showStats) {
                 name.setPosition(-panelW * 0.5 + 10, 0);
@@ -2030,7 +2046,7 @@ export class GameScene extends Phaser.Scene {
 
         crises.forEach((cr, i) => {
             const x = startX + i * spacing;
-            const card = new CardGameObject(this, x, y, cr);
+            const card = this.createCardObject(x, y, cr);
             this.add.existing(card);
             card.setScale(scale);
             card.setDepth(35 + i);
@@ -2057,9 +2073,25 @@ export class GameScene extends Phaser.Scene {
                 stroke: '#16222f',
                 strokeThickness: 2,
             }).setOrigin(0.5).setDepth(43).setResolution(this.textResolution);
+            fitTextToBox(meta, metaValue, Math.max(64, card.displayWidth * 0.8), 14, {
+                maxLines: 1,
+                ellipsis: true,
+            });
 
             this.crisisViews.push({ zone, card, meta });
         });
+    }
+
+    private createCardObject(x: number, y: number, data: ICardData): CardGameObject {
+        const card = new CardGameObject(this, x, y, data, {
+            lang: this.lang,
+            translate: this.tr.bind(this),
+        });
+        this.liveCardObjects.add(card);
+        card.once(Phaser.GameObjects.Events.DESTROY, () => {
+            this.liveCardObjects.delete(card);
+        });
+        return card;
     }
 
     private rebuildCompany(cards: ICardData[]) {
@@ -2083,7 +2115,7 @@ export class GameScene extends Phaser.Scene {
         const startX = this.uiX + this.uiW * 0.5 - total * 0.5;
 
         cards.forEach((data, i) => {
-            const card = new CardGameObject(this, startX + i * spacing, y, data);
+            const card = this.createCardObject(startX + i * spacing, y, data);
             this.add.existing(card);
             card.setScale(scale);
             card.setInteractive({ useHandCursor: true });
@@ -2160,7 +2192,7 @@ export class GameScene extends Phaser.Scene {
                 + row * rowGap
                 + Math.abs(indexInRow - rowMid) * (this.isLandscapeLayout ? (compactLandscape ? 1.2 : 1.7) : 2.8);
 
-            const card = new CardGameObject(this, x, y, data);
+            const card = this.createCardObject(x, y, data);
             this.add.existing(card);
             card.setScale(scale);
             card.setHome(x, y, 120 + i + row * 8);
@@ -2188,9 +2220,13 @@ export class GameScene extends Phaser.Scene {
     }
 
     private stashPending(card: CardGameObject) {
+        if (this.pendingPlayedCard && this.pendingPlayedCard !== card) {
+            this.pendingPlayedCard.destroy();
+        }
         card.disableInteractive();
         this.pendingPlayedCard = card;
         this.handCards = this.handCards.filter((c) => c !== card);
+        this.pendingPlayState = stashPendingCard(this.pendingPlayState, String(card.cardData.id ?? ''));
 
         this.tweens.add({
             targets: card,
@@ -2201,6 +2237,109 @@ export class GameScene extends Phaser.Scene {
             alpha: 0.95,
             duration: 190,
             ease: 'Sine.Out',
+        });
+    }
+
+    private rollbackPendingCardVisual(showFeedback: boolean) {
+        const pending = this.pendingPlayedCard;
+        this.pendingPlayedCard = undefined;
+        this.pendingPlayState = rollbackPendingModel(this.pendingPlayState);
+        if (!pending || !pending.active) return;
+
+        pending.disableInteractive();
+        this.tweens.killTweensOf(pending);
+
+        if (showFeedback) {
+            this.floatText(this.tr('game_action_failed'), '#ff8a97');
+        }
+
+        this.tweens.add({
+            targets: pending,
+            x: pending.homeX,
+            y: pending.homeY,
+            scaleX: 1,
+            scaleY: 1,
+            angle: 0,
+            alpha: 1,
+            duration: 210,
+            ease: 'Cubic.Out',
+            onComplete: () => {
+                const state = this.serverManager.room?.state as IGameState | undefined;
+                const myId = this.serverManager.room?.sessionId ?? '';
+                const me = state
+                    ? (state.players as unknown as Map<string, IPlayer>).get(myId)
+                    : undefined;
+                if (pending.active) pending.destroy();
+                if (state && me && !this.visualQueue.isBusy) {
+                    this.applyState(state, me);
+                }
+            },
+        });
+    }
+
+    private clearPendingCardAsAccepted() {
+        const pending = this.pendingPlayedCard;
+        this.pendingPlayedCard = undefined;
+        this.pendingPlayState = acceptPendingCard(this.pendingPlayState);
+        if (!pending || !pending.active) return;
+        this.tweens.killTweensOf(pending);
+        this.tweens.add({
+            targets: pending,
+            x: this.uiX + this.uiW * 0.5,
+            y: this.topH + this.centerH * 0.78,
+            scaleX: 0.56,
+            scaleY: 0.56,
+            alpha: 0,
+            duration: 320,
+            ease: 'Cubic.Out',
+            onComplete: () => {
+                if (pending.active) pending.destroy();
+            },
+        });
+    }
+
+    private reconcilePendingCardFromAuthoritativeHand(handCards: ICardData[]) {
+        const handIds = handCards
+            .map((card) => String(card?.id ?? '').trim())
+            .filter((id) => id.length > 0);
+        const result = reconcilePendingWithHand(this.pendingPlayState, handIds);
+        this.pendingPlayState = result.state;
+
+        if (!this.pendingPlayedCard) return;
+        if (result.outcome === 'rollback' || result.outcome === 'accepted') {
+            if (this.pendingPlayedCard.active) this.pendingPlayedCard.destroy();
+            this.pendingPlayedCard = undefined;
+        }
+    }
+
+    private cleanupOrphanCardObjects() {
+        const prioritized = [
+            ...this.handCards,
+            ...this.companyCards,
+            ...this.crisisViews.map((view) => view.card),
+            ...(this.pendingPlayedCard ? [this.pendingPlayedCard] : []),
+        ];
+        const allowed = new Set<CardGameObject>(prioritized);
+        const keepById = new Map<string, CardGameObject>();
+        prioritized.forEach((obj) => {
+            const id = String(obj.cardData?.id ?? '').trim();
+            if (!id || keepById.has(id)) return;
+            keepById.set(id, obj);
+        });
+
+        Array.from(this.liveCardObjects).forEach((card) => {
+            if (!card.active) {
+                this.liveCardObjects.delete(card);
+                return;
+            }
+            const id = String(card.cardData?.id ?? '').trim();
+            if (id && keepById.has(id) && keepById.get(id) !== card) {
+                card.destroy();
+                return;
+            }
+            if (!allowed.has(card)) {
+                card.destroy();
+            }
         });
     }
 
@@ -2293,6 +2432,7 @@ export class GameScene extends Phaser.Scene {
                     const code = String(message?.code ?? '');
                     const localized = this.localizeServerError(message);
                     this.appendGameLog(`${this.tr('game_log_error')}: ${localized}`);
+                    this.rollbackPendingCardVisual(false);
                     if (code === 'TRICKS_LOCKED') {
                         this.floatText(this.tr('game_error_tricks_locked'), '#ff5566');
                         this.cameras.main.shake(200, 0.005);
@@ -2329,51 +2469,18 @@ export class GameScene extends Phaser.Scene {
                 this.visualQueue.enqueue(() => new Promise((resolve) => {
                     const success = message?.success !== false;
                     this.appendGameLog(success ? this.tr('game_log_action_ok') : this.tr('game_log_action_fail'));
-                    const card = this.pendingPlayedCard;
-                    this.pendingPlayedCard = undefined;
 
                     this.hideReactionOverlay();
 
                     if (success) {
                         this.floatText(this.tr('game_action_resolved'), '#9ff3c2');
                         this.burst(this.screenW * 0.5, this.topH + this.centerH * 0.6, 36);
-                        if (card) {
-                            this.tweens.add({
-                                targets: card,
-                                x: this.uiX + this.uiW * 0.5,
-                                y: this.topH + this.centerH * 0.78,
-                                scaleX: 0.56,
-                                scaleY: 0.56,
-                                alpha: 0,
-                                duration: 450,
-                                ease: 'Cubic.Out',
-                                onComplete: () => {
-                                    card.destroy();
-                                    resolve();
-                                },
-                            });
-                            return;
-                        }
+                        if (this.pendingPlayedCard) this.clearPendingCardAsAccepted();
                     } else {
                         this.floatText(this.tr('game_action_failed'), '#ff8a97');
                         this.cameras.main.shake(180, 0.0022);
                         this.burst(this.screenW * 0.5, this.centerDropY, 26);
-                        if (card) {
-                            this.tweens.add({
-                                targets: card,
-                                alpha: 0,
-                                scaleX: 0.4,
-                                scaleY: 0.4,
-                                angle: 55,
-                                duration: 320,
-                                ease: 'Cubic.In',
-                                onComplete: () => {
-                                    card.destroy();
-                                    resolve();
-                                },
-                            });
-                            return;
-                        }
+                        if (this.pendingPlayedCard) this.rollbackPendingCardVisual(false);
                     }
 
                     this.time.delayedCall(420, resolve);
@@ -2607,9 +2714,9 @@ export class GameScene extends Phaser.Scene {
 
             heroes.forEach((hero) => {
                 const itemCount = Number((hero as any)?.equippedItems?.length ?? 0);
-                const suffix = itemCount > 0 ? ` (${itemCount} EQ)` : '';
+                const suffix = itemCount > 0 ? ` (${this.tr('card_eq_badge', { count: itemCount })})` : '';
                 selectionRows.push({
-                    label: `${String(hero.name ?? hero.templateId ?? this.tr('game_card_unknown'))}${suffix}`,
+                    label: `${String(hero.name ?? this.tr('game_card_unknown'))}${suffix}`,
                     onPick: () => this.serverManager.playMagic(card.cardData.id, undefined, hero.id),
                 });
             });
@@ -2650,6 +2757,7 @@ export class GameScene extends Phaser.Scene {
             fontStyle: '700',
             letterSpacing: 2,
         }).setOrigin(0.5).setDepth(551).setResolution(this.textResolution);
+        fitTextToBox(title, titleText, this.uiW * 0.84, 56, { maxLines: 2, ellipsis: true });
         this.targetSelectorElements.push(title);
 
         const btnW = Phaser.Math.Clamp(this.uiW * (this.isLandscapeLayout ? 0.42 : 0.8), 210, 360);
@@ -2680,6 +2788,7 @@ export class GameScene extends Phaser.Scene {
                 color: '#e8f4ff',
                 fontStyle: '700',
             }).setOrigin(0.5).setDepth(552).setResolution(this.textResolution);
+            fitTextToBox(label, row.label, btnW - 24, btnH - 10, { maxLines: 1, ellipsis: true });
             this.targetSelectorElements.push(label);
 
             const hit = this.add.rectangle(cx, y, btnW, btnH, 0x000000, 0)

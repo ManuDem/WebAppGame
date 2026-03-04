@@ -40,3 +40,16 @@ export function placeBrandHeader(
     title.setPosition(x, titleY);
     subtitle.setPosition(x, titleY + Phaser.Math.Clamp(minSide * 0.058, 32, 46));
 }
+
+export function layoutBrandHeader(
+    _sceneW: number,
+    sceneH: number,
+    minSide: number,
+): { titleY: number; subtitleY: number; bottomY: number } {
+    const topPad = Phaser.Math.Clamp(sceneH * 0.03, 10, 22);
+    const blockH = Phaser.Math.Clamp(minSide * 0.24, 86, 170);
+    const titleY = topPad + blockH * 0.38;
+    const subtitleY = titleY + Phaser.Math.Clamp(minSide * 0.058, 32, 46);
+    const bottomY = subtitleY + Phaser.Math.Clamp(minSide * 0.048, 24, 34);
+    return { titleY, subtitleY, bottomY };
+}

@@ -1,7 +1,10 @@
 ﻿import Phaser from 'phaser';
 import { CardType, ICardData } from '../../../shared/SharedTypes';
+import { sanitizeLanguage, SupportedLanguage, t } from '../i18n';
+import { fitTextToBox } from '../ui/text/FitText';
 import { APP_FONT_FAMILY } from '../ui/Typography';
 import { requestCardArtwork, resolveCardArtworkTexture } from '../ui/CardArtworkResolver';
+import { buildMiniCardFooter, buildMiniCardInfo, localizeCardType } from '../ui/cards/CardPresentationModel';
 
 interface CardPalette {
     cardBody: number;
@@ -11,7 +14,13 @@ interface CardPalette {
     titleRibbon: number;
     footer: number;
     accentText: string;
-    label: string;
+}
+
+type TranslateFn = (key: string, vars?: Record<string, string | number>) => string;
+
+interface CardGameObjectOptions {
+    lang?: SupportedLanguage;
+    translate?: TranslateFn;
 }
 
 const FONT_UI = APP_FONT_FAMILY;
@@ -32,7 +41,6 @@ const FALLBACK_PALETTE: CardPalette = {
     titleRibbon: 0x294868,
     footer: 0x3a5879,
     accentText: '#2d455b',
-    label: 'CARD',
 };
 
 const PALETTES: Partial<Record<CardType, CardPalette>> = {
@@ -44,7 +52,6 @@ const PALETTES: Partial<Record<CardType, CardPalette>> = {
         titleRibbon: 0x235f43,
         footer: 0x2a6e4f,
         accentText: '#2d5d45',
-        label: 'HERO',
     },
     [CardType.ITEM]: {
         cardBody: 0x7d7d7d,
@@ -54,7 +61,6 @@ const PALETTES: Partial<Record<CardType, CardPalette>> = {
         titleRibbon: 0x4d4d4d,
         footer: 0x575757,
         accentText: '#37414a',
-        label: 'ITEM',
     },
     [CardType.MAGIC]: {
         cardBody: 0x5874b3,
@@ -64,7 +70,6 @@ const PALETTES: Partial<Record<CardType, CardPalette>> = {
         titleRibbon: 0x345393,
         footer: 0x3d5f9d,
         accentText: '#2d4677',
-        label: 'MAGIC',
     },
     [CardType.MODIFIER]: {
         cardBody: 0x4a9b8f,
@@ -74,7 +79,6 @@ const PALETTES: Partial<Record<CardType, CardPalette>> = {
         titleRibbon: 0x2c7168,
         footer: 0x337a71,
         accentText: '#2d635d',
-        label: 'MOD',
     },
     [CardType.CHALLENGE]: {
         cardBody: 0x7f65c2,
@@ -84,7 +88,6 @@ const PALETTES: Partial<Record<CardType, CardPalette>> = {
         titleRibbon: 0x563f8b,
         footer: 0x624b98,
         accentText: '#4a3c6d',
-        label: 'CHALL',
     },
     [CardType.MONSTER]: {
         cardBody: 0x3b88c7,
@@ -94,7 +97,6 @@ const PALETTES: Partial<Record<CardType, CardPalette>> = {
         titleRibbon: 0x2f6b9b,
         footer: 0x3373a4,
         accentText: '#294a62',
-        label: 'MONSTER',
     },
 };
 
@@ -109,13 +111,17 @@ export class CardGameObject extends Phaser.GameObjects.Container {
     private artImage?: Phaser.GameObjects.Image;
     private artSheen?: Phaser.GameObjects.Rectangle;
     private artSheenTween?: Phaser.Tweens.Tween;
+    private readonly lang: SupportedLanguage;
+    private readonly translateFn?: TranslateFn;
 
-    constructor(scene: Phaser.Scene, x: number, y: number, data: ICardData) {
+    constructor(scene: Phaser.Scene, x: number, y: number, data: ICardData, options: CardGameObjectOptions = {}) {
         super(scene, x, y);
 
         this.cardData = data;
         this.homeX = x;
         this.homeY = y;
+        this.lang = options.lang ?? sanitizeLanguage(localStorage.getItem('lucrare_lang'));
+        this.translateFn = options.translate;
 
         this.buildVisuals();
         this.setupInput();
@@ -126,6 +132,11 @@ export class CardGameObject extends Phaser.GameObjects.Container {
         this.homeY = y;
         this.homeDepth = depth;
         this.setDepth(depth);
+    }
+
+    private tr(key: string, vars?: Record<string, string | number>): string {
+        if (this.translateFn) return this.translateFn(key, vars);
+        return t(this.lang, key, vars);
     }
 
     private buildVisuals() {
@@ -153,22 +164,36 @@ export class CardGameObject extends Phaser.GameObjects.Container {
         frame.strokeRoundedRect(-CARD_W * 0.5 + 3, -CARD_H * 0.5 + 3, CARD_W - 6, CARD_H - 6, 10);
         this.add(frame);
 
-        const titleText = this.scene.add.text(0, -CARD_H * 0.5 + 13, this.fitCardTitle(this.cardData.name ?? this.cardData.templateId ?? 'CARD'), {
+        const titleText = this.scene.add.text(0, -CARD_H * 0.5 + 13, '', {
             fontFamily: FONT_UI,
             fontSize: '11px',
             color: '#2a2f35',
             fontStyle: '700',
             align: 'center',
         }).setOrigin(0.5).setResolution(TEXT_RESOLUTION);
+        fitTextToBox(
+            titleText,
+            String(this.cardData.name ?? this.tr('game_card_unknown')),
+            CARD_W - 18,
+            14,
+            { maxLines: 1, ellipsis: true, fontSize: 11 },
+        );
         this.add(titleText);
 
-        const typeLine = this.scene.add.text(0, -CARD_H * 0.5 + 27, this.getHeaderTypeLine(palette.label), {
+        const typeLine = this.scene.add.text(0, -CARD_H * 0.5 + 27, '', {
             fontFamily: FONT_UI,
             fontSize: '9px',
             color: palette.accentText,
             fontStyle: '700',
             align: 'center',
         }).setOrigin(0.5).setResolution(TEXT_RESOLUTION);
+        fitTextToBox(
+            typeLine,
+            this.getHeaderTypeLine(),
+            CARD_W - 20,
+            12,
+            { maxLines: 1, ellipsis: true, fontSize: 9 },
+        );
         this.add(typeLine);
 
         const artPanel = this.scene.add.graphics();
@@ -224,7 +249,7 @@ export class CardGameObject extends Phaser.GameObjects.Container {
         descPanel.strokeRoundedRect(-CARD_W * 0.5 + 10, descPanelY, CARD_W - 20, 30, 6);
         this.add(descPanel);
 
-        const descText = this.scene.add.text(0, descPanelY + 15, this.getMiniInfoStrip(), {
+        const descText = this.scene.add.text(0, descPanelY + 15, '', {
             fontFamily: FONT_UI,
             fontSize: '9px',
             color: '#2f3640',
@@ -232,6 +257,13 @@ export class CardGameObject extends Phaser.GameObjects.Container {
             wordWrap: { width: CARD_W - 26 },
             lineSpacing: 1,
         }).setOrigin(0.5).setResolution(TEXT_RESOLUTION);
+        fitTextToBox(
+            descText,
+            this.getMiniInfoStrip(),
+            CARD_W - 28,
+            24,
+            { maxLines: 2, ellipsis: true, fontSize: 9, lineHeight: 10.4 },
+        );
         this.add(descText);
 
         const footer = this.scene.add.graphics();
@@ -239,13 +271,20 @@ export class CardGameObject extends Phaser.GameObjects.Container {
         footer.fillRoundedRect(-CARD_W * 0.5, CARD_H * 0.5 - 18, CARD_W, 18, { tl: 0, tr: 0, bl: 10, br: 10 });
         this.add(footer);
 
-        const footerText = this.scene.add.text(0, CARD_H * 0.5 - 9, this.buildFooterLabel(palette.label), {
+        const footerText = this.scene.add.text(0, CARD_H * 0.5 - 9, '', {
             fontFamily: FONT_UI,
             fontSize: '8px',
             color: '#edf4ff',
             fontStyle: '700',
             align: 'center',
         }).setOrigin(0.5).setResolution(TEXT_RESOLUTION);
+        fitTextToBox(
+            footerText,
+            this.buildFooterLabel(),
+            CARD_W - 14,
+            10,
+            { maxLines: 1, ellipsis: true, fontSize: 8 },
+        );
         this.add(footerText);
 
         const equippedCount = this.getEquippedCount();
@@ -261,7 +300,7 @@ export class CardGameObject extends Phaser.GameObjects.Container {
             equipBadge.strokeRoundedRect(bx, by, bw, bh, 5);
             this.add(equipBadge);
 
-            const equipText = this.scene.add.text(bx + bw * 0.5, by + bh * 0.5, `EQ ${equippedCount}`, {
+            const equipText = this.scene.add.text(bx + bw * 0.5, by + bh * 0.5, this.tr('card_eq_badge', { count: equippedCount }), {
                 fontFamily: FONT_UI,
                 fontSize: '8px',
                 color: '#f1f8ff',
@@ -275,62 +314,19 @@ export class CardGameObject extends Phaser.GameObjects.Container {
         this.scene.input.setDraggable(this as unknown as Phaser.GameObjects.GameObject);
     }
 
-    private fitCardTitle(raw: string): string {
-        const trimmed = String(raw ?? '').trim();
-        if (trimmed.length <= 21) return trimmed;
-        return `${trimmed.slice(0, 18)}...`;
-    }
-
-    private getHeaderTypeLine(typeLabel: string): string {
-        const rawSubtype = String(this.cardData.subtype ?? '').trim().toUpperCase();
+    private getHeaderTypeLine(): string {
+        const typeLabel = localizeCardType(this.cardData, this.tr.bind(this));
+        const rawSubtype = String(this.cardData.subtype ?? '').replace(/\s+/g, ' ').trim();
         if (rawSubtype.length === 0) return typeLabel;
-        return this.compactLine(`${typeLabel} | ${rawSubtype}`, 20);
+        return `${typeLabel} • ${rawSubtype.toUpperCase()}`;
     }
 
     private getMiniInfoStrip(): string {
-        const cardAny = this.cardData as unknown as { shortDesc?: string };
-        const shortDesc = typeof cardAny.shortDesc === 'string' ? cardAny.shortDesc.trim() : '';
-        const full = String(this.cardData.description ?? '').trim();
-        const source = this.compactLine(shortDesc || full, 36);
-        const typeValue = String(this.cardData.type ?? '').toLowerCase();
-
-        if (typeValue === CardType.HERO || typeValue === CardType.EMPLOYEE) {
-            if (typeof this.cardData.targetRoll === 'number') return `EROE | Tiro ${this.cardData.targetRoll}+`;
-            return source ? `EROE | ${source}` : 'EROE | Effetto attivo';
-        }
-        if (typeValue === CardType.MONSTER || typeValue === CardType.IMPREVISTO || typeValue === CardType.CRISIS) {
-            const roll = typeof this.cardData.targetRoll === 'number' ? `ROLL ${this.cardData.targetRoll}+` : 'ROLL ?';
-            return source ? `${roll} | ${source}` : `${roll} | Boss`;
-        }
-        if (typeValue === CardType.ITEM || typeValue === CardType.OGGETTO) {
-            return source ? `EQUIP | ${source}` : 'EQUIP | Assegna a Hero';
-        }
-        if (typeValue === CardType.CHALLENGE || typeValue === CardType.MODIFIER) {
-            return source ? `REACTION | ${source}` : 'REACTION | Finestra reazione';
-        }
-        if (typeValue === CardType.MAGIC || typeValue === CardType.EVENTO) {
-            return source ? `MAGIC | ${source}` : 'MAGIC | Azione attiva';
-        }
-
-        return source || 'Carta speciale';
+        return buildMiniCardInfo(this.cardData, this.tr.bind(this));
     }
 
-    private buildFooterLabel(typeLabel: string): string {
-        const parts: string[] = [typeLabel];
-        if (typeof this.cardData.targetRoll === 'number') {
-            parts.push(`D${this.cardData.targetRoll}+`);
-        }
-        if (typeof this.cardData.modifier === 'number' && this.cardData.modifier !== 0) {
-            parts.push(`${this.cardData.modifier > 0 ? '+' : ''}${this.cardData.modifier}`);
-        }
-        return parts.join(' | ');
-    }
-
-    private compactLine(value: string, maxLen: number): string {
-        const oneLine = String(value ?? '').replace(/\s+/g, ' ').trim();
-        if (!oneLine) return '';
-        if (oneLine.length <= maxLen) return oneLine;
-        return `${oneLine.slice(0, Math.max(0, maxLen - 3))}...`;
+    private buildFooterLabel(): string {
+        return buildMiniCardFooter(this.cardData, this.tr.bind(this));
     }
 
     private attachArtworkTexture() {

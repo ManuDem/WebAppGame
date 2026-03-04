@@ -3,7 +3,14 @@ import { ServerManager } from '../network/ServerManager';
 import { DEFAULT_LANGUAGE, sanitizeLanguage, SupportedLanguage, t } from '../i18n';
 import { createSimpleButtonFx, SimpleButtonController } from '../ui/SimpleButtonFx';
 import { drawPokemonBackdrop, ensurePokemonTextures } from '../ui/PokemonVisuals';
-import { applyBrandTypography, BRAND_SUBTITLE_STYLE, BRAND_TITLE_STYLE, BRAND_TITLE_TEXT, placeBrandHeader } from '../ui/Branding';
+import {
+    applyBrandTypography,
+    BRAND_SUBTITLE_STYLE,
+    BRAND_TITLE_STYLE,
+    BRAND_TITLE_TEXT,
+    layoutBrandHeader,
+    placeBrandHeader,
+} from '../ui/Branding';
 import { paintRetroButton } from '../ui/RetroButtonPainter';
 import { APP_FONT_FAMILY } from '../ui/Typography';
 
@@ -654,11 +661,8 @@ export class LoginScene extends Phaser.Scene {
         this.title.setFontSize(`${Math.round(titleFont)}px`);
         this.subtitle.setFontSize(`${Math.round(subtitleFont)}px`);
 
-        const titleTop = Phaser.Math.Clamp(h * 0.028, 6, 22);
-        const titleBottom = py - Phaser.Math.Clamp(minSide * 0.032, 8, 18);
-        const titleAreaH = Math.max(56, titleBottom - titleTop);
-        const titleY = titleTop + titleAreaH * 0.38;
-        placeBrandHeader(this.title, this.subtitle, centerX, titleY, minSide);
+        const header = layoutBrandHeader(w, h, minSide);
+        placeBrandHeader(this.title, this.subtitle, centerX, header.titleY, minSide);
 
         const langLabelY = py + (showForm ? panelH * 0.09 : panelH * 0.12);
         const langButtonsY = langLabelY + Phaser.Math.Clamp(panelH * 0.07, 20, 26);

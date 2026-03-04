@@ -2,7 +2,14 @@ import Phaser from 'phaser';
 import { ServerManager } from '../network/ServerManager';
 import { DEFAULT_LANGUAGE, sanitizeLanguage, SupportedLanguage, t } from '../i18n';
 import { drawPokemonBackdrop, ensurePokemonTextures } from '../ui/PokemonVisuals';
-import { applyBrandTypography, BRAND_SUBTITLE_STYLE, BRAND_TITLE_STYLE, BRAND_TITLE_TEXT, placeBrandHeader } from '../ui/Branding';
+import {
+    applyBrandTypography,
+    BRAND_SUBTITLE_STYLE,
+    BRAND_TITLE_STYLE,
+    BRAND_TITLE_TEXT,
+    layoutBrandHeader,
+    placeBrandHeader,
+} from '../ui/Branding';
 import { APP_FONT_FAMILY } from '../ui/Typography';
 import { preloadCardArtworkManifest } from '../ui/CardArtworkResolver';
 
@@ -153,7 +160,8 @@ export class BootScene extends Phaser.Scene {
         this.cloudLayer.setSize(w, h);
         this.ditherLayer.setSize(w, h);
 
-        placeBrandHeader(this.title, this.subtitle, cx, cy * 0.68, minSide);
+        const header = layoutBrandHeader(w, h, minSide);
+        placeBrandHeader(this.title, this.subtitle, cx, header.titleY, minSide);
         applyBrandTypography(this.title, this.subtitle, minSide);
 
         this.status

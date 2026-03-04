@@ -148,6 +148,26 @@ Acceptance M7:
 - feedback dado esplicito lato client
 - testi UI nitidi e wrapping stabile
 
+## M8 - Bug Bash Carte/Tavolo/i18n/Header
+Stato: `completata`
+
+Output:
+- `client/src/systems/PendingPlayModel.ts` (modello pending/rollback testabile)
+- `client/src/systems/TextFitModel.ts` + `client/src/ui/text/FitText.ts`
+- hardening `GameScene` su rollback pending + cleanup orfani
+- hardening `CardGameObject` su contenuti mini-card localizzati e anti-overflow
+- uniformazione header Boot/Login/PreLobby via `layoutBrandHeader(...)`
+- test nuovi:
+  - `tests/PendingPlayModel.test.ts`
+  - `tests/TextFitModel.test.ts`
+- spec UI carte: `docs/ui/CARD_UI_SPEC.md`
+
+Comandi verifica:
+- `cd client && npm.cmd run build`
+- `cd server && npm.cmd run build`
+- `npm.cmd test -- --runInBand --forceExit tests/PendingPlayModel.test.ts tests/TextFitModel.test.ts`
+- smoke suite stabile
+
 ## Decisioni bloccanti (attive)
 
 - A: Challenge/Modifier reaction-only; Magic attiva.

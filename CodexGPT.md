@@ -230,3 +230,31 @@ npm test -- --runInBand
     - `server build` OK
     - smoke suite stabile OK (`35/35`)
     - i18n parity IT/EN OK (`160/160`)
+- 2026-03-04 (milestone bug-bash carte/tavolo/i18n/header):
+  - bug P0 pending card stuck/desync:
+    - introdotto `client/src/systems/PendingPlayModel.ts` (stash/rollback/accept/reconcile)
+    - `GameScene` aggiornata con rollback su `ServerEvents.ERROR`
+    - reconcile pending in `applyState` con hand autorevole
+    - cleanup orfani `CardGameObject` dopo rebuild
+  - bug P1 testi carte/layout:
+    - introdotto `client/src/systems/TextFitModel.ts` + wrapper `client/src/ui/text/FitText.ts`
+    - applicato fit su mini-card (titolo/sottotitolo/info), badge crisi, selector target, inspect title/type, opponent row
+    - rimossi dettagli inutili in inspect (`templateId` non piu mostrato)
+  - i18n mirato:
+    - localizzazione tipo carta e mini-info in `CardGameObject`
+    - nuove chiavi IT/EN per badge EQ, roll, footer, label sintetiche VP/Hero
+  - header lineare scene iniziali:
+    - nuova funzione `layoutBrandHeader(...)` in `client/src/ui/Branding.ts`
+    - usata da `BootScene`, `LoginScene`, `PreLobbyScene`
+  - documentazione:
+    - aggiunta `docs/ui/CARD_UI_SPEC.md`
+    - aggiornati `docs/QA.md`, `docs/PLAN.md`, `docs/index.md`
+  - test nuovi:
+    - `tests/PendingPlayModel.test.ts`
+    - `tests/TextFitModel.test.ts`
+    - `tests/I18nCoverage.test.ts`
+  - verifica:
+    - `client build` OK
+    - `server build` OK
+    - test nuovi OK (`8/8`)
+    - smoke suite stabile OK (`35/35`)

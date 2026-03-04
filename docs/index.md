@@ -19,6 +19,7 @@ Indice principale documentazione.
 ## Design
 
 - [MATCH_UI_SPEC](./ui/MATCH_UI_SPEC.md)
+- [CARD_UI_SPEC](./ui/CARD_UI_SPEC.md)
 - [Feature_01_Lobby](./design/Feature_01_Lobby.md)
 - [Feature_02_CoreLoop](./design/Feature_02_CoreLoop.md)
 - [Feature_03_ReactionWindow](./design/Feature_03_ReactionWindow.md)
