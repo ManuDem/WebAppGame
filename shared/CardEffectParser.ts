@@ -306,48 +306,14 @@ export class CardEffectParser {
         sourcePlayer: IPlayer,
         gameState: IGameState
     ): boolean {
-        // 1. Apply reward to solver
-        if (effect.reward === "vp_1") {
-            sourcePlayer.score += 1;
-            console.log(`[CardEffectParser] crisis_resolve: +1 VP to ${sourcePlayer.username}`);
-        }
-
-        // 2. Apply penalty to ALL OTHER players (the solver is immune)
-        if (effect.penalty) {
-            const allPlayers = Array.from(gameState.players.values());
-            const victims = allPlayers.filter(p => p.sessionId !== sourcePlayer.sessionId);
-
-            for (const victim of victims) {
-                switch (effect.penalty) {
-                    case "discard_2":
-                        // Scarta 2 carte random dalla mano della vittima
-                        for (let i = 0; i < 2; i++) {
-                            if (victim.hand.length === 0) break;
-                            const idx = Math.floor(Math.random() * victim.hand.length);
-                            victim.hand.splice(idx, 1);
-                        }
-                        console.log(`[CardEffectParser] crisis penalty discard_2: ${victim.username} lost up to 2 cards`);
-                        break;
-                    case "lose_employee":
-                        // Rimuovi l'ultimo dipendente dalla company della vittima
-                        if (victim.company.length > 0) {
-                            victim.company.pop();
-                            console.log(`[CardEffectParser] crisis penalty lose_employee: ${victim.username} lost last employee`);
-                        }
-                        break;
-                    case "lock_tricks":
-                        // Aggiungi un tag "locked_tricks" agli activeEffects della vittima
-                        if (!victim.activeEffects) victim.activeEffects = [];
-                        if (!victim.activeEffects.includes("locked_tricks")) {
-                            victim.activeEffects.push("locked_tricks");
-                        }
-                        console.log(`[CardEffectParser] crisis penalty lock_tricks: ${victim.username} tagged`);
-                        break;
-                    default:
-                        console.warn(`[CardEffectParser] Unknown crisis penalty: ${effect.penalty}`);
-                }
-            }
-        }
+        // Crisis structural resolution is server-authoritative in OfficeRoom:
+        // - dice roll
+        // - success/fail check
+        // - reward/penalty application
+        // The parser only acknowledges the DSL action branch.
+        void effect;
+        void sourcePlayer;
+        void gameState;
         return true;
     }
 

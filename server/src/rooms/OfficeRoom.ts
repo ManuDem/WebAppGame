@@ -418,6 +418,10 @@ export class OfficeRoom extends Room<OfficeRoomState> {
             card.costPA = t.cost;
             card.isFaceUp = true;
             card.name = t.name;
+            card.description = t.description;
+            card.targetRoll = typeof t.targetRoll === "number" ? t.targetRoll : 7;
+            if (typeof t.modifier === "number") card.modifier = t.modifier;
+            card.subtype = "challenge";
             this.state.centralCrises.push(card);
         }
         console.log(`🏦 Central crises populated: ${this.state.centralCrises.length}`);
@@ -452,11 +456,17 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         card.type = drawnCard.type;
         if (drawnCard.costPA !== undefined) card.costPA = drawnCard.costPA;
         card.isFaceUp = false;
+        if (drawnCard.targetRoll !== undefined) card.targetRoll = drawnCard.targetRoll;
+        if (drawnCard.modifier !== undefined) card.modifier = drawnCard.modifier;
+        card.subtype = drawnCard.subtype ?? "none";
 
         const tmpl = this.getTemplate(drawnCard.templateId);
         if (tmpl) {
             card.name = tmpl.name;
             card.description = tmpl.description;
+            if (card.subtype === "none" && tmpl.subtype) card.subtype = tmpl.subtype;
+            if (card.targetRoll === undefined && typeof tmpl.targetRoll === "number") card.targetRoll = tmpl.targetRoll;
+            if (card.modifier === undefined && typeof tmpl.modifier === "number") card.modifier = tmpl.modifier;
         }
 
         return card;
@@ -692,6 +702,14 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         const template = this.getTemplate(cardInHand.templateId);
         const cost = template?.cost ?? 1;
 
+        if (template?.subtype === "reaction") {
+            client.send(ServerEvents.ERROR, {
+                code: "REACTION_ONLY_WINDOW",
+                message: "Le carte Reazione possono essere giocate solo durante la finestra di reazione.",
+            });
+            return;
+        }
+
         // TASK 3: Validate targetPlayerId for targeted tricks
         const needsTarget = template?.effect?.action &&
             ["steal_pa", "steal_card", "discard", "trade_random"].includes(template.effect.action);
@@ -780,6 +798,15 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         const template = this.getTemplate(cardInHand.templateId);
         const cost = template?.cost ?? 1;
 
+        const isReactionCard = (cardInHand as any)?.subtype === "reaction" || template?.subtype === "reaction";
+        if (!isReactionCard) {
+            client.send(ServerEvents.ERROR, {
+                code: "NOT_REACTION_CARD",
+                message: "Questa carta non e una Reazione valida.",
+            });
+            return;
+        }
+
         if (player.actionPoints < cost) {
             client.send(ServerEvents.ERROR, { code: "NO_PA", message: "Punti Azione insufficienti per reagire." });
             return;
@@ -845,13 +872,18 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         }
 
         // Apply structural effects that CardEffectParser can't do (Colyseus schema mutations):
+        let structuralSuccess = !originalAction?.isCancelled;
         if (originalAction && !originalAction.isCancelled) {
             switch (originalAction.actionType) {
                 case ClientMessages.PLAY_EMPLOYEE:
                     this.applyEmployeeHire(originalAction.playerId, originalAction.targetCardId!);
+                    structuralSuccess = true;
                     break;
                 case ClientMessages.SOLVE_CRISIS:
-                    this.applyCrisisRemoval(originalAction.playerId, originalAction.targetCrisisId!);
+                    structuralSuccess = this.applyCrisisResolution(originalAction.playerId, originalAction.targetCrisisId!);
+                    break;
+                default:
+                    structuralSuccess = true;
                     break;
             }
         }
@@ -877,9 +909,15 @@ export class OfficeRoom extends Room<OfficeRoomState> {
             }
         });
 
-        const success = result ? result.success : !originalAction?.isCancelled;
-        const log = result ? result.log :
+        const parserSuccess = result ? result.success : !originalAction?.isCancelled;
+        const success = parserSuccess && structuralSuccess;
+        const log = result ? [...result.log] :
             (success ? [`Azione originale eseguita con successo.`] : [`Azione annullata.`]);
+        if (originalAction && originalAction.actionType === ClientMessages.SOLVE_CRISIS && !originalAction.isCancelled) {
+            log.push(success
+                ? "Imprevisto risolto con successo."
+                : "Tentativo di risoluzione Imprevisto fallito.");
+        }
 
         this.broadcast(ServerEvents.ACTION_RESOLVED, { success, log });
 
@@ -922,16 +960,118 @@ export class OfficeRoom extends Room<OfficeRoomState> {
     }
 
     /**
-     * Removes the resolved crisis from centralCrises.
-     * CardEffectParser.resolve already awarded VP via resolveCrisis().
+     * Server-authoritative crisis resolution:
+     * - Roll 2d6 (+ modifiers)
+     * - Broadcast DICE_ROLLED
+     * - On success: reward + remove crisis
+     * - On fail: apply crisis penalty
      */
-    private applyCrisisRemoval(playerId: string, crisisId: string): void {
+    private applyCrisisResolution(playerId: string, crisisId: string): boolean {
+        const player = this.state.players.get(playerId);
+        if (!player) return false;
+
         const crisisArr = this.state.centralCrises as any[];
         const idx = crisisArr.findIndex((c: any) => c.id === crisisId);
-        if (idx !== -1) {
-            const crisis = crisisArr[idx];
+        if (idx === -1) return false;
+
+        const crisis = crisisArr[idx];
+        const template = this.getTemplate(crisis.templateId);
+        const targetRoll = typeof crisis.targetRoll === "number"
+            ? crisis.targetRoll
+            : (typeof template?.targetRoll === "number" ? template.targetRoll : 7);
+
+        const roll1 = 1 + Math.floor(Math.random() * 6);
+        const roll2 = 1 + Math.floor(Math.random() * 6);
+        const modifier = this.getCrisisRollModifier(playerId) + (typeof crisis.modifier === "number" ? crisis.modifier : 0);
+        const total = roll1 + roll2 + modifier;
+        const success = total >= targetRoll;
+
+        this.broadcast(ServerEvents.DICE_ROLLED, {
+            playerId,
+            cardId: crisis.id,
+            roll1,
+            roll2,
+            total,
+            success,
+        });
+
+        if (success) {
+            const reward = template?.effect?.reward;
+            if (typeof reward === "string" && reward.startsWith("vp_")) {
+                const gainedVp = parseInt(reward.replace("vp_", ""), 10);
+                player.score += Number.isFinite(gainedVp) && gainedVp > 0 ? gainedVp : 1;
+            } else {
+                player.score += 1;
+            }
             crisisArr.splice(idx, 1);
             console.log(`   🗑️  Crisis ${crisis.templateId} removed from central table.`);
+            return true;
+        }
+
+        this.applyCrisisPenalty(template?.effect?.penalty, playerId);
+        return false;
+    }
+
+    private getCrisisRollModifier(playerId: string): number {
+        const player = this.state.players.get(playerId);
+        if (!player) return 0;
+
+        let bonus = 0;
+        const company = player.company as any[];
+        for (const employee of company) {
+            const equippedItems = (employee?.equippedItems ?? []) as any[];
+            for (const item of equippedItems) {
+                if (typeof item?.modifier === "number") {
+                    bonus += item.modifier;
+                }
+            }
+        }
+
+        for (const tag of player.activeEffects as string[]) {
+            if (typeof tag === "string" && tag.startsWith("roll_bonus_")) {
+                const parsed = parseInt(tag.replace("roll_bonus_", ""), 10);
+                if (Number.isFinite(parsed)) {
+                    bonus += parsed;
+                }
+            }
+        }
+
+        return bonus;
+    }
+
+    private applyCrisisPenalty(rawPenalty: unknown, solverPlayerId: string): void {
+        const penalty = typeof rawPenalty === "string" ? rawPenalty : "";
+        if (!penalty) return;
+
+        const victims = Array.from(this.state.players.entries())
+            .filter(([sessionId]) => sessionId !== solverPlayerId)
+            .map(([, p]) => p as PlayerState);
+
+        for (const victim of victims) {
+            switch (penalty) {
+                case "discard_2":
+                    for (let i = 0; i < 2; i++) {
+                        const hand = victim.hand as any[];
+                        if (hand.length === 0) break;
+                        hand.splice(Math.floor(Math.random() * hand.length), 1);
+                    }
+                    break;
+                case "lose_employee":
+                    if ((victim.company as any[]).length > 0) {
+                        (victim.company as any[]).pop();
+                    }
+                    break;
+                case "lock_tricks": {
+                    const effects = victim.activeEffects as string[];
+                    if (!effects.includes("locked_tricks")) {
+                        effects.push("locked_tricks");
+                    }
+                    break;
+                }
+                default:
+                    console.warn("[ROOM] Unknown crisis penalty:", penalty);
+                    break;
+            }
         }
     }
 

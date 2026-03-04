@@ -15,7 +15,8 @@
             "bgColorHex": "#2C3E50",
             "iconName": "emp",
             "particleColor": "#F39C12"
-        }
+        },
+        "subtype": "none"
     },
     {
         "id": "emp_02",
@@ -33,7 +34,8 @@
             "bgColorHex": "#2C3E50",
             "iconName": "emp",
             "particleColor": "#F39C12"
-        }
+        },
+        "subtype": "none"
     },
     {
         "id": "emp_03",
@@ -51,7 +53,8 @@
             "bgColorHex": "#2C3E50",
             "iconName": "emp",
             "particleColor": "#F39C12"
-        }
+        },
+        "subtype": "none"
     },
     {
         "id": "emp_04",
@@ -69,7 +72,8 @@
             "bgColorHex": "#2C3E50",
             "iconName": "emp",
             "particleColor": "#F39C12"
-        }
+        },
+        "subtype": "none"
     },
     {
         "id": "emp_05",
@@ -86,12 +90,13 @@
             "bgColorHex": "#2C3E50",
             "iconName": "emp",
             "particleColor": "#F39C12"
-        }
+        },
+        "subtype": "none"
     },
     {
         "id": "trk_01",
         "name": "Falso in Bilancio",
-        "type": "trick",
+        "type": "event",
         "cost": 2,
         "shortDesc": "Ruba 2 PA a un avversario. Classico.",
         "description": "Ruba 2 PA a un avversario per il suo prossimo turno.",
@@ -104,12 +109,13 @@
             "bgColorHex": "#8E44AD",
             "iconName": "trick",
             "particleColor": "#9B59B6"
-        }
+        },
+        "subtype": "debuff"
     },
     {
         "id": "trk_02",
         "name": "Rubare l'Idea",
-        "type": "trick",
+        "type": "event",
         "cost": 1,
         "shortDesc": "Pesca 1 carta dalla mano avversaria.",
         "description": "Pesca 1 carta a caso dalla mano di un avversario.",
@@ -122,12 +128,13 @@
             "bgColorHex": "#8E44AD",
             "iconName": "trick",
             "particleColor": "#9B59B6"
-        }
+        },
+        "subtype": "debuff"
     },
     {
         "id": "trk_03",
         "name": "Taglio del Budget",
-        "type": "trick",
+        "type": "event",
         "cost": 2,
         "shortDesc": "Un avversario scarta 2 carte. Efficienza!",
         "description": "Costringe un avversario a scartare 2 carte.",
@@ -140,12 +147,13 @@
             "bgColorHex": "#8E44AD",
             "iconName": "trick",
             "particleColor": "#9B59B6"
-        }
+        },
+        "subtype": "debuff"
     },
     {
         "id": "trk_04",
         "name": "Riunione Fiume Inutile",
-        "type": "trick",
+        "type": "event",
         "cost": 1,
         "shortDesc": "Tu peschi 1, lui scarta 1. Sinergia!",
         "description": "Un avversario scarta 1 carta a caso, tu ne peschi 1.",
@@ -157,7 +165,8 @@
             "bgColorHex": "#8E44AD",
             "iconName": "trick",
             "particleColor": "#9B59B6"
-        }
+        },
+        "subtype": "debuff"
     },
     {
         "id": "crs_01",
@@ -175,7 +184,9 @@
             "bgColorHex": "#E74C3C",
             "iconName": "crisis",
             "particleColor": "#C0392B"
-        }
+        },
+        "subtype": "challenge",
+        "targetRoll": 7
     },
     {
         "id": "crs_02",
@@ -193,7 +204,9 @@
             "bgColorHex": "#E74C3C",
             "iconName": "crisis",
             "particleColor": "#C0392B"
-        }
+        },
+        "subtype": "challenge",
+        "targetRoll": 8
     },
     {
         "id": "crs_03",
@@ -211,12 +224,14 @@
             "bgColorHex": "#E74C3C",
             "iconName": "crisis",
             "particleColor": "#C0392B"
-        }
+        },
+        "subtype": "challenge",
+        "targetRoll": 9
     },
     {
         "id": "rea_01",
         "name": "Scaricabarile",
-        "type": "reaction",
+        "type": "event",
         "cost": 1,
         "shortDesc": "Reindirizza il Trucco a un altro. Ciao!",
         "description": "Quando sei bersagliato da un Magheggio, scegli un altro bersaglio valido invece di te.",
@@ -228,12 +243,13 @@
             "bgColorHex": "#27AE60",
             "iconName": "reaction",
             "particleColor": "#2ECC71"
-        }
+        },
+        "subtype": "reaction"
     },
     {
         "id": "rea_02",
         "name": "NDA Esclusivo",
-        "type": "reaction",
+        "type": "event",
         "cost": 2,
         "shortDesc": "Soffio il dipendente mentre lo assumono.",
         "description": "Gioca per annullare l'assunzione di un dipendente avversario e prenderlo in mano tua.",
@@ -245,12 +261,13 @@
             "bgColorHex": "#27AE60",
             "iconName": "reaction",
             "particleColor": "#2ECC71"
-        }
+        },
+        "subtype": "reaction"
     },
     {
         "id": "rea_03",
         "name": "\"Non è di mia competenza\"",
-        "type": "reaction",
+        "type": "event",
         "cost": 1,
         "shortDesc": "Annulla qualsiasi carta giocata. Punto.",
         "description": "Annulla l'effetto di una singola carta giocata (Magheggio o Reazione).",
@@ -262,7 +279,8 @@
             "bgColorHex": "#27AE60",
             "iconName": "reaction",
             "particleColor": "#2ECC71"
-        }
+        },
+        "subtype": "reaction"
     },
     {
         "id": "emp_06",
@@ -280,12 +298,13 @@
             "bgColorHex": "#34495E",
             "iconName": "coach",
             "particleColor": "#F1C40F"
-        }
+        },
+        "subtype": "none"
     },
     {
         "id": "trk_05",
         "name": "Spionaggio Industriale",
-        "type": "trick",
+        "type": "event",
         "cost": 3,
         "shortDesc": "Ruba 2 carte dalla mano avversaria.",
         "description": "Estremamente subdolo. Ruba 2 carte dalla mano di un avversario.",
@@ -298,7 +317,8 @@
             "bgColorHex": "#8E44AD",
             "iconName": "trick",
             "particleColor": "#9B59B6"
-        }
+        },
+        "subtype": "debuff"
     },
     {
         "id": "emp_07",
@@ -316,6 +336,46 @@
             "bgColorHex": "#FFD700",
             "iconName": "boss",
             "particleColor": "#FFDF00"
+        },
+        "subtype": "none"
+    },
+    {
+        "id": "itm_01",
+        "name": "Badge Motivazionale",
+        "type": "item",
+        "subtype": "equipment",
+        "cost": 1,
+        "shortDesc": "+1 al tiro contro gli Imprevisti.",
+        "description": "Assegna a un tuo Impiegato: ottiene +1 ai tiri contro gli Imprevisti.",
+        "effect": {
+            "action": "passive_bonus",
+            "target": "employee",
+            "amount": 1
+        },
+        "visuals": {
+            "bgColorHex": "#F4C95D",
+            "iconName": "item",
+            "particleColor": "#F6D36E"
+        },
+        "modifier": 1
+    },
+    {
+        "id": "itm_02",
+        "name": "Toolbox Tattica",
+        "type": "item",
+        "subtype": "equipment",
+        "cost": 2,
+        "shortDesc": "Sconto di 1 PA sul prossimo Evento.",
+        "description": "Assegna a un tuo Impiegato: il prossimo Evento che giochi costa 1 PA in meno.",
+        "effect": {
+            "action": "discount_cost",
+            "target": "trick",
+            "amount": 1
+        },
+        "visuals": {
+            "bgColorHex": "#D8A24A",
+            "iconName": "item",
+            "particleColor": "#F2C06A"
         }
     }
 ]

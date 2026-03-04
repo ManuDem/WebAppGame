@@ -20,6 +20,8 @@ integration_test_report.txt
 debug_core.txt
 debug_integration.txt
 debug_server_tests.txt
+server/jest_out.txt
+server/jest_results.json
 
 *.exe
 

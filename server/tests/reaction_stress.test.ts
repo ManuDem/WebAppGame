@@ -110,13 +110,13 @@ describe("Feature 04: Reaction stress and anti-cheat", () => {
 
         const reaction2 = new CardState();
         reaction2.id = "card_react_2";
-        reaction2.templateId = "reac_01";
+        reaction2.templateId = "rea_01";
         reaction2.type = CardType.EVENTO;
         room.state.players.get("player_2")!.hand.push(reaction2);
 
         const reaction3 = new CardState();
         reaction3.id = "card_react_3";
-        reaction3.templateId = "reac_02";
+        reaction3.templateId = "rea_02";
         reaction3.type = CardType.EVENTO;
         room.state.players.get("player_3")!.hand.push(reaction3);
 
@@ -160,7 +160,7 @@ describe("Feature 04: Reaction stress and anti-cheat", () => {
 
         const reaction = new CardState();
         reaction.id = "card_react_cheat";
-        reaction.templateId = "reac_01";
+        reaction.templateId = "rea_01";
         reaction.type = CardType.EVENTO;
         room.state.players.get("player_2")!.hand.push(reaction);
 

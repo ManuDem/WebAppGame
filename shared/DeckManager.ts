@@ -1,4 +1,4 @@
-import { ICardData, CardType } from "./SharedTypes";
+import { CardSubtype, ICardData, CardType } from "./SharedTypes";
 import cardsDbRaw from "./cards_db.json";
 
 /**
@@ -36,9 +36,12 @@ export class DeckManager {
                 const card: ICardData = {
                     id: this.generateUUID(),
                     templateId: template.id,
-                    type: template.type as CardType,
+                    type: this.normalizeType(template.type),
                     costPA: template.cost,
-                    isFaceUp: false // Hidden in deck / hand by default
+                    isFaceUp: false, // Hidden in deck / hand by default
+                    subtype: this.normalizeSubtype(template.subtype, template.type),
+                    targetRoll: typeof template.targetRoll === "number" ? template.targetRoll : undefined,
+                    modifier: typeof template.modifier === "number" ? template.modifier : undefined,
                 };
                 deck.push(card);
             }
@@ -99,5 +102,38 @@ export class DeckManager {
             const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
             return v.toString(16);
         });
+    }
+
+    private static normalizeType(rawType: unknown): CardType {
+        const value = String(rawType ?? "").trim().toLowerCase();
+        switch (value) {
+            case "employee":
+                return CardType.EMPLOYEE;
+            case "crisis":
+            case "imprevisto":
+                return CardType.IMPREVISTO;
+            case "item":
+            case "oggetto":
+                return CardType.OGGETTO;
+            case "event":
+            case "trick":
+            case "reaction":
+            default:
+                return CardType.EVENTO;
+        }
+    }
+
+    private static normalizeSubtype(rawSubtype: unknown, rawType: unknown): CardSubtype {
+        const subtype = String(rawSubtype ?? "").trim().toLowerCase();
+        if (["none", "spell", "challenge", "debuff", "reaction", "equipment"].includes(subtype)) {
+            return subtype as CardSubtype;
+        }
+
+        const type = String(rawType ?? "").trim().toLowerCase();
+        if (type === "item" || type === "oggetto") return "equipment";
+        if (type === "crisis" || type === "imprevisto") return "challenge";
+        if (type === "reaction") return "reaction";
+        if (type === "employee") return "none";
+        return "spell";
     }
 }

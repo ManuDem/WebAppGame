@@ -203,13 +203,23 @@ export interface IStartReactionTimerPayload {
 
 export enum CardType {
     EMPLOYEE = "employee",      // Impiegati
-    MAGIC = "trick",            // Alias legacy: magheggio/trucco
-    CRISIS = "crisis",          // Alias legacy: crisi
-    REACTION = "reaction",      // Alias legacy: reazione
-    IMPREVISTO = "crisis",      // Alias nuovo per contenuti crisi
-    OGGETTO = "item",           // Alias nuovo per equipaggiamenti
-    EVENTO = "trick"            // Alias nuovo per eventi/trucchi
+    IMPREVISTO = "crisis",      // Minacce centrali da affrontare
+    OGGETTO = "item",           // Equipaggiamenti assegnabili agli impiegati
+    EVENTO = "event",           // Eventi one-shot (magie/sfide/debuff/reazioni)
+
+    // Alias legacy (compat retroattiva durante la migrazione)
+    MAGIC = "trick",
+    CRISIS = "crisis",
+    REACTION = "reaction",
 }
+
+export type CardSubtype =
+    | "none"
+    | "spell"
+    | "challenge"
+    | "debuff"
+    | "reaction"
+    | "equipment";
 
 /** Dati essenziali pubblici di una carta in gioco */
 export interface ICardData {
@@ -223,6 +233,7 @@ export interface ICardData {
     targetRoll?: number;     // Target roll (es. 8+) necessario per affrontare la carta/evento
     modifier?: number;       // Bonus/malus al tiro (+1, -1) fornito passivamente
     equippedItems?: ICardData[]; // Oggetti equipaggiati a questo impiegato
+    subtype?: CardSubtype;   // Sottocategoria per distinguere eventi/oggetti
 }
 
 /** Visual metadata per representation in the Phaser client */
@@ -291,6 +302,7 @@ export interface ICardTemplate {
     visuals: ICardVisuals;
     targetRoll?: number;     // Es. 8+ per avere successo conto l'imprevisto o evento
     modifier?: number;       // Bonus passivo ai dadi o altro
+    subtype?: CardSubtype;   // Sottocategoria event/item per UI e logica
 }
 
 // -------------------------------------------------------------------------
@@ -352,3 +364,4 @@ export interface IGameState {
     // Gestione Vittoria
     winnerId?: string;                 // SessionId del vincitore; nil finché la partita è in corso
 }
+

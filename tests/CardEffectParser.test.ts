@@ -207,17 +207,16 @@ describe("CardEffectParser.resolve — individual effects", () => {
         expect(CardEffectParser.resolve(card, p2, null, state, pa)).toBe(true);
         expect(pa.isCancelled).toBe(true);
     });
+    // ----- crisis_resolve (server-authoritative) -----
 
-    // ----- crisis_resolve with penalty -----
-
-    test("crisis_resolve: penalty 'discard_2' removes 2 cards from other players, not the solver", () => {
-        // Give p2 (the victim) 3 cards
+    test("crisis_resolve: parser branch is acknowledged, structural effects are delegated to Room", () => {
+        // Give p2 (potential victim) 3 cards
         p2.hand = [
             { id: "v1", templateId: "emp_01", type: CardType.EMPLOYEE },
             { id: "v2", templateId: "emp_02", type: CardType.EMPLOYEE },
             { id: "v3", templateId: "emp_03", type: CardType.EMPLOYEE },
         ];
-        // Give p1 (the solver) 2 cards — these must NOT be touched
+        // Give p1 (potential solver) 2 cards
         p1.hand = [
             { id: "s1", templateId: "trk_01", type: CardType.EVENTO },
             { id: "s2", templateId: "trk_02", type: CardType.EVENTO },
@@ -231,14 +230,11 @@ describe("CardEffectParser.resolve — individual effects", () => {
 
         const success = CardEffectParser.resolve(card, p1, null, state);
         expect(success).toBe(true);
-        // Solver gets +1 VP
-        expect(p1.score).toBe(1);
-        // Solver's hand is untouched (still 2 cards)
+        // No structural mutation at parser level (handled by OfficeRoom)
+        expect(p1.score).toBe(0);
         expect(p1.hand.length).toBe(2);
-        // Victim lost exactly 2 cards (3 → 1)
-        expect(p2.hand.length).toBe(1);
+        expect(p2.hand.length).toBe(3);
     });
-
     // ----- draw_cards -----
 
     test("draw_cards: adds 'pending_draw_2' tag to activeEffects", () => {
@@ -368,3 +364,4 @@ describe("CardEffectParser.resolveQueue — LIFO reaction chain", () => {
         expect(p1.score).toBe(0);
     });
 });
+

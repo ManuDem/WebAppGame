@@ -6,6 +6,7 @@ import {
     IPendingAction,
     GamePhase,
     CardType,
+    CardSubtype,
     ClientMessages
 } from "../../shared/SharedTypes";
 
@@ -42,6 +43,9 @@ export class CardState extends Schema implements ICardData {
 
     @type([CardState])
     equippedItems?: ICardData[] = new ArraySchema<CardState>() as any;
+
+    @type("string")
+    subtype?: CardSubtype = "none";
 }
 
 // ═════════════════════════════════════════════════════════

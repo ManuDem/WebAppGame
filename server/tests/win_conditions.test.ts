@@ -5,8 +5,6 @@ import assert from "assert";
 
 console.log("🏃 Esecuzione Test QA Agente 4 - win_conditions.test.ts (Fase 5 - End to End)...");
 
-const STARTING_HAND_SIZE = 5;
-
 const createDummyRoom = () => {
     const room = new OfficeRoom();
     room.state = new OfficeRoomState();
@@ -112,11 +110,16 @@ describe("LUCrAre End-to-End Win Conditions", () => {
         room.state.centralCrises.push(createCard("crs_inst_2", "crs_02", CardType.IMPREVISTO));
         room.state.centralCrises.push(createCard("crs_inst_3", "crs_03", CardType.IMPREVISTO));
 
-        for (let i = 1; i <= 2; i++) {
-            (room as any)["handleSolveCrisis"](client1_2, { crisisId: `crs_inst_${i}` });
-            if (room.clock && typeof (room.clock as any).tick === "function") {
-                (room.clock as any).tick(5100);
+        const randomSpy = jest.spyOn(Math, "random").mockReturnValue(0.99); // Force high dice rolls
+        try {
+            for (let i = 1; i <= 2; i++) {
+                (room as any)["handleSolveCrisis"](client1_2, { crisisId: `crs_inst_${i}` });
+                if (room.clock && typeof (room.clock as any).tick === "function") {
+                    (room.clock as any).tick(5100);
+                }
             }
+        } finally {
+            randomSpy.mockRestore();
         }
 
         assert.strictEqual(room.state.phase, GamePhase.GAME_OVER);
@@ -129,7 +132,6 @@ describe("LUCrAre End-to-End Win Conditions", () => {
     test("Test delle Penalità Crisi", () => {
         let room = createDummyRoom();
         const client1_3 = createMockClient("player_1");
-        const p1 = room.state.players.get("player_1")!;
         const p2 = room.state.players.get("player_2")!;
 
         // Crisi 1: Ispezione della Finanza (discard_2)
@@ -139,8 +141,13 @@ describe("LUCrAre End-to-End Win Conditions", () => {
         p2.hand.push(createCard("h3", "emp_01", CardType.EMPLOYEE));
         assert.strictEqual(p2.hand.length, 3);
 
-        (room as any)["handleSolveCrisis"](client1_3, { crisisId: "c1" });
-        if (room.clock && typeof (room.clock as any).tick === "function") (room.clock as any).tick(5100);
+        let randomSpy = jest.spyOn(Math, "random").mockReturnValue(0); // Force low dice rolls (fail)
+        try {
+            (room as any)["handleSolveCrisis"](client1_3, { crisisId: "c1" });
+            if (room.clock && typeof (room.clock as any).tick === "function") (room.clock as any).tick(5100);
+        } finally {
+            randomSpy.mockRestore();
+        }
 
         assert.strictEqual(p2.hand.length, 1, "Player 2 deve aver perso 2 carte dalla mano");
         console.log("  ✅ Penalità discard_2 applicata correttamente.");
@@ -151,8 +158,13 @@ describe("LUCrAre End-to-End Win Conditions", () => {
         p2.company.push(createCard("comp2", "emp_01", CardType.EMPLOYEE));
         assert.strictEqual(p2.company.length, 2);
 
-        (room as any)["handleSolveCrisis"](client1_3, { crisisId: "c2" });
-        if (room.clock && typeof (room.clock as any).tick === "function") (room.clock as any).tick(5100);
+        randomSpy = jest.spyOn(Math, "random").mockReturnValue(0); // Force low dice rolls (fail)
+        try {
+            (room as any)["handleSolveCrisis"](client1_3, { crisisId: "c2" });
+            if (room.clock && typeof (room.clock as any).tick === "function") (room.clock as any).tick(5100);
+        } finally {
+            randomSpy.mockRestore();
+        }
 
         assert.strictEqual(p2.company.length, 1, "Player 2 deve aver perso un dipendente nella company");
         console.log("  ✅ Penalità lose_employee applicata correttamente.");
@@ -188,3 +200,4 @@ describe("LUCrAre End-to-End Win Conditions", () => {
         assert.strictEqual(lastPacket.data.code, "MISSING_TARGET");
     });
 });
+

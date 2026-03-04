@@ -55,31 +55,24 @@ Obiettivo: sapere subito cosa e fatto, cosa manca e dove intervenire.
 - Build:
   - server: OK (`cd server && npm run build`)
   - client: OK (`cd client && npm run build`)
-- Test root:
-  - comando: `npm test -- --runInBand`
-  - esito: FAIL parziale
-  - pass:
-    - `server/tests/core_loop.test.ts`
-    - `server/tests/room_connection.test.ts`
-    - `tests/CardEffectParser.test.ts`
-    - `tests/DeckManager.test.ts`
-  - fail:
-    - `server/tests/reaction_stress.test.ts` (assert su fase: atteso `PLAYER_TURN`, ricevuto `GAME_OVER`)
-    - `server/tests/win_conditions.test.ts` (suite legacy con `process.exit(1)` su fallimento)
-    - `tests/core_loop.test.ts`
+- Test mirati (stabili): OK
+  - comando: `npm test -- --runInBand --forceExit tests/CardEffectParser.test.ts server/tests/win_conditions.test.ts server/tests/reaction_stress.test.ts`
+  - esito: 28/28 passed
+- Test root completi: FAIL parziale (suite legacy)
+  - comando: `npm test -- --runInBand --forceExit`
+  - fail attuali:
     - `tests/room_connection.test.ts`
+    - `tests/core_loop.test.ts`
     - `tests/reaction_race_condition.test.ts`
-  - causa nota per 3 suite root: modulo `express` mancante nel workspace root richiesto da `@colyseus/testing`
+  - cause note:
+    - suite root basate su harness Colyseus legacy non allineato alla room corrente
+    - import errato in `tests/reaction_race_condition.test.ts` (`../src/arena.config`)
 
 ## 6) Criticita aperte prioritarie
-1. Riallineare test al comportamento reale:
-   - `server/tests/reaction_stress.test.ts` va aggiornato per la win condition attuale che puo chiudere in `GAME_OVER`.
-2. Stabilizzare test root `@colyseus/testing`:
-   - aggiungere dipendenze mancanti nel root oppure isolare queste suite in workspace coerente.
-3. Ripulire suite legacy `server/tests/win_conditions.test.ts`:
-   - evitare `process.exit(1)` dentro test Jest.
-4. Pulizia tecnica:
-   - ridurre uso di `any` in `OfficeRoom.ts` e `CardEffectParser.ts`.
+1. Allineare o rimuovere suite root legacy non coerenti (`tests/*` con `@colyseus/testing`).
+2. Ridurre logging runtime in test per output piu pulito.
+3. Ridurre uso di `any` in `server/src/rooms/OfficeRoom.ts`.
+4. Completare supporto gameplay OGGETTO/equipment lato room (attualmente tipizzato ma non pienamente orchestrato).
 
 ## 7) Checklist operativa prima di modificare codice
 1. Leggere questo file (`CodexGPT.md`).
@@ -122,9 +115,24 @@ npm test -- --runInBand
   - riuso grafico: introdotto `client/src/ui/RetroButtonPainter.ts` e applicato a bottoni Login/Game
   - build aggiornata: `client build` OK, `server build` OK
   - test root: ancora FAIL parziale su suite storiche (`reaction_stress` + dipendenza `express`/`process.exit` test legacy)
-- 2026-03-04 (sessione commit rimanenti):
-  - preparato secondo commit separato con modifiche residue (docs, lobby flow, room code, icone/ui shared)
-  - esclusi dal commit artefatti locali: screenshot `Immagine *.png` e `dist/` non consolidato
-  - fix compatibilita tipi carta: `CardType` esteso con alias legacy/nuovi in `shared/SharedTypes.ts`
-  - fix tipizzazione palette carte in `CardGameObject` con fallback esplicito
-  - verifica finale: `client build` OK, `server build` OK
+- 2026-03-04 (sessione gameplay+test alignment):
+  - introdotti RFC:
+    - `Documentation/RFC_Gameplay_Semplificato.md`
+    - `Documentation/RFC_UI_MobileFirst.md`
+    - `Documentation/RFC_PhaseMachine_PreLobby.md`
+  - estesi tipi shared:
+    - `CardSubtype` in `shared/SharedTypes.ts`
+    - campi `subtype`, `targetRoll`, `modifier` propagati da deck/template/state
+  - aggiornato DB carte:
+    - convergenza tipi verso `event/crisis/item/employee`
+    - aggiunti sottotipi e 2 carte `item`
+  - crisi rese server-authoritative in `OfficeRoom`:
+    - tiro 2d6 + modifier
+    - broadcast `DICE_ROLLED`
+    - reward/penalty applicati lato room
+  - reazione validata con sottotipi:
+    - blocco carte reaction fuori `REACTION_WINDOW`
+    - blocco carte non-reaction in `PLAY_REACTION`
+  - test allineati:
+    - aggiornati `tests/CardEffectParser.test.ts`, `server/tests/win_conditions.test.ts`, `server/tests/reaction_stress.test.ts`
+    - pass su suite mirata (28/28)
