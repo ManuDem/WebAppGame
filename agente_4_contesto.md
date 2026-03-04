@@ -29,16 +29,13 @@ Ad oggi, abbiamo consolidato l'**infrastruttura di testing Node.js** e abbiamo c
   - Scritti test diretti che simulano pacchetti web-socket fasulli (`DRAW_CARD`) inviati da client a cui *non spetta il turno* e da client *senza Punti Azione sufficienti*.
   - Verificato che in tali casi il Server respinga la mossa con l'evento `ServerEvents.ERROR` (e codici `NOT_YOUR_TURN` e `NO_PA`) mantenendo inalterati i PA reali e i conteggi del mazzo.
   - La suite passa con esito **Verde**.
+* **Creazione Suite "Reaction Window" (Fase 4):**
+  - Implementato `reaction_stress.test.ts` con instanziazione sintetica di `OfficeRoom`.
+  - Simulata **Race Condition**: `PLAY_EMPLOYEE` di un giocatore e due `PLAY_REACTION` simultanei nello stesso millisecondo. Verificata corretta coda in `actionStack` e deferimento. La suite passa con esito **Verde**.
+  - Simulata **Rage Quitting**: Disconnessione improvvisa durante il timer della Reaction Window. Il server non crasha, resetta lo stato e prosegue regolarmente la partita. La suite passa con esito **Verde**.
+  - Simulato **Cheat**: Invio di `PLAY_REACTION` fuori dalla finestra temporale (in `PLAYER_TURN`). Il server intercetta, respinge con `NO_REACTION_WINDOW` e mantiene integro lo stato. Mossa malevola bloccata. La suite passa con esito **Verde**.
 
 ## 4. Task Ancora da Completare
-Ora che la base (Lobby e Turni ordinari) è blindata, i prossimi task richiedono di concentrarsi sulla **Fase 3 (Carte & Effetti)** e sulla **Fase 4 (Il Caos della Reaction Window)**.
 
 1. **Test sulla validazione delle Azioni Pendenti (Fase 3):**
-   - L'Agente 1 dovrà implementare il parser delle carte. Una volta pronto, dovrò testare che inviare `PLAY_EMPLOYEE` con una carta che **non ho in mano** (o non idonea) venga respinto con errore di validazione `ServerEvents.ERROR`.
-2. **Stress-Test delle "Pugnalate alle Spalle" (Fase 4 - Race Conditions):**
-   - Integrare in Node.js il MOCK abbozzato all'inizio del progetto (`reaction_race_condition.test.ts`).
-   - Simulare il *Client A* che gioca una carta (es. triggera i 5 sec di attesa), mentre i *Client B*, *C* e *D* sparano un `PLAY_REACTION` nel Server allo stesso millisecondo esatto.
-   - Verificare che il payload dello stato venga arricchito (`pendingAction`) e che la memoria non crashi.
-   - Asserire che le reazioni simultanee, una volta scaduto il `reactionEndTime`, vengano accodate in ordine cronologico e deferite all'Agente 3 per essere risolte una dopo l'altra deterministicamente.
-3. **Gestione Disconnessione Strategica (Rage Quitting):**
-   - Aggiornare i test QA disconnettendo un giocatore improvvisamente durante il timer della Reaction Window per simulare freeze. Il server Colyseus dovrà gestire la sospensione o ignorarlo senza bloccarsi.
+   - Dovrò testare che inviare `PLAY_EMPLOYEE` con una carta che **non ho in mano** (o non idonea) venga respinto con errore di validazione `ServerEvents.ERROR`. Attendo il parser definitivo.

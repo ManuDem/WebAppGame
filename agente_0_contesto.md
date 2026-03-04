@@ -10,7 +10,7 @@ Sono il responsabile tecnico supremo dell'intero progetto. Le mie mansioni e reg
 
 ## 2. Quanto abbiamo Sviluppato Finora (Completato)
 
-Ho gettato con successo le fondamenta architetturali per le **Fasi 1, 2 e 3**, creando e revisionando i contratti di base:
+Ho gettato con successo le fondamenta architetturali per le **Fasi 1, 2, 3 e l’ossatura della 4/5**, creando e revisionando i contratti di base:
 
 ### FASE 1 - Architettura Dati e Setup Base
 * Creazione di **`shared/SharedTypes.ts`**: L'unico file di verità per le Interfacce di Stato (Es. `IGameState`, `IPlayer`, `ICardData`, ecc.), le fasi della partita (`GamePhase`) e i messaggi scambiabili tra Server e Client (`ClientMessages`, `ServerEvents`).
@@ -24,14 +24,19 @@ Ho gettato con successo le fondamenta architetturali per le **Fasi 1, 2 e 3**, c
 ### FASE 3 - Core Loop Base (Turni, PA e Pesca)
 * Creazione di **`Feature_02_CoreLoop.md`**: Definizione puntigliosa dei turni in Round-Robin, del costo delle azioni (es. Pescare costa 1 PA su 3 disponibili) e interazione.
 * Aggiornamento a `SharedTypes.ts`: Inserimento esplicito del round-robin (`turnIndex`), inserimento di costanti univoche (`MAX_ACTION_POINTS`, `DRAW_CARD_COST`) e mappatura di tutti i payload di ritorno (es. `ITurnStartedEvent`).
+* Supervisione dell’integrazione con `DeckManager` e `CardEffectParser`, assicurando che il Data Layer usi `ICardEffectDSL` e i template condivisi.
+
+### FASE 4/5 - Reaction Window, Stack e Visual Contracts (in stato avanzato)
+* Redazione di **`Feature_03_ReactionWindow.md`**, **`Feature_04_CardEffectsData.md`**, **`Feature_05_Visual_Contracts.md`** e consolidamento del GDD in `LUCrAre_SEMPRE_Master.md`.
+* Direzione architetturale per `GamePhase.REACTION_WINDOW` / `GamePhase.RESOLUTION`, `IPendingAction`, `actionStack` e degli eventi visivi (`START_REACTION_TIMER`, `REACTION_TRIGGERED`, `ACTION_RESOLVED`, VFX vari) consumati dal frontend.
 
 ## 3. Task Ancora da Completare (Prossimi Obiettivi)
 
-Se la Fase 3 passa ora in mano all'implementazione effettiva da parte degli Agenti operativi (con la scrittura di Test, e sviluppo visivo), il mio lavoro architetturale e direzionale dovrà ancora coprire:
+Con la Fase 3 ormai implementata (core loop, deck reale, CardEffectParser testato) e la Fase 4 in stato avanzato (Reaction Window operativa in `OfficeRoom.ts`), il mio lavoro architetturale e direzionale dovrà ancora coprire:
 
-1. **Revisione Codice della Fase 3:** Una volta che gli Agenti 1 e 2 avranno implementato pescate, punti azioni ed End Turn, dovrò assicurare l'assenza di loop o vulnerabilità (verificando inoltre lo strato Data dell'Agente 3 per la generazione del Deck).
-2. **Progettazione Architetturale della FASE 4 (Reaction Window):** Questa è la sfida tecnica più grande ("Le Pugnalate alle spalle"). Dovrò delineare l'evento di interruzione di 5 secondi, le interfacce per la coda di risoluzione (PendingAction) e stabilire come il motore (Agente 3) annullerà le intenzioni bloccate.
-3. **Pianificazione dell'Integrazione Carte Effetti (Fase 3/4 Data):** Redazione delle interfacce che l'Agente 3 dovrà usare in `resolveEffect()` o affini, stabilendo come un template JSON (es `cards_db.json`) generi logica typescript eseguibile.
-4. **Validazione della FASE 5:** Sorveglianza sul Polish finale di Phaser.js per garantire che le code di animazione non desincronizzino lo stato del Server. 
+1. **Revisione profonda post-implementazione della Fase 3:** Revisione mirata di `DeckManager`, `CardEffectParser` e loro utilizzo in `OfficeRoom.ts` per garantire assenza di `any`, coerenza totale con `ICardEffectDSL` e copertura dei casi limite.
+2. **Hardening Architetturale della FASE 4 (Reaction Window):** Validare che `actionStack` e `resolvePhase()` rispettino perfettamente il modello LIFO, i vincoli anti-cheat e le specifiche di `Feature_03_ReactionWindow.md`, iterando su edge case emersi dai test QA (Agente 4).
+3. **Evoluzione dell’Integrazione Carte Effetti (Fase 3/4 Data):** Guidare l’estensione del DSL in `cards_db.json` e delle relative strategie nel parser (es. `redirect_effect`, `steal_played_card`, effetti passivi) mantenendo sempre un unico contratto in `SharedTypes.ts`.
+4. **Validazione continua della FASE 5 (Visual Contracts):** Sorvegliare il Polish finale di Phaser.js (Agente 2) affinché `VisualEventQueue` e gli eventi di `ServerEvents` non creino desincronizzazioni con lo stato autoritativo del server e rispettino il protocollo “Visual Juice”.
 
 *(Fine Documento)*

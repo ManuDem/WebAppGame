@@ -1,4 +1,7 @@
 {
+  "scripts": {
+    "test": "jest --config jest.config.js"
+  },
   "devDependencies": {
     "@babel/preset-env": "^7.29.0",
     "@babel/preset-typescript": "^7.28.5",

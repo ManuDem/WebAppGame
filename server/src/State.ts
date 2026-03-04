@@ -27,6 +27,41 @@ export class CardState extends Schema implements ICardData {
 
     @type("boolean")
     isFaceUp?: boolean;
+
+    @type("string")
+    name?: string;
+
+    @type("string")
+    description?: string;
+}
+
+// ═════════════════════════════════════════════════════════
+//  PendingActionState — action context for Reaction Window
+// ═════════════════════════════════════════════════════════
+export class PendingActionState extends Schema implements IPendingAction {
+    @type("string")
+    id: string = "";
+
+    @type("string")
+    playerId: string = "";
+
+    @type("string")
+    actionType: ClientMessages = ClientMessages.PLAY_EMPLOYEE;
+
+    @type("string")
+    targetCardId?: string;
+
+    @type("string")
+    targetCrisisId?: string;
+
+    @type("string")
+    targetPlayerId?: string;
+
+    @type("number")
+    timestamp: number = 0;
+
+    @type("boolean")
+    isCancelled?: boolean;
 }
 
 // ═════════════════════════════════════════════════════════
@@ -48,8 +83,8 @@ export class PlayerState extends Schema implements IPlayer {
     @type("uint8")
     actionPoints: number = 3;
 
-    // ── Hidden from other clients (server-authoritative) ──
-    @filter(function (this: PlayerState, client: any, value: any, root: any) {
+    // ── Hidden from other clients (server-authoritative / Fog of War) ──
+    @filter(function (this: PlayerState, client: any, _value: any, _root: any) {
         return client.sessionId === this.sessionId;
     })
     @type([CardState])
@@ -61,26 +96,12 @@ export class PlayerState extends Schema implements IPlayer {
 
     @type("uint8")
     score: number = 0;
-}
 
-// ═════════════════════════════════════════════════════════
-//  PendingActionState — action context for Reaction Window
-// ═════════════════════════════════════════════════════════
-export class PendingActionState extends Schema implements IPendingAction {
-    @type("string")
-    playerId: string = "";
+    @type("uint8")
+    victories: number = 0;
 
-    @type("string")
-    actionType: ClientMessages = ClientMessages.PLAY_EMPLOYEE;
-
-    @type("string")
-    targetCardId?: string;
-
-    @type("string")
-    targetCrisisId?: string;
-
-    @type("number")
-    timestamp: number = 0;
+    @type(["string"])
+    activeEffects: string[] = new ArraySchema<string>() as any;
 }
 
 // ═════════════════════════════════════════════════════════
@@ -106,6 +127,8 @@ export class OfficeRoomState extends Schema implements IGameState {
     @type("uint16")
     deckCount: number = 0;
 
+    // ── Reaction Window ──
+    // actionStack is server-private (not synced), but we expose pendingAction + reactionEndTime
     @type(PendingActionState)
     pendingAction: PendingActionState = new PendingActionState();
 
@@ -117,4 +140,11 @@ export class OfficeRoomState extends Schema implements IGameState {
 
     @type("uint8")
     turnIndex: number = 0;
+
+    @type("string")
+    winnerId?: string;
+
+    // actionStack is NOT synced to clients (server-private LIFO queue)
+    // It is exposed on the interface for CardEffectParser but not decorated with @type
+    actionStack: IPendingAction[] = [];
 }

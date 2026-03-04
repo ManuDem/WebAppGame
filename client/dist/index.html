@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="it">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>LUCrAre: SEMPRE</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&family=Outfit:wght@400;500;700;900&display=swap"
+    rel="stylesheet" />
+  <style>
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      width: 100vw;
+      height: 100vh;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      font-family: 'Outfit', sans-serif;
+      background: radial-gradient(circle at 50% 10%, #0f172a 0%, #05020a 100%) fixed;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: none;
+    }
+
+    #app {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    canvas {
+      max-width: 100%;
+      max-height: 100%;
+      /* Premium card-like appearance for the game canvas */
+      border-radius: 16px;
+      box-shadow:
+        0 0 60px rgba(120, 40, 200, 0.4),
+        0 0 120px rgba(76, 201, 240, 0.15),
+        0 24px 48px rgba(0, 0, 0, 0.7);
+      display: block;
+    }
+
+    /* Style the DOM input injected by Phaser's DOM container */
+    input[type="text"] {
+      font-family: 'Outfit', sans-serif !important;
+    }
+  </style>
+  <script type="module" crossorigin src="/assets/index-DlpDkkIC.js"></script>
+</head>
+
+<body>
+  <div id="app"></div>
+</body>
+
+</html>

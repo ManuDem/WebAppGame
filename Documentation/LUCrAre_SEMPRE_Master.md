@@ -1,5 +1,20 @@
 # MASTER DOCUMENT: "LUCrAre: SEMPRE" (GDD & SOW)
 
+## 0. Stato Fasi di Sviluppo (Snapshot)
+
+- **FASE 1 – Architettura Dati e Setup Base**: ✅ Completata  
+  - `SharedTypes.ts`, schema Colyseus e linee guida architetturali stabili.
+- **FASE 2 – Core Loop Base (Sincronizzazione)**: ✅ Completata  
+  - Join/Leave, ordine turni, PA, pesca (`DRAW_CARD`) implementati e testati.
+- **FASE 3 – Interattività e Logica Carte**: ✅ Funzionale, in iterazione  
+  - `DeckManager`, `CardEffectParser`, integrazione in `OfficeRoom.ts`, test su deck/effects.
+- **FASE 4 – Reaction Window & Stack**: 🟡 Avanzata / Hardening in corso  
+  - `GamePhase.REACTION_WINDOW / RESOLUTION`, `pendingAction`, `actionStack`, timer e integrazione QA operativi.
+- **FASE 5 – Visual Contracts & Polish**: 🟡 In corso  
+  - `VisualEventQueue`, eventi visivi (`SHOW_ANIMATION`, `START_REACTION_TIMER`, ecc.) e protocollo "Visual Juice" in via di consolidamento.
+
+---
+
 ## 1. VISIONE E SPECIFICHE DEL PROGETTO
 * **Titolo:** LUCrAre: SEMPRE
 * **Genere:** Party Card Game Competitivo (Web-based, Mobile-First).

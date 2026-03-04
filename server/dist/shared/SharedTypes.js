@@ -5,7 +5,7 @@
  * Contiene interfacce, Enumeratori di messaggi, Tipi di carte e Strutture Dati.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CardType = exports.ServerEvents = exports.ClientMessages = exports.GamePhase = exports.REACTION_WINDOW_MS = exports.DRAW_CARD_COST = exports.MAX_ACTION_POINTS = void 0;
+exports.CardType = exports.DropZoneArea = exports.ServerEvents = exports.ClientMessages = exports.GamePhase = exports.REACTION_WINDOW_MS = exports.DRAW_CARD_COST = exports.MAX_ACTION_POINTS = void 0;
 // -------------------------------------------------------------------------
 // COSTANTI DI GIOCO
 // -------------------------------------------------------------------------
@@ -48,16 +48,39 @@ var ServerEvents;
     ServerEvents["PA_UPDATED"] = "PA_UPDATED";
     ServerEvents["REACTION_TRIGGERED"] = "REACTION_TRIGGERED";
     ServerEvents["ACTION_RESOLVED"] = "ACTION_RESOLVED";
-    ServerEvents["DICE_ROLLED"] = "DICE_ROLLED"; // Risultato di un RNG per mostrare il dado in 3D/2D
+    ServerEvents["DICE_ROLLED"] = "DICE_ROLLED";
+    // -- Eventi Puramente Visivi per la Visual Queue (Miglioramenti UI) --
+    ServerEvents["SHOW_ANIMATION"] = "SHOW_ANIMATION";
+    ServerEvents["TRIGGER_PARTICLES"] = "TRIGGER_PARTICLES";
+    ServerEvents["START_REACTION_TIMER"] = "START_REACTION_TIMER";
+    ServerEvents["GAME_WON"] = "GAME_WON";
+    // -- Visual Juice Protocol Trigger --
+    ServerEvents["VFX_SHAKE"] = "VFX_SHAKE";
+    ServerEvents["VFX_CONFIDENZA"] = "VFX_CONFIDENZA";
+    ServerEvents["UI_FEEDBACK_DENIED"] = "UI_FEEDBACK_DENIED"; // Animazione di scossa/errore sui bottoni
 })(ServerEvents || (exports.ServerEvents = ServerEvents = {}));
+// -------------------------------------------------------------------------
+// REGOLE DI INTERAZIONE VISIVA (DRAG & DROP)
+// -------------------------------------------------------------------------
+/**
+ * Zone di impatto (Drop) logiche e agnostiche rispetto alla risoluzione in pixel.
+ * Il Frontend invierà l'intenzione al server basandosi sull'area logica in cui la carta viene rilasciata.
+ */
+var DropZoneArea;
+(function (DropZoneArea) {
+    DropZoneArea["CENTER_TABLE"] = "CENTER_TABLE";
+    DropZoneArea["OPPONENT_TERRITORY"] = "OPPONENT_TERRITORY";
+    DropZoneArea["DECK_AREA"] = "DECK_AREA";
+    DropZoneArea["HAND"] = "HAND"; // Per annullare un drag&drop e resettare la UI
+})(DropZoneArea || (exports.DropZoneArea = DropZoneArea = {}));
 // -------------------------------------------------------------------------
 // STRUTTURE DATI DI BASE (Riflettono logicamente il DB Locale)
 // -------------------------------------------------------------------------
 var CardType;
 (function (CardType) {
-    CardType["EMPLOYEE"] = "EMPLOYEE";
-    CardType["MAGIC"] = "MAGIC";
-    CardType["CRISIS"] = "CRISIS";
-    CardType["REACTION"] = "REACTION";
+    CardType["EMPLOYEE"] = "employee";
+    CardType["MAGIC"] = "trick";
+    CardType["CRISIS"] = "crisis";
+    CardType["REACTION"] = "reaction";
 })(CardType || (exports.CardType = CardType = {}));
 //# sourceMappingURL=SharedTypes.js.map

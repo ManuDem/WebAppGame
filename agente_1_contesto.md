@@ -14,7 +14,7 @@ Le mie implementazioni sono state guidate da direttive ferree stabilite dall'Arc
 *   **Fog of War**: Le carte in mano ai giocatori (`hand`) sono filtrate lato server (`@filter`). Un client riceve esclusivamente i dati delle proprie carte.
 *   **Event-Driven Timeout**: La meccanica temporale del gioco (Reaction Window di 5 secondi) è controllata esclusivamente da un timer lato server (`clock.setTimeout()`), non dai client.
 
-## 3. Cosa è stato sviluppato finora (FASE 1, 1.5, 2 e 3)
+## 3. Cosa è stato sviluppato finora (FASE 1, 2, 3 e 4)
 
 ### A. Infrastruttura e Schema Dati (`State.ts`)
 *   Setup del progetto Node.js e configurazione di TypeScript per compilazione cross-folder (verso `/shared`).
@@ -28,17 +28,15 @@ Le mie implementazioni sono state guidate da direttive ferree stabilite dall'Arc
 *   **`onLeave`**: Logica di gestione temporanea delle disconnessioni (Reconnect Window) impostata a 30 secondi per salvaguardare instabilità di rete, senza cancellare immediatamente il CEO in caso di refresh della pagina.
 
 ### C. Core Loop: Turni e Risorse (`OfficeRoom.ts` - FASE 3)
-*   **Game Start**: Appena la stanza rileva una quantità sufficiente di giocatori pronti, genera il pool dei turni, lo "shuffla" (Fisher-Yates) e determina l'ordine fisso. Inizializza un mazzo "fittizio" lato server.
-*   **Pesca (`DRAW_CARD`)**: Validazione in 4 step (Turno, Fase, AP, e Disponibilità Mazzo). Preleva la carta dal mazzo protetto e la sposta nell'`ArraySchema` della mano del giocatore. Invia un evento unicast esplicito `CARD_DRAWN`.
+*   **Game Start**: Appena la stanza rileva una quantità sufficiente di giocatori pronti, genera il pool dei turni, lo "shuffla" (Fisher-Yates) e determina l'ordine fisso.
+*   **Integrazione mazzo reale**: Il mazzo di gioco è ora costruito tramite `DeckManager.createDeck()` utilizzando `cards_db.json` curato dall’Agente 3.
+*   **Pesca (`DRAW_CARD`)**: Validazione in 4 step (Turno, Fase, AP, e Disponibilità Mazzo). Preleva la carta dal mazzo protetto e la sposta nell'`ArraySchema` della mano del giocatore arricchendola con i dati del template. Invia un evento unicast esplicito `CARD_DRAWN`.
 *   **Gestore Turni (`advanceTurn` & `END_TURN`)**: L'azione passa il controllo al successivo CEO in array sfruttando `turnIndex`, ignorando proattivamente tutti i giocatori con stato `isConnected === false`. Distribuisce `MAX_ACTION_POINTS` e annuncia la transizione in broadcast con `TURN_STARTED`.
-*   **Scaffolding Reaction Window**: Predisposti i trigger (`startReactionWindow` e `resolveReactions`) per intercettare giocate di personale e risoluzioni di crisi e generare i 5 secondi di attesa per ammettere possibili carte "Reazione".
-*   Il codice sorgente compila a *Zero Errori* (`tsc --noEmit`).
+*   **Reaction Window**: Implementata la finestra di reazione di 5 secondi (`REACTION_WINDOW_MS`) per le azioni criticabili (`PLAY_EMPLOYEE`, `SOLVE_CRISIS`, `PLAY_MAGIC`) tramite `pendingAction`, `actionStack` (LIFO) e timer server-side (`clock.setTimeout`), in collaborazione con `CardEffectParser.resolveQueue`.
+*   Il codice sorgente compila a *Zero Errori* (`tsc --noEmit`) ed è coperto da test automatici su core loop e Reaction Window.
 
 ## 4. Task ancora da completare (Next Steps)
 
-1.  **Integrazione del Database Carte Reale**: Sostituire il generatore di mazzo e le pescate "fittizie" con la logica reale decriptata da `cards_db.json` curato dall'Agente 3 ("Data / Game Logic").
-2.  **Risoluzioni Azioni Pendenti (FASE 4)**: 
-    * Completare gli handler di `PLAY_EMPLOYEE`, `SOLVE_CRISIS` e `PLAY_MAGIC` affinché leggano il vero "Costo PA" e identifichino correttamente le "Target Card" sul server.
-    * Risolvere l'orchestrazione delle queue nella `Reaction Window` (cosa succede effettivamente allo scadere del timer).
-3.  **Condizioni di Fine Partita (Game Over)**: Aggiungere logiche per rilevare il momento in cui un giocatore vince (tramite sistema di punteggi legato alle crisi affrontate o dipendenti piazzati) e gestire fluidamente la transizione nello stato di `GAME_OVER`.
-4.  **Integrazione ed Edge Cases Reali**: Adattamento minuzioso man mano che il Frontend (Agente 2) implementerà le UI e verranno a galla race condition tramite l'Agente 4 (QA).
+1.  **Hardening FASE 4 (Reaction Window)**: Rifinire logging, gestione degli edge case (disconnect/lag durante la finestra, stack profondi di reazioni) e mantenere aderente l’implementazione al documento `Feature_03_ReactionWindow.md`.
+2.  **Estensione condizioni di fine partita (Game Over)**: Il controllo base di vittoria è presente; bisogna completare e rifinire il sistema di punteggi e broadcast `GAME_WON` per supportare tutte le win condition del GDD.
+3.  **Integrazione ed Edge Cases Reali**: Adattamento minuzioso man mano che il Frontend (Agente 2) implementerà le UI e verranno a galla race condition tramite l'Agente 4 (QA).

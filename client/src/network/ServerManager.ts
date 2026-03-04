@@ -12,18 +12,20 @@ export class ServerManager {
 
     constructor() {
         const endpoint = window.location.hostname === 'localhost' ? 'ws://localhost:2567' : `wss://${window.location.hostname}`;
+        console.log('[ServerManager] ctor – endpoint:', endpoint);
         this.client = new Colyseus.Client(endpoint);
     }
 
     async joinOfficeRoom(ceoName: string): Promise<Colyseus.Room<IGameState>> {
+        console.log('[ServerManager] joinOfficeRoom – ceoName=', ceoName);
         try {
             this.room = await this.client.joinOrCreate<IGameState>('office_room', { ceoName });
-            console.log('Joined successfully', this.room.sessionId);
+            console.log('[ServerManager] joined office_room – id=', this.room.id, 'sessionId=', this.room.sessionId);
 
             this.setupListeners();
             return this.room;
         } catch (e) {
-            console.error('Join Error', e);
+            console.error('[ServerManager] Join Error', e);
             throw e;
         }
     }
@@ -31,8 +33,11 @@ export class ServerManager {
     private setupListeners() {
         if (!this.room) return;
 
+        console.log('[ServerManager] setupListeners – roomId=', this.room.id);
+
         // Callback dello state schema
         this.room.onStateChange((state) => {
+            console.log('[ServerManager] onStateChange – players size=', state.players.size);
             if (this.onStateChange) this.onStateChange(state);
 
             // Ascolta cambiamenti specifici al giocatore locale
@@ -43,7 +48,7 @@ export class ServerManager {
         });
 
         this.room.onMessage('*', (type: any, message: any) => {
-            console.log(`Received explicit message [${type}]:`, message);
+            console.log(`[ServerManager] Received explicit message [${type}]:`, message);
             if (this.onRoomMessage) this.onRoomMessage(type, message);
         });
     }

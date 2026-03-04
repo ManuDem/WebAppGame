@@ -3,21 +3,29 @@ import { BootScene } from './scenes/BootScene';
 import { LoginScene } from './scenes/LoginScene';
 import { GameScene } from './scenes/GameScene';
 
-// Mobile-first config
 const config: Phaser.Types.Core.GameConfig = {
     type: Phaser.AUTO,
-    parent: 'app', // Container nel DOM
-    width: 390,    // iPhone portrait width (base logica)
-    height: 844,   // iPhone portrait height
-    backgroundColor: '#1a1a2e', // Sfondo scuro per contrasto
+    parent: 'app',
+    width: 1280,
+    height: 720,
+    backgroundColor: '#0b1220',
     scale: {
-        mode: Phaser.Scale.FIT,
+        mode: Phaser.Scale.RESIZE,
         autoCenter: Phaser.Scale.CENTER_BOTH,
     },
-    dom: {
-        createContainer: true
+    render: {
+        antialias: true,
+        pixelArt: false,
+        roundPixels: false,
+        powerPreference: 'high-performance',
     },
-    scene: [BootScene, LoginScene, GameScene]
+    dom: {
+        createContainer: true,
+    },
+    scene: [BootScene, LoginScene, GameScene],
 };
 
-export default new Phaser.Game(config);
+const game = new Phaser.Game(config);
+(window as any).game = game;
+
+export default game;

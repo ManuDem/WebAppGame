@@ -37,3 +37,8 @@ I payload scambiati via WebSocket devono contenere ID/Indici minimi. E.s.: `{ ca
 
 ## 10. Robustezza del Ripristino Connessioni
 Colyseus permette la disconnessione e la riconnessione istantanea (`allowReconnection`). Il Frontend deve essere scritto "Reactively": riaccendendo il browser e scaricando l'intero albero di stato, la scena Phaser dovrà ricostruirsi automaticamente al 100% sulla base delle variabili scaricate all'istante (stato delle carte in tavola, chi gioca, timer rimanente). Meno "stato" viene salvato internamente in Phaser, più facile sarà il reconnetting.
+
+## 11. RELAZIONE CLIENT/SERVER N. 11: Agnosticismo del Resize
+L'Agente 2 (Frontend) adotterà logiche liquide/responsive (`Scale.RESIZE`).
+**Il Server ripudierà qualsiasi payload contenente coordinate (x, y, z, depth, screenScale). I payload devono essere puramente Entity based (UUIDs).**
+L'uso dell'enumeratore `DropZoneArea` garantisce l'astrattezza: il Client converte un impatto grafico in un intent logico ("carta trascinata in OPPONENT_TERRITORY"), e il Backend risolve basandosi *solo* sul Card UUID e sull'ID del giocatore/target.

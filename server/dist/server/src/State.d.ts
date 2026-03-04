@@ -6,6 +6,18 @@ export declare class CardState extends Schema implements ICardData {
     type: CardType;
     costPA?: number;
     isFaceUp?: boolean;
+    name?: string;
+    description?: string;
+}
+export declare class PendingActionState extends Schema implements IPendingAction {
+    id: string;
+    playerId: string;
+    actionType: ClientMessages;
+    targetCardId?: string;
+    targetCrisisId?: string;
+    targetPlayerId?: string;
+    timestamp: number;
+    isCancelled?: boolean;
 }
 export declare class PlayerState extends Schema implements IPlayer {
     sessionId: string;
@@ -16,13 +28,8 @@ export declare class PlayerState extends Schema implements IPlayer {
     hand: ICardData[];
     company: ICardData[];
     score: number;
-}
-export declare class PendingActionState extends Schema implements IPendingAction {
-    playerId: string;
-    actionType: ClientMessages;
-    targetCardId?: string;
-    targetCrisisId?: string;
-    timestamp: number;
+    victories: number;
+    activeEffects: string[];
 }
 export declare class OfficeRoomState extends Schema implements IGameState {
     phase: GamePhase;
@@ -35,5 +42,7 @@ export declare class OfficeRoomState extends Schema implements IGameState {
     reactionEndTime: number;
     turnNumber: number;
     turnIndex: number;
+    winnerId?: string;
+    actionStack: IPendingAction[];
 }
 //# sourceMappingURL=State.d.ts.map

@@ -9,19 +9,20 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.OfficeRoomState = exports.PendingActionState = exports.PlayerState = exports.CardState = void 0;
+exports.OfficeRoomState = exports.PlayerState = exports.PendingActionState = exports.CardState = void 0;
 const schema_1 = require("@colyseus/schema");
 const SharedTypes_1 = require("../../shared/SharedTypes");
 // ═════════════════════════════════════════════════════════
 //  CardState — a single card instance (implements ICardData)
 // ═════════════════════════════════════════════════════════
 class CardState extends schema_1.Schema {
-    constructor() {
-        super(...arguments);
-        this.id = "";
-        this.templateId = "";
-        this.type = SharedTypes_1.CardType.EMPLOYEE;
-    }
+    id = "";
+    templateId = "";
+    type = SharedTypes_1.CardType.EMPLOYEE;
+    costPA;
+    isFaceUp;
+    name;
+    description;
 }
 exports.CardState = CardState;
 __decorate([
@@ -44,23 +45,76 @@ __decorate([
     (0, schema_1.type)("boolean"),
     __metadata("design:type", Boolean)
 ], CardState.prototype, "isFaceUp", void 0);
+__decorate([
+    (0, schema_1.type)("string"),
+    __metadata("design:type", String)
+], CardState.prototype, "name", void 0);
+__decorate([
+    (0, schema_1.type)("string"),
+    __metadata("design:type", String)
+], CardState.prototype, "description", void 0);
+// ═════════════════════════════════════════════════════════
+//  PendingActionState — action context for Reaction Window
+// ═════════════════════════════════════════════════════════
+class PendingActionState extends schema_1.Schema {
+    id = "";
+    playerId = "";
+    actionType = SharedTypes_1.ClientMessages.PLAY_EMPLOYEE;
+    targetCardId;
+    targetCrisisId;
+    targetPlayerId;
+    timestamp = 0;
+    isCancelled;
+}
+exports.PendingActionState = PendingActionState;
+__decorate([
+    (0, schema_1.type)("string"),
+    __metadata("design:type", String)
+], PendingActionState.prototype, "id", void 0);
+__decorate([
+    (0, schema_1.type)("string"),
+    __metadata("design:type", String)
+], PendingActionState.prototype, "playerId", void 0);
+__decorate([
+    (0, schema_1.type)("string"),
+    __metadata("design:type", String)
+], PendingActionState.prototype, "actionType", void 0);
+__decorate([
+    (0, schema_1.type)("string"),
+    __metadata("design:type", String)
+], PendingActionState.prototype, "targetCardId", void 0);
+__decorate([
+    (0, schema_1.type)("string"),
+    __metadata("design:type", String)
+], PendingActionState.prototype, "targetCrisisId", void 0);
+__decorate([
+    (0, schema_1.type)("string"),
+    __metadata("design:type", String)
+], PendingActionState.prototype, "targetPlayerId", void 0);
+__decorate([
+    (0, schema_1.type)("number"),
+    __metadata("design:type", Number)
+], PendingActionState.prototype, "timestamp", void 0);
+__decorate([
+    (0, schema_1.type)("boolean"),
+    __metadata("design:type", Boolean)
+], PendingActionState.prototype, "isCancelled", void 0);
 // ═════════════════════════════════════════════════════════
 //  PlayerState — one connected player (implements IPlayer)
 // ═════════════════════════════════════════════════════════
 class PlayerState extends schema_1.Schema {
-    constructor() {
-        super(...arguments);
-        this.sessionId = "";
-        this.username = "";
-        this.isReady = false;
-        this.isConnected = true;
-        this.actionPoints = 3;
-        // ── Hidden from other clients (server-authoritative) ──
-        this.hand = new schema_1.ArraySchema();
-        // ── Public area — "Azienda" (hired employees visible to all) ──
-        this.company = new schema_1.ArraySchema();
-        this.score = 0;
-    }
+    sessionId = "";
+    username = "";
+    isReady = false;
+    isConnected = true;
+    actionPoints = 3;
+    // ── Hidden from other clients (server-authoritative / Fog of War) ──
+    hand = new schema_1.ArraySchema();
+    // ── Public area — "Azienda" (hired employees visible to all) ──
+    company = new schema_1.ArraySchema();
+    score = 0;
+    victories = 0;
+    activeEffects = new schema_1.ArraySchema();
 }
 exports.PlayerState = PlayerState;
 __decorate([
@@ -84,7 +138,7 @@ __decorate([
     __metadata("design:type", Number)
 ], PlayerState.prototype, "actionPoints", void 0);
 __decorate([
-    (0, schema_1.filter)(function (client, value, root) {
+    (0, schema_1.filter)(function (client, _value, _root) {
         return client.sessionId === this.sessionId;
     }),
     (0, schema_1.type)([CardState]),
@@ -98,55 +152,34 @@ __decorate([
     (0, schema_1.type)("uint8"),
     __metadata("design:type", Number)
 ], PlayerState.prototype, "score", void 0);
-// ═════════════════════════════════════════════════════════
-//  PendingActionState — action context for Reaction Window
-// ═════════════════════════════════════════════════════════
-class PendingActionState extends schema_1.Schema {
-    constructor() {
-        super(...arguments);
-        this.playerId = "";
-        this.actionType = SharedTypes_1.ClientMessages.PLAY_EMPLOYEE;
-        this.timestamp = 0;
-    }
-}
-exports.PendingActionState = PendingActionState;
 __decorate([
-    (0, schema_1.type)("string"),
-    __metadata("design:type", String)
-], PendingActionState.prototype, "playerId", void 0);
-__decorate([
-    (0, schema_1.type)("string"),
-    __metadata("design:type", String)
-], PendingActionState.prototype, "actionType", void 0);
-__decorate([
-    (0, schema_1.type)("string"),
-    __metadata("design:type", String)
-], PendingActionState.prototype, "targetCardId", void 0);
-__decorate([
-    (0, schema_1.type)("string"),
-    __metadata("design:type", String)
-], PendingActionState.prototype, "targetCrisisId", void 0);
-__decorate([
-    (0, schema_1.type)("number"),
+    (0, schema_1.type)("uint8"),
     __metadata("design:type", Number)
-], PendingActionState.prototype, "timestamp", void 0);
+], PlayerState.prototype, "victories", void 0);
+__decorate([
+    (0, schema_1.type)(["string"]),
+    __metadata("design:type", Array)
+], PlayerState.prototype, "activeEffects", void 0);
 // ═════════════════════════════════════════════════════════
 //  OfficeRoomState — ROOT state (implements IGameState)
 // ═════════════════════════════════════════════════════════
 class OfficeRoomState extends schema_1.Schema {
-    constructor() {
-        super(...arguments);
-        this.phase = SharedTypes_1.GamePhase.WAITING_FOR_PLAYERS;
-        this.players = new schema_1.MapSchema();
-        this.playerOrder = new schema_1.ArraySchema();
-        this.currentTurnPlayerId = "";
-        this.centralCrises = new schema_1.ArraySchema();
-        this.deckCount = 0;
-        this.pendingAction = new PendingActionState();
-        this.reactionEndTime = 0;
-        this.turnNumber = 0;
-        this.turnIndex = 0;
-    }
+    phase = SharedTypes_1.GamePhase.WAITING_FOR_PLAYERS;
+    players = new schema_1.MapSchema();
+    playerOrder = new schema_1.ArraySchema();
+    currentTurnPlayerId = "";
+    centralCrises = new schema_1.ArraySchema();
+    deckCount = 0;
+    // ── Reaction Window ──
+    // actionStack is server-private (not synced), but we expose pendingAction + reactionEndTime
+    pendingAction = new PendingActionState();
+    reactionEndTime = 0;
+    turnNumber = 0;
+    turnIndex = 0;
+    winnerId;
+    // actionStack is NOT synced to clients (server-private LIFO queue)
+    // It is exposed on the interface for CardEffectParser but not decorated with @type
+    actionStack = [];
 }
 exports.OfficeRoomState = OfficeRoomState;
 __decorate([
@@ -189,4 +222,8 @@ __decorate([
     (0, schema_1.type)("uint8"),
     __metadata("design:type", Number)
 ], OfficeRoomState.prototype, "turnIndex", void 0);
+__decorate([
+    (0, schema_1.type)("string"),
+    __metadata("design:type", String)
+], OfficeRoomState.prototype, "winnerId", void 0);
 //# sourceMappingURL=State.js.map

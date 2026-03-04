@@ -1,5 +1,5 @@
 import { ColyseusTestServer, boot } from "@colyseus/testing";
-import appConfig from "../src/arena.config";
+import appConfig from "../server/src/arena.config";
 import { ClientMessages, GamePhase, ServerEvents, IErrorEvent } from "../shared/SharedTypes";
 
 describe("Core Loop - Turn Validation & Cheat Prevention", () => {

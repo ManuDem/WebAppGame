@@ -62,7 +62,33 @@ export enum ServerEvents {
     PA_UPDATED = "PA_UPDATED",           // Feedback rapido post-azione con i PA rimanenti
     REACTION_TRIGGERED = "REACTION_TRIGGERED", // Qualcuno ha giocato una carta Reazione
     ACTION_RESOLVED = "ACTION_RESOLVED", // L'azione pendente ha avuto successo o è stata annullata
-    DICE_ROLLED = "DICE_ROLLED"          // Risultato di un RNG per mostrare il dado in 3D/2D
+    DICE_ROLLED = "DICE_ROLLED",         // Risultato di un RNG per mostrare il dado in 3D/2D
+
+    // -- Eventi Puramente Visivi per la Visual Queue (Miglioramenti UI) --
+    SHOW_ANIMATION = "SHOW_ANIMATION",   // Riproduce un'animazione specifica tra due o più entità
+    TRIGGER_PARTICLES = "TRIGGER_PARTICLES", // Crea effetti particellari su un target specifico
+    START_REACTION_TIMER = "START_REACTION_TIMER", // Innesca un timer visivo (es. per la Reaction Window)
+    GAME_WON = "GAME_WON",                // Broadcast quando un giocatore raggiunge la condizione di vittoria
+
+    // -- Visual Juice Protocol Trigger --
+    VFX_SHAKE = "VFX_SHAKE",             // Triggera una scossa (crisi o sabotaggio riuscito)
+    VFX_CONFIDENZA = "VFX_CONFIDENZA",   // Particelle dorate per assunzioni importanti
+    UI_FEEDBACK_DENIED = "UI_FEEDBACK_DENIED" // Animazione di scossa/errore sui bottoni
+}
+
+// -------------------------------------------------------------------------
+// REGOLE DI INTERAZIONE VISIVA (DRAG & DROP)
+// -------------------------------------------------------------------------
+
+/** 
+ * Zone di impatto (Drop) logiche e agnostiche rispetto alla risoluzione in pixel.
+ * Il Frontend invierà l'intenzione al server basandosi sull'area logica in cui la carta viene rilasciata.
+ */
+export enum DropZoneArea {
+    CENTER_TABLE = "CENTER_TABLE",         // Per giocare generici Employee o Crisi
+    OPPONENT_TERRITORY = "OPPONENT_TERRITORY", // Per attacchi/Trick diretti
+    DECK_AREA = "DECK_AREA",              // (Risolto nel click, ma utile per scarti)
+    HAND = "HAND"                         // Per annullare un drag&drop e resettare la UI
 }
 
 // -------------------------------------------------------------------------
@@ -77,6 +103,32 @@ export interface IDrawCardPayload {
 /** Payload inviato dal Client con END_TURN */
 export interface IEndTurnPayload {
     // Nessun dato richiesto: il server avanza al prossimo giocatore
+}
+
+/** Payload inviato dal Client con PLAY_EMPLOYEE */
+export interface IPlayEmployeePayload {
+    cardId: string;         // ID runtime della carta da giocare dalla mano
+}
+
+/** Payload inviato dal Client con SOLVE_CRISIS */
+export interface ISolveCrisisPayload {
+    crisisId: string;       // ID runtime della carta crisi sulla plancia centrale
+}
+
+/** Payload inviato dal Client con PLAY_MAGIC */
+export interface IPlayMagicPayload {
+    cardId: string;         // ID runtime della carta Magheggio
+    targetPlayerId?: string; // SessionId del bersaglio (opzionale, dipende dal tipo di Magheggio)
+}
+
+/** Payload inviato dal Client con PLAY_REACTION */
+export interface IPlayReactionPayload {
+    cardId: string;         // ID runtime della carta Reazione da giocare
+}
+
+/** Payload inviato dal Client con EMOTE */
+export interface IEmotePayload {
+    emoteId: string;        // Identificativo dell'emote (es. "thumbs_up", "crying")
 }
 
 /** Payload inviato dal Server con CARD_DRAWN (solo al proprietario) */
@@ -98,15 +150,45 @@ export interface IErrorEvent {
     message: string;         // Messaggio leggibile dall'utente
 }
 
+/** Payload broadcast dal Server con GAME_WON */
+export interface IGameWonEvent {
+    winnerId: string;       // SessionId del vincitore
+    winnerName: string;     // Nome leggibile del CEO vincitore
+    finalScore: number;     // Punteggio finale del vincitore
+}
+
+// -- PAYLOAD EVENTI PURAMENTE VISIVI --
+
+/** Payload per ServerEvents.SHOW_ANIMATION */
+export interface IVisualAnimationPayload {
+    animationId: string;        // ID dell'animazione (es. "card_throw", "slash", "explosion")
+    sourceEntityId?: string;    // Opzionale: chi origiona l'animazione
+    targetEntityId?: string;    // Opzionale: il target visivo
+    durationMs?: number;        // Opzionale: può sovrascrivere la durata standard del tween
+}
+
+/** Payload per ServerEvents.TRIGGER_PARTICLES */
+export interface IVisualParticlesPayload {
+    particleType: string;       // Es. "sparks", "smoke", "confetti"
+    targetEntityId: string;     // L'entità su cui spawnare (card id o player avatar)
+    intensity?: number;         // Valore da 1 a 10 per l'intensità
+}
+
+/** Payload per ServerEvents.START_REACTION_TIMER */
+export interface IStartReactionTimerPayload {
+    durationMs: number;         // Durata del countdown (es. 5000 ms)
+    actionTypeLabel: string;    // Testo da mostrare (es. "Reazione all'assunzione in corso!")
+}
+
 // -------------------------------------------------------------------------
 // STRUTTURE DATI DI BASE (Riflettono logicamente il DB Locale)
 // -------------------------------------------------------------------------
 
 export enum CardType {
-    EMPLOYEE = "EMPLOYEE",
-    MAGIC = "MAGIC",
-    CRISIS = "CRISIS",
-    REACTION = "REACTION"
+    EMPLOYEE = "employee",
+    MAGIC = "trick",
+    CRISIS = "crisis",
+    REACTION = "reaction"
 }
 
 /** Dati essenziali pubblici di una carta in gioco */
@@ -116,6 +198,74 @@ export interface ICardData {
     type: CardType;          // Tipo della carta
     costPA?: number;         // Costo in Punti Azione
     isFaceUp?: boolean;      // Per sapere se è visibile agli altri
+    name?: string;           // Nome leggibile della carta (popolato dal server dal DB)
+    description?: string;    // Descrizione breve della carta (popolato dal server dal DB)
+}
+
+/** Visual metadata per representation in the Phaser client */
+export interface ICardVisuals {
+    bgColorHex: string;
+    iconName: string;
+    particleColor: string;
+}
+
+/** Interface representing the standardized effect object from cards_db.json.
+ *  @deprecated Use ICardEffectDSL for strongly-typed effects. This alias is kept for retro-compatibility.
+ */
+export type ICardEffect = ICardEffectDSL;
+
+// -------------------------------------------------------------------------
+// CARD EFFECT DSL (Data Layer — Agente 3)
+// -------------------------------------------------------------------------
+
+/** Union of all valid target strings in the DSL */
+export type TargetType =
+    | "self"
+    | "opponent"
+    | "opponent_hand"
+    | "employee"
+    | "win_condition"
+    | "trick"
+    | "another_opponent"
+    | "played_card";
+
+/** Union of all valid action strings in the DSL */
+export type ActionType =
+    | "produce"
+    | "protect"
+    | "passive_bonus"
+    | "discount_cost"
+    | "draw_cards"
+    | "steal_pa"
+    | "steal_card"
+    | "discard"
+    | "trade_random"
+    | "crisis_resolve"
+    | "redirect_effect"
+    | "steal_played_card"
+    | "cancel_effect";
+
+/** Strongly-typed Effect DSL used in cards_db.json and resolved by CardEffectParser */
+export interface ICardEffectDSL {
+    action: ActionType;
+    target?: TargetType;
+    amount?: number;
+    resource?: string;
+    penalty?: string;    // Es. "discard_2"
+    reward?: string;     // Es. "vp_1"
+    multiplier?: number;
+}
+
+/** Interface representing a card template from cards_db.json */
+export interface ICardTemplate {
+    id: string;
+    name: string;
+    type: string;
+    cost: number;
+    shortDesc: string;       // ≤50 chars satirical summary for the card UI (used by Phaser client)
+    description: string;
+    effect: ICardEffect;
+    visuals: ICardVisuals;
 }
 
 // -------------------------------------------------------------------------
@@ -135,7 +285,9 @@ export interface IPlayer {
     hand: ICardData[];
     company: ICardData[];    // I Dipendenti assunti nell'Area Personale (Pubblici)
 
-    score: number;           // Dipendenti unici o Crisi risolte
+    score: number;           // Punti Vittoria: Dipendenti assunti + Crisi risolte
+    victories: number;       // Numero di round/partite vinti (per multi-match o future estensioni)
+    activeEffects: string[]; // Effetti temporanei o tag applicati al giocatore (es. buff, debuff, sconti)
 }
 
 /** 
@@ -143,11 +295,14 @@ export interface IPlayer {
  * Se un giocatore tenta un'azione criticata da REACTION_WINDOW, il server salva qui l'intenzione.
  */
 export interface IPendingAction {
+    id: string;              // UUID for the pending action in the stack
     playerId: string;        // Chi sta eseguendo l'azione
     actionType: ClientMessages; // Che tipo di azione (PLAY_EMPLOYEE, SOLVE_CRISIS)
-    targetCardId?: string;   // Se stava giocando una carta, quale?
+    targetCardId?: string;   // Se stava giocando una carta, quale? (es. employee card, o target trick)
     targetCrisisId?: string; // Se stava risolvendo una crisi, quale?
+    targetPlayerId?: string; // Se il target era un giocatore
     timestamp: number;       // Quando è iniziata la finestra
+    isCancelled?: boolean;   // Flag to neutralize action via cancel reactions
 }
 
 /** Lo Stato Globale della Room (Sincronizzato a tutti i Client) */
@@ -162,8 +317,12 @@ export interface IGameState {
     deckCount: number;                 // Quante carte rimangono nel mazzo principale
 
     // Gestione Reaction Window
-    pendingAction: IPendingAction | null;
+    actionStack: IPendingAction[];     // LIFO Stack of actions played in current window
+    pendingAction: IPendingAction | null; // (Legacy) or Top Action tracker
     reactionEndTime: number;           // Timestamp (ms) in cui la finestra si chiude e l'azione si risolve
 
     turnNumber: number;                // Contatore globale dei turni completati
+
+    // Gestione Vittoria
+    winnerId?: string;                 // SessionId del vincitore; nil finché la partita è in corso
 }

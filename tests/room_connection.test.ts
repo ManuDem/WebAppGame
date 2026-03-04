@@ -1,5 +1,5 @@
 import { ColyseusTestServer, boot } from "@colyseus/testing";
-import appConfig from "../src/arena.config";
+import appConfig from "../server/src/arena.config";
 
 describe("Room Connection and Validation Directives (Feature 01)", () => {
     let colyseus: ColyseusTestServer;
