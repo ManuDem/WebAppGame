@@ -1,19 +1,28 @@
 # Card Artwork PNG
 
-Place card artwork PNG files in this folder.
+Metti qui gli artwork delle carte e nomina i file come:
+- `<templateId>.png`
 
-Preferred naming:
-- `templateId.png` (example: `emp_01.png`)
+Esempi validi:
+- `emp_01.png`
+- `trk_03.png`
+- `crs_02.png`
 
-Alternative naming is supported through manifest mapping in:
-- `client/src/ui/CardArtworkResolver.ts`
+Prefissi template usati nel progetto:
+- `emp_` (Hero/Employee)
+- `trk_` (Magic/Event)
+- `crs_` (Monster/Imprevisto)
+- `rea_` (Challenge/Reaction)
+- `itm_` (Item)
+- `mod_` (Modifier)
+- `ldr_` (Party Leader)
 
-Current mapped examples:
-- `emp_01` -> `hero_luca.png`
-- `emp_07` -> `hero_marco.png`
+Risoluzione runtime:
+1. il client usa `card.templateId`
+2. prova a caricare `/cards/<templateId>.png`
+3. se il file manca, usa il fallback procedurale
 
-The client resolves artwork by:
-1. explicit key on card payload (`artworkKey` / `artworkId` / `artKey`) if present
-2. fallback to `templateId`
-
-If a PNG is missing, the game uses the procedural artwork fallback.
+Pipeline consigliata:
+- usa `artworks/` come sorgente grezza
+- copia/rinomina in `client/public/cards/<templateId>.png`
+- evita alias runtime quando possibile (piu robusto per QA e build)

@@ -7,11 +7,12 @@ import {
     BRAND_SUBTITLE_STYLE,
     BRAND_TITLE_STYLE,
     BRAND_TITLE_TEXT,
-    layoutBrandHeader,
+    getBrandHeaderMetrics,
     placeBrandHeader,
 } from '../ui/Branding';
 import { APP_FONT_FAMILY } from '../ui/Typography';
 import { preloadCardArtworkManifest } from '../ui/CardArtworkResolver';
+import { setUiRootLanguage, setUiRootScreen, syncUiRootViewport } from '../ui/dom/UiRoot';
 
 const FONT_UI = APP_FONT_FAMILY;
 
@@ -56,7 +57,13 @@ export class BootScene extends Phaser.Scene {
     }
 
     create() {
-        this.lang = sanitizeLanguage(localStorage.getItem('lucrare_lang'));
+        const params = new URLSearchParams(window.location.search);
+        const queryLang = params.get('lang');
+        this.lang = sanitizeLanguage(queryLang ?? localStorage.getItem('lucrare_lang'));
+        if (queryLang) localStorage.setItem('lucrare_lang', this.lang);
+        setUiRootScreen('boot');
+        setUiRootLanguage(this.lang);
+        syncUiRootViewport(this.scale.width, this.scale.height);
         this.serverManager = new ServerManager();
 
         this.bg = this.add.graphics();
@@ -105,8 +112,8 @@ export class BootScene extends Phaser.Scene {
 
         this.cameras.main.fadeIn(380, 8, 13, 20);
 
-        this.tweens.add({ targets: this.title, alpha: 1, y: this.title.y - 8, duration: 520, ease: 'Sine.Out' });
-        this.tweens.add({ targets: this.subtitle, alpha: 1, y: this.subtitle.y + 4, duration: 520, delay: 160, ease: 'Sine.Out' });
+        this.tweens.add({ targets: this.title, alpha: 1, duration: 520, ease: 'Sine.Out' });
+        this.tweens.add({ targets: this.subtitle, alpha: 1, duration: 520, delay: 160, ease: 'Sine.Out' });
 
         const progressProxy = { value: 0 };
         this.tweens.add({
@@ -159,10 +166,11 @@ export class BootScene extends Phaser.Scene {
         this.redrawBackground(w, h);
         this.cloudLayer.setSize(w, h);
         this.ditherLayer.setSize(w, h);
+        syncUiRootViewport(w, h);
 
-        const header = layoutBrandHeader(w, h, minSide);
-        placeBrandHeader(this.title, this.subtitle, cx, header.titleY, minSide);
-        applyBrandTypography(this.title, this.subtitle, minSide);
+        const header = getBrandHeaderMetrics(w, h);
+        placeBrandHeader(this.title, this.subtitle, cx, header);
+        applyBrandTypography(this.title, this.subtitle, header);
 
         this.status
             .setPosition(cx, cy * 1.11)

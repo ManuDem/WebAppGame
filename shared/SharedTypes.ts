@@ -76,6 +76,7 @@ export enum ServerEvents {
     TRIGGER_PARTICLES = "TRIGGER_PARTICLES", // Crea effetti particellari su un target specifico
     START_REACTION_TIMER = "START_REACTION_TIMER", // Innesca un timer visivo (es. per la Reaction Window)
     GAME_WON = "GAME_WON",                // Broadcast quando un giocatore raggiunge la condizione di vittoria
+    EMOTE = "EMOTE",                      // Broadcast emote rapido in partita
 
     // -- Visual Juice Protocol Trigger --
     VFX_SHAKE = "VFX_SHAKE",             // Triggera una scossa (crisi o sabotaggio riuscito)
@@ -171,8 +172,12 @@ export interface IDiceRolledEvent {
     cardId?: string;        // Quale carta ha scatenato il tiro (opzionale)
     roll1: number;          // Valore del primo dado (es. d6)
     roll2: number;          // Valore del secondo dado (es. d6)
+    modifier?: number;      // Bonus/malus totale applicato ai dadi
+    targetRoll?: number;    // Soglia richiesta per il successo
     total: number;          // Somma inclusi modificatori attivi
     success: boolean;       // Se il tiro ha superato la targetRoll (imprevisto/evento)
+    rewardCode?: string;    // Reward sintetica (es. "vp_1") se successo
+    penaltyCode?: string;   // Penalty sintetica (es. "discard_2") se fallimento
 }
 
 // -- PAYLOAD EVENTI PURAMENTE VISIVI --

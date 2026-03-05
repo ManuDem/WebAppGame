@@ -48,4 +48,24 @@ describe('PendingPlayModel', () => {
         expect(accepted.tableIds).toEqual([]);
         expect(accepted.handIds).toEqual(['y']);
     });
+
+    test('stash multipli dello stesso id non creano duplicati', () => {
+        const initial = createPendingPlayState(['a', 'b', 'c']);
+        const stashed1 = stashPendingCard(initial, 'b');
+        const stashed2 = stashPendingCard(stashed1, 'b');
+        expect(stashed2.pendingCardId).toBe('b');
+        expect(stashed2.tableIds).toEqual(['b']);
+        expect(stashed2.handIds.sort()).toEqual(['a', 'c']);
+    });
+
+    test('reconcile senza pending sincronizza hand e pulisce tableIds', () => {
+        const initial = createPendingPlayState(['x', 'y']);
+        const stashed = stashPendingCard(initial, 'x');
+        const accepted = acceptPendingCard(stashed);
+        const reconciled = reconcilePendingWithHand(accepted, ['p1', 'p2']);
+        expect(reconciled.outcome).toBe('none');
+        expect(reconciled.state.pendingCardId).toBeUndefined();
+        expect(reconciled.state.handIds).toEqual(['p1', 'p2']);
+        expect(reconciled.state.tableIds).toEqual([]);
+    });
 });

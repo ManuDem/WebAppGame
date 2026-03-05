@@ -195,8 +195,8 @@ describe("Gameplay foundation (M1 + M2)", () => {
         const randomSpy = jest.spyOn(Math, "random").mockReturnValue(0.99);
 
         try {
-            const ok = room["applyCrisisResolution"]("player_1", "crs_inst_1");
-            expect(ok).toBe(true);
+            const result = room["applyCrisisResolution"]("player_1", "crs_inst_1");
+            expect(result.success).toBe(true);
         } finally {
             randomSpy.mockRestore();
         }

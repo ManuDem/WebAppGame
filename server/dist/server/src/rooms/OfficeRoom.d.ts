@@ -7,10 +7,11 @@ export declare class OfficeRoom extends Room<OfficeRoomState> {
     private reactionTimeout;
     /** Server-side deck (not synchronized to state) */
     protected serverDeck: ICardData[];
-    /** Card template lookup map (templateId → ICardTemplate) built from cards_db.json */
+    /** Card template lookup map (templateId â†’ ICardTemplate) built from cards_db.json */
     private cardTemplates;
     private monsterTemplateIds;
     private monsterBag;
+    private pendingRemovedCards;
     onCreate(_options: any): void;
     onAuth(client: Client, options: JoinOptions, _request: any): {
         ceoName: string;
@@ -53,6 +54,12 @@ export declare class OfficeRoom extends Room<OfficeRoomState> {
     private applyCrisisPenalty;
     private checkWinConditions;
     private checkPlayerTurnAction;
+    private peekMagicDiscount;
+    private consumeMagicDiscount;
+    private cloneRuntimeCardData;
+    private restorePendingCardToHand;
+    private removePlayerPermanently;
+    private cleanupPendingForRemovedPlayer;
     private handleEmote;
     private generateId;
     private getConnectedPlayerEntries;

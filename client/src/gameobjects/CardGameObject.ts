@@ -4,7 +4,7 @@ import { sanitizeLanguage, SupportedLanguage, t } from '../i18n';
 import { fitTextToBox } from '../ui/text/FitText';
 import { APP_FONT_FAMILY } from '../ui/Typography';
 import { requestCardArtwork, resolveCardArtworkTexture } from '../ui/CardArtworkResolver';
-import { buildMiniCardFooter, buildMiniCardInfo, localizeCardType } from '../ui/cards/CardPresentationModel';
+import { buildMiniCardInfo, getCardDisplayName, localizeCardType } from '../ui/cards/CardPresentationModel';
 
 interface CardPalette {
     cardBody: number;
@@ -29,9 +29,9 @@ const TEXT_RESOLUTION = Math.max(2, Math.min((window.devicePixelRatio || 1) * 1.
 const CARD_W = 126;
 const CARD_H = 178;
 const ART_X = -CARD_W * 0.5 + 10;
-const ART_Y = -CARD_H * 0.5 + 34;
+const ART_Y = -CARD_H * 0.5 + 42;
 const ART_W = CARD_W - 20;
-const ART_H = 86;
+const ART_H = 82;
 
 const FALLBACK_PALETTE: CardPalette = {
     cardBody: 0x4a6079,
@@ -166,23 +166,23 @@ export class CardGameObject extends Phaser.GameObjects.Container {
 
         const titleText = this.scene.add.text(0, -CARD_H * 0.5 + 13, '', {
             fontFamily: FONT_UI,
-            fontSize: '11px',
+            fontSize: '15px',
             color: '#2a2f35',
             fontStyle: '700',
             align: 'center',
         }).setOrigin(0.5).setResolution(TEXT_RESOLUTION);
         fitTextToBox(
             titleText,
-            String(this.cardData.name ?? this.tr('game_card_unknown')),
+            getCardDisplayName(this.cardData, this.lang, this.tr.bind(this)),
             CARD_W - 18,
-            14,
-            { maxLines: 1, ellipsis: true, fontSize: 11 },
+            30,
+            { maxLines: 2, ellipsis: true, fontSize: 15 },
         );
         this.add(titleText);
 
-        const typeLine = this.scene.add.text(0, -CARD_H * 0.5 + 27, '', {
+        const typeLine = this.scene.add.text(0, -CARD_H * 0.5 + 38, '', {
             fontFamily: FONT_UI,
-            fontSize: '9px',
+            fontSize: '12px',
             color: palette.accentText,
             fontStyle: '700',
             align: 'center',
@@ -191,8 +191,8 @@ export class CardGameObject extends Phaser.GameObjects.Container {
             typeLine,
             this.getHeaderTypeLine(),
             CARD_W - 20,
-            12,
-            { maxLines: 1, ellipsis: true, fontSize: 9 },
+            16,
+            { maxLines: 1, ellipsis: true, fontSize: 12 },
         );
         this.add(typeLine);
 
@@ -227,65 +227,44 @@ export class CardGameObject extends Phaser.GameObjects.Container {
             const cx = CARD_W * 0.5 - 16;
             const cy = -CARD_H * 0.5 + 16;
             costGem.fillStyle(0x161a23, 1);
-            costGem.fillCircle(cx, cy, 11);
+            costGem.fillCircle(cx, cy, 12);
             costGem.lineStyle(1.8, palette.border, 0.95);
-            costGem.strokeCircle(cx, cy, 11);
+            costGem.strokeCircle(cx, cy, 12);
             this.add(costGem);
 
             const costText = this.scene.add.text(cx, cy, `${this.cardData.costPA}`, {
                 fontFamily: FONT_UI,
-                fontSize: '12px',
+                fontSize: '13px',
                 color: '#f7fcff',
                 fontStyle: '700',
             }).setOrigin(0.5).setResolution(TEXT_RESOLUTION);
             this.add(costText);
         }
 
-        const descPanelY = CARD_H * 0.5 - 54;
+        const descPanelY = CARD_H * 0.5 - 36;
         const descPanel = this.scene.add.graphics();
         descPanel.fillStyle(0xffffff, 0.92);
-        descPanel.fillRoundedRect(-CARD_W * 0.5 + 10, descPanelY, CARD_W - 20, 30, 6);
+        descPanel.fillRoundedRect(-CARD_W * 0.5 + 9, descPanelY, CARD_W - 18, 22, 7);
         descPanel.lineStyle(1, palette.border, 0.28);
-        descPanel.strokeRoundedRect(-CARD_W * 0.5 + 10, descPanelY, CARD_W - 20, 30, 6);
+        descPanel.strokeRoundedRect(-CARD_W * 0.5 + 9, descPanelY, CARD_W - 18, 22, 7);
         this.add(descPanel);
 
-        const descText = this.scene.add.text(0, descPanelY + 15, '', {
+        const descText = this.scene.add.text(0, descPanelY + 11, '', {
             fontFamily: FONT_UI,
-            fontSize: '9px',
+            fontSize: '10px',
             color: '#2f3640',
             align: 'center',
-            wordWrap: { width: CARD_W - 26 },
-            lineSpacing: 1,
+            wordWrap: { width: CARD_W - 24 },
+            lineSpacing: 0,
         }).setOrigin(0.5).setResolution(TEXT_RESOLUTION);
         fitTextToBox(
             descText,
             this.getMiniInfoStrip(),
-            CARD_W - 28,
-            24,
-            { maxLines: 2, ellipsis: true, fontSize: 9, lineHeight: 10.4 },
+            CARD_W - 24,
+            14,
+            { maxLines: 1, ellipsis: true, fontSize: 10, lineHeight: 11 },
         );
         this.add(descText);
-
-        const footer = this.scene.add.graphics();
-        footer.fillStyle(palette.footer, 1);
-        footer.fillRoundedRect(-CARD_W * 0.5, CARD_H * 0.5 - 18, CARD_W, 18, { tl: 0, tr: 0, bl: 10, br: 10 });
-        this.add(footer);
-
-        const footerText = this.scene.add.text(0, CARD_H * 0.5 - 9, '', {
-            fontFamily: FONT_UI,
-            fontSize: '8px',
-            color: '#edf4ff',
-            fontStyle: '700',
-            align: 'center',
-        }).setOrigin(0.5).setResolution(TEXT_RESOLUTION);
-        fitTextToBox(
-            footerText,
-            this.buildFooterLabel(),
-            CARD_W - 14,
-            10,
-            { maxLines: 1, ellipsis: true, fontSize: 8 },
-        );
-        this.add(footerText);
 
         const equippedCount = this.getEquippedCount();
         if (equippedCount > 0 && this.isHeroCard()) {
@@ -293,7 +272,7 @@ export class CardGameObject extends Phaser.GameObjects.Container {
             const bw = 36;
             const bh = 14;
             const bx = CARD_W * 0.5 - bw - 8;
-            const by = CARD_H * 0.5 - bh - 20;
+            const by = CARD_H * 0.5 - bh - 8;
             equipBadge.fillStyle(0x1d2f45, 0.98);
             equipBadge.fillRoundedRect(bx, by, bw, bh, 5);
             equipBadge.lineStyle(1, 0x9dd6ff, 0.95);
@@ -315,18 +294,11 @@ export class CardGameObject extends Phaser.GameObjects.Container {
     }
 
     private getHeaderTypeLine(): string {
-        const typeLabel = localizeCardType(this.cardData, this.tr.bind(this));
-        const rawSubtype = String(this.cardData.subtype ?? '').replace(/\s+/g, ' ').trim();
-        if (rawSubtype.length === 0) return typeLabel;
-        return `${typeLabel} • ${rawSubtype.toUpperCase()}`;
+        return localizeCardType(this.cardData, this.tr.bind(this));
     }
 
     private getMiniInfoStrip(): string {
-        return buildMiniCardInfo(this.cardData, this.tr.bind(this));
-    }
-
-    private buildFooterLabel(): string {
-        return buildMiniCardFooter(this.cardData, this.tr.bind(this));
+        return buildMiniCardInfo(this.cardData, this.lang, this.tr.bind(this));
     }
 
     private attachArtworkTexture() {
@@ -386,7 +358,7 @@ export class CardGameObject extends Phaser.GameObjects.Container {
     private drawUniqueArtwork(palette: CardPalette): Phaser.GameObjects.Graphics {
         const art = this.scene.add.graphics();
 
-        const seedSource = `${this.cardData.templateId}|${this.cardData.type}|${this.cardData.name ?? ''}`;
+        const seedSource = `${this.cardData.templateId}|${this.cardData.type}|${getCardDisplayName(this.cardData, this.lang, this.tr.bind(this))}`;
         let seed = this.hashSeed(seedSource);
         const rand = () => {
             seed = (seed * 1664525 + 1013904223) >>> 0;

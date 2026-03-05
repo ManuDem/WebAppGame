@@ -8,11 +8,13 @@ import {
     BRAND_SUBTITLE_STYLE,
     BRAND_TITLE_STYLE,
     BRAND_TITLE_TEXT,
-    layoutBrandHeader,
     placeBrandHeader,
 } from '../ui/Branding';
 import { paintRetroButton } from '../ui/RetroButtonPainter';
 import { APP_FONT_FAMILY } from '../ui/Typography';
+import { fitTextToBox } from '../ui/text/FitText';
+import { computeInitialScreenLayout } from '../ui/layout/InitialScreenLayout';
+import { setUiRootLanguage, setUiRootScreen, syncUiRootViewport } from '../ui/dom/UiRoot';
 
 const FONT_UI = APP_FONT_FAMILY;
 
@@ -82,22 +84,30 @@ export class LoginScene extends Phaser.Scene {
     private mode: EntryMode = 'host';
     private modeConfirmed = false;
     private activeRoomCode = '0000';
+    private initialFeedbackMessage = '';
     private readonly textResolution = Math.max(2, Math.min((window.devicePixelRatio || 1) * 1.5, 4));
 
     constructor() {
         super({ key: 'LoginScene' });
     }
 
-    init(data: { serverManager: ServerManager }) {
+    init(data: { serverManager: ServerManager; reconnectMessage?: string }) {
+        const params = new URLSearchParams(window.location.search);
+        const queryLang = params.get('lang');
         this.serverManager = data?.serverManager ?? new ServerManager();
-        this.lang = sanitizeLanguage(localStorage.getItem('lucrare_lang'));
+        this.lang = sanitizeLanguage(queryLang ?? localStorage.getItem('lucrare_lang'));
+        if (queryLang) localStorage.setItem('lucrare_lang', this.lang);
         this.modeConfirmed = false;
         this.nameExample = this.generateExampleName();
         this.activeRoomCode = `${Math.floor(1000 + Math.random() * 9000)}`;
+        this.initialFeedbackMessage = typeof data?.reconnectMessage === 'string' ? data.reconnectMessage : '';
     }
 
     create() {
         this.inputPlaced = false;
+        setUiRootScreen('login');
+        setUiRootLanguage(this.lang);
+        syncUiRootViewport(this.scale.width, this.scale.height);
         this.bg = this.add.graphics();
         ensurePokemonTextures(this);
         this.cloudLayer = this.add.tileSprite(0, 0, 256, 128, 'poke-clouds')
@@ -164,6 +174,9 @@ export class LoginScene extends Phaser.Scene {
         this.createModeControls();
         this.createInput();
         this.refreshLocalizedText();
+        if (this.initialFeedbackMessage) {
+            this.feedback.setText(this.initialFeedbackMessage).setColor('#ffcb80');
+        }
         void this.refreshHostRoomCode();
 
         this.boostText(
@@ -246,8 +259,8 @@ export class LoginScene extends Phaser.Scene {
             letterSpacing: 0.6,
         }).setOrigin(0.5).setDepth(40);
 
-        this.modeButtons.host = this.createModeButton('HOST', 'host');
-        this.modeButtons.join = this.createModeButton('JOIN', 'join');
+        this.modeButtons.host = this.createModeButton(t(this.lang, 'login_mode_host'), 'host');
+        this.modeButtons.join = this.createModeButton(t(this.lang, 'login_mode_join'), 'join');
 
         this.roomCodeLabel = this.add.text(0, 0, '', {
             fontFamily: FONT_UI,
@@ -276,7 +289,7 @@ export class LoginScene extends Phaser.Scene {
             color: '#f4f8ff',
             fontStyle: '700',
         }).setOrigin(0.5).setDepth(41);
-        const hit = this.add.rectangle(0, 0, 52, 30, 0x000000, 0)
+        const hit = this.add.rectangle(0, 0, 56, 44, 0x000000, 0)
             .setDepth(41)
             .setInteractive({ useHandCursor: true });
         const fx = createSimpleButtonFx(this, hit, [bg, txt], {
@@ -295,7 +308,7 @@ export class LoginScene extends Phaser.Scene {
             color: '#f4f8ff',
             fontStyle: '700',
         }).setOrigin(0.5).setDepth(41);
-        const hit = this.add.rectangle(0, 0, 90, 30, 0x000000, 0)
+        const hit = this.add.rectangle(0, 0, 96, 44, 0x000000, 0)
             .setDepth(41)
             .setInteractive({ useHandCursor: true });
         const fx = createSimpleButtonFx(this, hit, [bg, txt], {
@@ -375,8 +388,10 @@ export class LoginScene extends Phaser.Scene {
     private setLanguage(language: SupportedLanguage) {
         this.lang = language;
         localStorage.setItem('lucrare_lang', language);
+        setUiRootLanguage(language);
         this.refreshLocalizedText();
         this.feedback.setText('');
+        this.handleResize(this.scale.gameSize);
     }
 
     private refreshLocalizedText() {
@@ -614,8 +629,8 @@ export class LoginScene extends Phaser.Scene {
     private playIntroMotion() {
         this.cameras.main.fadeIn(300, 8, 13, 20);
 
-        this.tweens.add({ targets: this.title, alpha: 1, y: '-=8', duration: 460, ease: 'Sine.Out' });
-        this.tweens.add({ targets: this.subtitle, alpha: 1, y: '+=4', duration: 460, delay: 110, ease: 'Sine.Out' });
+        this.tweens.add({ targets: this.title, alpha: 1, duration: 460, ease: 'Sine.Out' });
+        this.tweens.add({ targets: this.subtitle, alpha: 1, duration: 460, delay: 110, ease: 'Sine.Out' });
 
         this.panelShimmer.setAlpha(0);
     }
@@ -626,181 +641,192 @@ export class LoginScene extends Phaser.Scene {
         const minSide = Math.min(w, h);
         const centerX = Math.round(w * 0.5);
         const showForm = this.modeConfirmed;
-        const isLandscape = w > h;
+        this.refreshLocalizedText();
         this.redrawBackground(w, h);
         this.cloudLayer.setSize(w, h);
         this.ditherLayer.setSize(w, h);
+        syncUiRootViewport(w, h);
+        const initialLayout = computeInitialScreenLayout(w, h, { showForm });
+        const { tier, header, panel, loginTokens } = initialLayout;
+        const compactTier = tier === 'C';
 
-        const sidePad = Phaser.Math.Clamp(w * 0.04, 10, 34);
-        const bottomPad = Phaser.Math.Clamp(h * 0.03, 8, 24);
-        const panelW = Phaser.Math.Clamp(w - sidePad * 2, 300, isLandscape ? 760 : 640);
-        const desiredPanelH = showForm
-            ? Phaser.Math.Clamp(h * (isLandscape ? 0.8 : 0.69), 300, 620)
-            : Phaser.Math.Clamp(h * (isLandscape ? 0.72 : 0.56), 250, 520);
-        const headerReserve = showForm
-            ? Phaser.Math.Clamp(minSide * 0.27, 88, 152)
-            : Phaser.Math.Clamp(minSide * 0.23, 76, 138);
-        const availablePanelH = Math.max(190, h - headerReserve - bottomPad);
-        let panelH = Math.min(desiredPanelH, availablePanelH);
-        panelH = Math.max(panelH, Math.min(showForm ? 270 : 230, availablePanelH));
+        applyBrandTypography(this.title, this.subtitle, {
+            titleFontSize: header.titleFontSize,
+            subtitleFontSize: header.subtitleFontSize,
+            titleY: header.titleY,
+            subtitleY: header.subtitleY,
+            bottomY: header.headerBottomY,
+            headerGap: header.headerGap,
+        });
+        placeBrandHeader(this.title, this.subtitle, centerX, {
+            titleFontSize: header.titleFontSize,
+            subtitleFontSize: header.subtitleFontSize,
+            titleY: header.titleY,
+            subtitleY: header.subtitleY,
+            bottomY: header.headerBottomY,
+            headerGap: header.headerGap,
+        });
 
-        const px = centerX - panelW * 0.5;
-        const py = Math.max(6, h - panelH - bottomPad);
+        this.redrawPanel(panel.x, panel.y, panel.w, panel.h);
 
-        this.redrawPanel(px, py, panelW, panelH);
-
-        applyBrandTypography(this.title, this.subtitle, minSide);
-        const titleFont = Math.min(
-            Phaser.Math.Clamp(minSide * 0.102, 40, 96),
-            Phaser.Math.Clamp(h * 0.115, 34, 72),
-        );
-        const subtitleFont = Math.min(
-            Phaser.Math.Clamp(minSide * 0.023, 12, 22),
-            Phaser.Math.Clamp(h * 0.032, 11, 20),
-        );
-        this.title.setFontSize(`${Math.round(titleFont)}px`);
-        this.subtitle.setFontSize(`${Math.round(subtitleFont)}px`);
-
-        const header = layoutBrandHeader(w, h, minSide);
-        placeBrandHeader(this.title, this.subtitle, centerX, header.titleY, minSide);
-
-        const langLabelY = py + (showForm ? panelH * 0.09 : panelH * 0.12);
-        const langButtonsY = langLabelY + Phaser.Math.Clamp(panelH * 0.07, 20, 26);
-        const langButtonW = Phaser.Math.Clamp(panelW * 0.16, 52, 68);
-        const langButtonH = Phaser.Math.Clamp(panelH * 0.08, 28, 36);
-        const langGap = Phaser.Math.Clamp(panelW * 0.035, 12, 20);
-        const itX = centerX - (langButtonW * 0.5 + langGap * 0.5);
-        const enX = centerX + (langButtonW * 0.5 + langGap * 0.5);
+        const contentLeft = panel.x + loginTokens.panelPaddingX;
+        const contentRight = panel.x + panel.w - loginTokens.panelPaddingX;
+        const contentW = Math.max(220, contentRight - contentLeft);
+        const sectionGap = compactTier ? Math.max(8, loginTokens.sectionGap - 3) : loginTokens.sectionGap;
+        const rowGap = compactTier ? Math.max(6, loginTokens.rowGap - 2) : loginTokens.rowGap;
+        const labelH = Phaser.Math.Clamp(minSide * 0.017, 12, 16);
+        const modeLabelH = showForm
+            ? Phaser.Math.Clamp(minSide * 0.018, 13, 18)
+            : Phaser.Math.Clamp(minSide * 0.024, 16, 22);
+        const segmentedH = Math.max(44, loginTokens.segmentedButtonHeight);
+        const primaryH = Math.max(44, loginTokens.primaryButtonHeight);
+        let cursorY = panel.y + loginTokens.panelPaddingY;
+        const maxContentBottom = panel.y + panel.h - loginTokens.panelPaddingY;
 
         this.langLabel
-            .setPosition(centerX, langLabelY)
-            .setFontSize(`${Phaser.Math.Clamp(minSide * 0.014, 11, 14)}px`);
+            .setPosition(centerX, cursorY + labelH * 0.5)
+            .setWordWrapWidth(contentW * 0.75, true)
+            .setFontSize(`${Phaser.Math.Clamp(minSide * 0.015, 12, 14)}px`);
+        fitTextToBox(this.langLabel, this.langLabel.text, contentW * 0.75, labelH + 4, { maxLines: 1, ellipsis: true });
+        cursorY += labelH + rowGap;
 
+        const langButtonW = Phaser.Math.Clamp((contentW - rowGap) * 0.5, 54, 78);
+        const langButtonH = segmentedH;
+        const itX = centerX - (langButtonW * 0.5 + rowGap * 0.5);
+        const enX = centerX + (langButtonW * 0.5 + rowGap * 0.5);
         if (this.langButtons.it) {
-            this.langButtons.it.hit.setPosition(itX, langButtonsY).setSize(langButtonW, langButtonH);
-            this.langButtons.it.bg.setPosition(itX, langButtonsY);
-            this.langButtons.it.label.setPosition(itX, langButtonsY);
+            this.langButtons.it.hit.setPosition(itX, cursorY + langButtonH * 0.5).setSize(langButtonW, langButtonH);
+            this.langButtons.it.bg.setPosition(itX, cursorY + langButtonH * 0.5);
+            this.langButtons.it.label.setPosition(itX, cursorY + langButtonH * 0.5).setFontSize(`${Phaser.Math.Clamp(minSide * 0.016, 12, 14)}px`);
         }
         if (this.langButtons.en) {
-            this.langButtons.en.hit.setPosition(enX, langButtonsY).setSize(langButtonW, langButtonH);
-            this.langButtons.en.bg.setPosition(enX, langButtonsY);
-            this.langButtons.en.label.setPosition(enX, langButtonsY);
+            this.langButtons.en.hit.setPosition(enX, cursorY + langButtonH * 0.5).setSize(langButtonW, langButtonH);
+            this.langButtons.en.bg.setPosition(enX, cursorY + langButtonH * 0.5);
+            this.langButtons.en.label.setPosition(enX, cursorY + langButtonH * 0.5).setFontSize(`${Phaser.Math.Clamp(minSide * 0.016, 12, 14)}px`);
         }
-
-        const modeLabelY = showForm ? py + panelH * 0.22 : py + panelH * 0.31;
-        const modeLabelFont = showForm
-            ? Phaser.Math.Clamp(minSide * 0.022, 15, 21)
-            : Phaser.Math.Clamp(minSide * 0.026, 18, 27);
-
-        const modeButtonW = showForm
-            ? Phaser.Math.Clamp(panelW * 0.34, 140, 210)
-            : Phaser.Math.Clamp(panelW * 0.78, 240, 470);
-        let modeButtonH = showForm
-            ? Phaser.Math.Clamp(panelH * 0.09, 34, 42)
-            : Phaser.Math.Clamp(panelH * 0.15, 56, 82);
-        const modeVerticalGap = showForm
-            ? Phaser.Math.Clamp(panelH * 0.03, 10, 16)
-            : Phaser.Math.Clamp(panelH * 0.07, 18, 30);
-        const modeAreaTop = showForm ? py + panelH * 0.26 : py + panelH * 0.44;
-        const modeAreaBottom = showForm ? py + panelH * 0.4 : py + panelH * 0.9;
-        const modeAreaH = Math.max(80, modeAreaBottom - modeAreaTop);
-        if (modeButtonH * 2 + modeVerticalGap > modeAreaH) {
-            modeButtonH = Math.max(30, (modeAreaH - modeVerticalGap) * 0.5);
-        }
-        const modeHostY = modeAreaTop + modeButtonH * 0.5;
-        const modeJoinY = modeHostY + modeButtonH + modeVerticalGap;
-        const modeFontSize = showForm
-            ? Phaser.Math.Clamp(minSide * 0.016, 12, 14)
-            : Phaser.Math.Clamp(minSide * 0.03, 17, 26);
+        cursorY += langButtonH + sectionGap;
 
         this.modeLabel
-            .setPosition(centerX, modeLabelY)
-            .setWordWrapWidth(panelW * 0.86, true)
-            .setFontSize(`${modeLabelFont}px`);
+            .setPosition(centerX, cursorY + modeLabelH * 0.5)
+            .setWordWrapWidth(contentW * 0.92, true)
+            .setFontSize(`${modeLabelH}px`);
+        fitTextToBox(this.modeLabel, this.modeLabel.text, contentW * 0.92, modeLabelH + 6, { maxLines: 2, ellipsis: true });
+        cursorY += modeLabelH + rowGap;
+
+        const modeButtonW = showForm
+            ? Phaser.Math.Clamp(contentW * 0.52, 140, 230)
+            : Phaser.Math.Clamp(contentW, 240, 470);
+        const modeHostY = cursorY + segmentedH * 0.5;
+        const modeJoinY = modeHostY + segmentedH + rowGap;
+        const modeFontSize = showForm
+            ? Phaser.Math.Clamp(minSide * 0.016, 12, 14)
+            : Phaser.Math.Clamp(minSide * 0.024, 15, 19);
 
         if (this.modeButtons.host) {
-            this.modeButtons.host.hit.setPosition(centerX, modeHostY).setSize(modeButtonW, modeButtonH);
+            this.modeButtons.host.hit.setPosition(centerX, modeHostY).setSize(modeButtonW, segmentedH);
             this.modeButtons.host.bg.setPosition(centerX, modeHostY);
             this.modeButtons.host.label.setPosition(centerX, modeHostY).setFontSize(`${modeFontSize}px`);
         }
         if (this.modeButtons.join) {
-            this.modeButtons.join.hit.setPosition(centerX, modeJoinY).setSize(modeButtonW, modeButtonH);
+            this.modeButtons.join.hit.setPosition(centerX, modeJoinY).setSize(modeButtonW, segmentedH);
             this.modeButtons.join.bg.setPosition(centerX, modeJoinY);
             this.modeButtons.join.label.setPosition(centerX, modeJoinY).setFontSize(`${modeFontSize}px`);
         }
 
-        const backW = Phaser.Math.Clamp(panelW * 0.24, 98, 136);
-        const backH = Phaser.Math.Clamp(panelH * 0.09, 34, 42);
-        const backX = px + backW * 0.64;
-        const backY = py + Phaser.Math.Clamp(panelH * 0.11, 30, 46);
+        const backW = Phaser.Math.Clamp(contentW * 0.28, 94, 136);
+        const backH = segmentedH;
+        const backX = contentLeft + backW * 0.5;
+        const backY = panel.y + loginTokens.panelPaddingY + backH * 0.5;
         this.backButtonHit.setPosition(backX, backY).setSize(backW, backH);
         this.backButtonGfx.setPosition(backX, backY);
         this.backButtonText
             .setPosition(backX, backY)
-            .setFontSize(`${Phaser.Math.Clamp(minSide * 0.017, 12, 16)}px`);
+            .setFontSize(`${Phaser.Math.Clamp(minSide * 0.016, 12, 15)}px`);
         this.redrawBackButton(backW, backH);
 
-        const roomCodeY = py + panelH * 0.39;
-        this.roomCodeLabel
-            .setPosition(centerX, roomCodeY - Phaser.Math.Clamp(panelH * 0.08, 22, 30))
-            .setWordWrapWidth(panelW * 0.82, true)
-            .setFontSize(`${Phaser.Math.Clamp(minSide * 0.016, 12, 15)}px`);
+        if (showForm) {
+            cursorY = Math.max(cursorY, backY + backH * 0.5 + sectionGap);
 
-        this.roomCodeValue
-            .setPosition(centerX, roomCodeY + 6)
-            .setFontSize(`${Phaser.Math.Clamp(minSide * 0.038, 22, 34)}px`);
+            const roomLabelH = Phaser.Math.Clamp(minSide * 0.016, 12, 14);
+            this.roomCodeLabel
+                .setPosition(centerX, cursorY + roomLabelH * 0.5)
+                .setWordWrapWidth(contentW * 0.92, true)
+                .setFontSize(`${roomLabelH}px`);
+            fitTextToBox(this.roomCodeLabel, this.roomCodeLabel.text, contentW * 0.92, roomLabelH + 4, { maxLines: 1, ellipsis: true });
+            cursorY += roomLabelH + rowGap;
 
-        this.roomCodeInput.style.width = `${Math.round(Phaser.Math.Clamp(panelW * 0.5, 170, 260))}px`;
-        this.roomCodeInput.style.fontSize = `${Math.round(Phaser.Math.Clamp(minSide * 0.03, 18, 24))}px`;
-        this.roomCodeInput.style.minHeight = `${Math.round(Phaser.Math.Clamp(minSide * 0.056, 42, 50))}px`;
-        this.roomCodeDom.updateSize();
-        this.roomCodeDom.setPosition(centerX, roomCodeY + 6);
+            const roomCodeH = Phaser.Math.Clamp(minSide * 0.046, 22, 34);
+            this.roomCodeValue
+                .setPosition(centerX, cursorY + roomCodeH * 0.55)
+                .setFontSize(`${roomCodeH}px`);
+            this.roomCodeInput.style.width = `${Math.round(Phaser.Math.Clamp(contentW * 0.62, 170, 260))}px`;
+            this.roomCodeInput.style.fontSize = `${Math.round(Phaser.Math.Clamp(minSide * 0.028, 18, 24))}px`;
+            this.roomCodeInput.style.minHeight = `${Math.round(Math.max(42, loginTokens.inputHeight))}px`;
+            this.roomCodeDom.updateSize();
+            this.roomCodeDom.setPosition(centerX, cursorY + roomCodeH * 0.55);
+            cursorY += roomCodeH + sectionGap;
 
-        const inputYFinal = py + panelH * 0.6;
-        this.inputLabel
-            .setPosition(centerX, inputYFinal - Phaser.Math.Clamp(panelH * 0.09, 28, 40))
-            .setWordWrapWidth(panelW * 0.84, true)
-            .setFontSize(`${Phaser.Math.Clamp(minSide * 0.019, 12, 15)}px`);
+            const inputLabelH = Phaser.Math.Clamp(minSide * 0.018, 12, 15);
+            this.inputLabel
+                .setPosition(centerX, cursorY + inputLabelH * 0.5)
+                .setWordWrapWidth(contentW * 0.92, true)
+                .setFontSize(`${inputLabelH}px`);
+            fitTextToBox(this.inputLabel, this.inputLabel.text, contentW * 0.92, inputLabelH + 6, { maxLines: 1, ellipsis: true });
+            cursorY += inputLabelH + rowGap;
 
-        const inputW = Phaser.Math.Clamp(panelW * 0.68, 250, 390);
-        this.nameInput.style.width = `${Math.round(inputW)}px`;
-        this.nameInput.style.maxWidth = `${Math.round(Math.min(w * 0.8, inputW))}px`;
-        this.nameInput.style.padding = `${Math.round(Phaser.Math.Clamp(minSide * 0.013, 11, 14))}px 14px`;
-        this.nameInput.style.fontSize = `${Math.round(Phaser.Math.Clamp(minSide * 0.022, 16, 19))}px`;
-        this.nameInput.style.minHeight = `${Math.round(Phaser.Math.Clamp(minSide * 0.06, 44, 52))}px`;
-        this.inputDom.updateSize();
+            const inputW = Phaser.Math.Clamp(contentW * 0.88, 250, 390);
+            this.nameInput.style.width = `${Math.round(inputW)}px`;
+            this.nameInput.style.maxWidth = `${Math.round(Math.min(w * 0.8, inputW))}px`;
+            this.nameInput.style.padding = `${Math.round(Phaser.Math.Clamp(minSide * 0.013, 11, 14))}px 14px`;
+            this.nameInput.style.fontSize = `${Math.round(Phaser.Math.Clamp(minSide * 0.021, 15, 19))}px`;
+            this.nameInput.style.minHeight = `${Math.round(Math.max(44, loginTokens.inputHeight))}px`;
+            this.inputDom.updateSize();
+            this.inputFrame.clear();
+            this.inputDom.setPosition(centerX, cursorY + loginTokens.inputHeight * 0.5);
+            if (!this.inputPlaced) {
+                const domNode = this.inputDom.node as HTMLElement;
+                domNode.style.opacity = '1';
+                this.inputPlaced = true;
+            }
+            cursorY += loginTokens.inputHeight + sectionGap;
 
-        this.inputFrame.clear();
-        this.inputDom.setPosition(centerX, inputYFinal);
-        if (!this.inputPlaced) {
-            const domNode = this.inputDom.node as HTMLElement;
-            domNode.style.opacity = '1';
-            this.inputPlaced = true;
+            const hintMaxLines = compactTier ? 1 : 2;
+            const hintH = compactTier ? 16 : 24;
+            this.hint
+                .setPosition(centerX, cursorY + hintH * 0.5)
+                .setWordWrapWidth(contentW * 0.92, true)
+                .setFontSize(`${Phaser.Math.Clamp(minSide * 0.016, 11, 14)}px`);
+            fitTextToBox(this.hint, this.hint.text, contentW * 0.92, hintH + 4, { maxLines: hintMaxLines, ellipsis: true });
+            cursorY += hintH + rowGap;
+
+            const buttonY = Math.min(cursorY + primaryH * 0.5, maxContentBottom - (primaryH * 0.5) - 22);
+            const buttonW = Phaser.Math.Clamp(contentW * 0.88, 220, 380);
+            this.joinButtonHit.setPosition(centerX, buttonY).setSize(buttonW, primaryH);
+            this.redrawJoinButton(buttonW, primaryH);
+            this.joinButtonGfx.setPosition(centerX, buttonY);
+            this.joinButtonText
+                .setPosition(centerX, buttonY)
+                .setFontSize(`${Phaser.Math.Clamp(minSide * 0.023, 13, 18)}px`);
+            cursorY = buttonY + primaryH * 0.5 + rowGap;
+
+            const feedbackY = Math.min(cursorY + 10, maxContentBottom - 8);
+            this.feedback
+                .setPosition(centerX, feedbackY)
+                .setWordWrapWidth(contentW * 0.94, true)
+                .setFontSize(`${Phaser.Math.Clamp(minSide * 0.016, 12, 15)}px`);
+            fitTextToBox(this.feedback, this.feedback.text, contentW * 0.94, 24, { maxLines: 2, ellipsis: true });
+        } else {
+            const hiddenInputY = panel.y + panel.h - 28;
+            this.inputDom.setPosition(centerX, hiddenInputY);
+            this.roomCodeDom.setPosition(centerX, hiddenInputY);
+
+            this.joinButtonHit.setPosition(centerX, panel.y + panel.h - primaryH).setSize(220, primaryH);
+            this.joinButtonGfx.setPosition(centerX, panel.y + panel.h - primaryH);
+            this.joinButtonText.setPosition(centerX, panel.y + panel.h - primaryH);
+            this.hint.setPosition(centerX, panel.y + panel.h - 26);
+            this.feedback.setPosition(centerX, panel.y + panel.h - 12);
         }
 
-        const buttonY = py + panelH * 0.82;
-        const buttonW = Phaser.Math.Clamp(panelW * 0.7, 220, 380);
-        const buttonH = Phaser.Math.Clamp(panelH * 0.16, 48, 62);
-
-        this.joinButtonHit.setPosition(centerX, buttonY).setSize(buttonW, buttonH);
-        this.redrawJoinButton(buttonW, buttonH);
-        this.joinButtonGfx.setPosition(centerX, buttonY);
-
-        this.joinButtonText
-            .setPosition(centerX, buttonY)
-            .setFontSize(`${Phaser.Math.Clamp(minSide * 0.027, 15, 21)}px`);
-
-        this.hint
-            .setPosition(centerX, py + panelH * 0.71)
-            .setWordWrapWidth(panelW * 0.88, true)
-            .setFontSize(`${Phaser.Math.Clamp(minSide * 0.0165, 11, 14)}px`);
-
-        this.feedback
-            .setPosition(centerX, py + panelH * 0.92)
-            .setWordWrapWidth(panelW * 0.9, true)
-            .setFontSize(`${Phaser.Math.Clamp(minSide * 0.0175, 12, 15)}px`);
-
-        this.refreshLocalizedText();
     }
 
     private generateExampleName(): string {

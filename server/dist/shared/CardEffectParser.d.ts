@@ -79,5 +79,7 @@ export declare class CardEffectParser {
      * aggiunge la carta alla mano del sourcePlayer.
      */
     private static resolveStealPlayedCard;
+    private static consumeProtectionTag;
+    private static resolveRuntimeCardType;
 }
 //# sourceMappingURL=CardEffectParser.d.ts.map

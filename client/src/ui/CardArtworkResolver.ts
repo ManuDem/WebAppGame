@@ -1,18 +1,16 @@
 import Phaser from 'phaser';
 import { ICardData } from '../../../shared/SharedTypes';
-
-export interface CardArtworkManifestEntry {
-    templateId: string;
-    file: string;
-}
+import {
+    ArtworkManifestEntry,
+    buildArtworkPathIndex,
+    normalizeArtworkId,
+} from './cards/ArtworkCatalog';
 
 const CARD_ART_BASE_PATH = '/cards';
 const CARD_ART_TEXTURE_PREFIX = 'card-art-';
-
-// Real PNG mappings currently available in repository assets.
-const CARD_ARTWORK_MANIFEST: CardArtworkManifestEntry[] = [
-    { templateId: 'emp_01', file: 'hero_luca.png' },
-    { templateId: 'emp_07', file: 'hero_marco.png' },
+const CARD_ARTWORK_MANIFEST: ArtworkManifestEntry[] = [
+    { templateId: 'emp_01', file: 'emp_01.png' },
+    { templateId: 'emp_07', file: 'emp_07.png' },
 ];
 
 const manifestPathById = new Map<string, string>();
@@ -25,51 +23,14 @@ function applyNearestFilter(scene: Phaser.Scene, textureKey: string) {
     texture?.setFilter(Phaser.Textures.FilterMode.NEAREST);
 }
 
-function normalizeArtworkId(raw: string): string {
-    return raw
-        .trim()
-        .toLowerCase()
-        .replace(/\.png$/i, '')
-        .replace(/[^a-z0-9_-]/g, '_');
-}
-
-function normalizeFilePath(file: string, normalizedId: string): string {
-    const trimmed = file.trim();
-    if (!trimmed) return `${CARD_ART_BASE_PATH}/${normalizedId}.png`;
-    if (/^https?:\/\//i.test(trimmed)) return trimmed;
-    if (trimmed.startsWith('/')) return trimmed;
-    return `${CARD_ART_BASE_PATH}/${trimmed.replace(/^\/+/, '')}`;
-}
-
 function ensureManifestIndex() {
-    if (manifestPathById.size > 0 || CARD_ARTWORK_MANIFEST.length === 0) return;
-    for (const entry of CARD_ARTWORK_MANIFEST) {
-        const normalizedId = normalizeArtworkId(entry.templateId);
-        if (!normalizedId) continue;
-        manifestPathById.set(normalizedId, normalizeFilePath(entry.file, normalizedId));
-    }
+    if (manifestPathById.size > 0) return;
+    const index = buildArtworkPathIndex(CARD_ARTWORK_MANIFEST, CARD_ART_BASE_PATH);
+    index.forEach((path, id) => manifestPathById.set(id, path));
 }
 
-function getCardAny(card: ICardData): Record<string, unknown> {
-    return card as unknown as Record<string, unknown>;
-}
-
-function extractCardArtworkIds(card: ICardData): string[] {
-    const anyCard = getCardAny(card);
-    const rawCandidates = [
-        anyCard.artworkKey,
-        anyCard.artworkId,
-        anyCard.artKey,
-        card.templateId,
-    ];
-
-    const unique = new Set<string>();
-    for (const candidate of rawCandidates) {
-        if (typeof candidate !== 'string') continue;
-        const normalized = normalizeArtworkId(candidate);
-        if (normalized) unique.add(normalized);
-    }
-    return [...unique];
+function getTemplateArtworkId(card: ICardData): string {
+    return normalizeArtworkId(String(card?.templateId ?? ''));
 }
 
 export function getCardArtworkTextureKey(artworkId: string): string {
@@ -110,24 +71,13 @@ export function preloadCardArtworkManifest(scene: Phaser.Scene): void {
 }
 
 export function resolveCardArtworkTexture(scene: Phaser.Scene, card: ICardData): string | undefined {
-    const anyCard = getCardAny(card);
-    const textureCandidate = typeof anyCard.textureKey === 'string' ? anyCard.textureKey : undefined;
-    if (textureCandidate && scene.textures.exists(textureCandidate)) {
-        applyNearestFilter(scene, textureCandidate);
-        return textureCandidate;
-    }
+    const artworkId = getTemplateArtworkId(card);
+    if (!artworkId) return undefined;
 
-    const candidates = extractCardArtworkIds(card);
-    for (const candidate of candidates) {
-        const textureKey = getCardArtworkTextureKey(candidate);
-        if (scene.textures.exists(textureKey)) {
-            applyNearestFilter(scene, textureKey);
-            return textureKey;
-        }
-        if (scene.textures.exists(candidate)) {
-            applyNearestFilter(scene, candidate);
-            return candidate;
-        }
+    const textureKey = getCardArtworkTextureKey(artworkId);
+    if (scene.textures.exists(textureKey)) {
+        applyNearestFilter(scene, textureKey);
+        return textureKey;
     }
     return undefined;
 }
@@ -143,8 +93,7 @@ export function requestCardArtwork(
         return;
     }
 
-    const ids = extractCardArtworkIds(card);
-    const preferredId = ids[0];
+    const preferredId = getTemplateArtworkId(card);
     if (!preferredId) return;
 
     const textureKey = getCardArtworkTextureKey(preferredId);

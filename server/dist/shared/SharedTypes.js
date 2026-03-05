@@ -59,6 +59,7 @@ var ServerEvents;
     ServerEvents["TRIGGER_PARTICLES"] = "TRIGGER_PARTICLES";
     ServerEvents["START_REACTION_TIMER"] = "START_REACTION_TIMER";
     ServerEvents["GAME_WON"] = "GAME_WON";
+    ServerEvents["EMOTE"] = "EMOTE";
     // -- Visual Juice Protocol Trigger --
     ServerEvents["VFX_SHAKE"] = "VFX_SHAKE";
     ServerEvents["VFX_CONFIDENZA"] = "VFX_CONFIDENZA";

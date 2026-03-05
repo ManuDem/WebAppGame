@@ -130,3 +130,55 @@ Obiettivo: mantenere feeling Here To Slay ma con regole più leggibili e robuste
   - 1 Hero valido: auto-target
   - N Hero validi: selettore esplicito
 - Il payload carta espone anche `shortDesc` opzionale per supportare UI compatta in modo retrocompatibile.
+
+## 7. Aggiornamento gameplay authoritative M12 (2026-03-04)
+
+### 7.1 Coerenza definitiva Monster flow (client/server)
+- Modello finale adottato: il tentativo Monster e una azione esplicita sullo slot Monster (`SOLVE_CRISIS` con `crisisId`).
+- Lato client e stata rimossa l'affordance primaria di attacco Monster via drop carta.
+- Lato server la validazione resta centralizzata (turno/fase/AP/target).
+
+### 7.2 Reazioni: costo AP
+- Decisione finale applicata: `PLAY_REACTION` non consuma AP.
+- Vincoli attivi:
+  - solo durante `REACTION_WINDOW`
+  - solo avversari rispetto all'azione originale
+  - solo carte reaction/modifier/challenge valide
+
+### 7.3 Item equip su Hero specifico
+- Decisione finale applicata: target Hero obbligatorio per Item.
+- Rimossa ambiguita di fallback player-level nei flussi gameplay principali.
+- Se target mancante/non valido: errore esplicito, nessun consumo incoerente carta/AP.
+
+### 7.4 Dado e risoluzione Monster piu leggibili
+- Contratto evento esteso: `IDiceRolledEvent` ora include anche:
+  - `modifier`
+  - `targetRoll`
+- Client aggiornato per mostrare chiaramente:
+  - risultato 2d6
+  - bonus/malus totale
+  - soglia richiesta
+  - esito successo/fallimento
+
+### 7.5 Disconnect/reconnect edge-case hardening
+- Se un player esce in modo permanente durante pending/reaction:
+  - cleanup di `pendingAction`, `actionStack`, `reactionEndTime`
+  - annullamento timer reaction aperto
+  - nessun blocco fase residuo
+- `advanceTurn` senza giocatori connessi porta a `WAITING_FOR_PLAYERS`.
+
+## 8. Aggiornamento gameplay bugfix M16 (2026-03-05)
+
+### 8.1 Effetti non fantasma
+- `protect`: ora e uno scudo one-shot realmente consumato quando blocca effetti ostili targeted (`steal_pa`, `steal_card`, `discard`, `trade_random`).
+- `discount_cost`: ora riduce davvero il costo AP delle magie e viene consumato al primo utilizzo valido (compatibilita magic/trick legacy inclusa).
+
+### 8.2 Integrita carte rubate
+- `steal_played_card` preserva in modo robusto il tipo runtime corretto della carta rubata (non degrada a challenge/reaction per fallback errati).
+
+### 8.3 Item resolve safety
+- Se un Item diventa invalido in resolve (target Hero non piu valido), la carta viene ripristinata in mano e non viene persa.
+
+### 8.4 Dice outcome piu leggibile
+- `DICE_ROLLED` esteso con `rewardCode` / `penaltyCode`.
+- Client mostra outcome localizzato (reward/penalty) in toast e log persistente.

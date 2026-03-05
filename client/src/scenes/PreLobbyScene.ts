@@ -8,12 +8,16 @@ import {
     BRAND_SUBTITLE_STYLE,
     BRAND_TITLE_STYLE,
     BRAND_TITLE_TEXT,
-    layoutBrandHeader,
+    getBrandHeaderMetrics,
     placeBrandHeader,
 } from '../ui/Branding';
 import { APP_FONT_FAMILY } from '../ui/Typography';
 import { createSimpleButtonFx, SimpleButtonController } from '../ui/SimpleButtonFx';
 import { paintRetroButton } from '../ui/RetroButtonPainter';
+import { buildMatchHelpContent } from '../ui/match/MatchHelpContent';
+import { getButtonContractByTier, getSafeAreaByTier, resolveLayoutTier } from '../ui/layout/LayoutTokens';
+import { createMockPreLobbyServerManager } from '../qa/MockPreLobbyState';
+import { setUiRootLanguage, setUiRootScreen, syncUiRootViewport } from '../ui/dom/UiRoot';
 
 const FONT_UI = APP_FONT_FAMILY;
 
@@ -33,6 +37,20 @@ export class PreLobbyScene extends Phaser.Scene {
     private actionButtonText!: Phaser.GameObjects.Text;
     private actionButtonHit!: Phaser.GameObjects.Rectangle;
     private actionButtonFx?: SimpleButtonController;
+    private helpButtonGfx!: Phaser.GameObjects.Graphics;
+    private helpButtonText!: Phaser.GameObjects.Text;
+    private helpButtonHit!: Phaser.GameObjects.Rectangle;
+    private helpButtonFx?: SimpleButtonController;
+
+    private helpOverlay!: Phaser.GameObjects.Rectangle;
+    private helpPanel!: Phaser.GameObjects.Graphics;
+    private helpTitle!: Phaser.GameObjects.Text;
+    private helpBody!: Phaser.GameObjects.Text;
+    private helpCloseBtn!: Phaser.GameObjects.Graphics;
+    private helpCloseHit!: Phaser.GameObjects.Rectangle;
+    private helpCloseLabel!: Phaser.GameObjects.Text;
+    private helpCloseFx?: SimpleButtonController;
+    private helpVisible = false;
 
     private title!: Phaser.GameObjects.Text;
     private subtitle!: Phaser.GameObjects.Text;
@@ -51,14 +69,29 @@ export class PreLobbyScene extends Phaser.Scene {
         super({ key: 'PreLobbyScene' });
     }
 
-    init(data: { serverManager: ServerManager; lang?: SupportedLanguage; roomCode?: string }) {
-        this.serverManager = data?.serverManager ?? new ServerManager();
-        this.lang = sanitizeLanguage(data?.lang ?? localStorage.getItem('lucrare_lang'));
-        this.roomCode = String(data?.roomCode ?? '').trim();
+    init(data: { serverManager?: ServerManager; lang?: SupportedLanguage; roomCode?: string }) {
+        const params = new URLSearchParams(window.location.search);
+        const queryLang = params.get('lang');
+        this.lang = sanitizeLanguage(data?.lang ?? queryLang ?? localStorage.getItem('lucrare_lang'));
+        if (queryLang) localStorage.setItem('lucrare_lang', this.lang);
+
+        const qaPreLobbyMode = params.get('qaPreLobby') === '1' || params.get('qaScreen') === 'prelobby';
+        if (data?.serverManager) {
+            this.serverManager = data.serverManager;
+        } else if (qaPreLobbyMode) {
+            this.serverManager = createMockPreLobbyServerManager(this.lang) as unknown as ServerManager;
+        } else {
+            this.serverManager = new ServerManager();
+        }
+
+        this.roomCode = String(data?.roomCode ?? (qaPreLobbyMode ? 'QAPL' : '')).trim();
         this.enteringGame = false;
     }
 
     create() {
+        setUiRootScreen('prelobby');
+        setUiRootLanguage(this.lang);
+        syncUiRootViewport(this.scale.width, this.scale.height);
         if (!this.serverManager.room) {
             this.scene.start('LoginScene', { serverManager: this.serverManager });
             return;
@@ -153,11 +186,70 @@ export class PreLobbyScene extends Phaser.Scene {
             { onClick: () => this.handleActionClick() },
         );
 
+        this.helpButtonGfx = this.add.graphics();
+        this.helpButtonText = this.add.text(0, 0, '?', {
+            fontFamily: FONT_UI,
+            fontSize: '18px',
+            color: '#f5fbff',
+            fontStyle: '700',
+        }).setOrigin(0.5);
+        this.helpButtonHit = this.add.rectangle(0, 0, 42, 42, 0x000000, 0)
+            .setInteractive({ useHandCursor: true });
+        this.helpButtonFx = createSimpleButtonFx(
+            this,
+            this.helpButtonHit,
+            [this.helpButtonGfx, this.helpButtonText],
+            { onClick: () => this.showHelpOverlay() },
+        );
+
+        this.helpOverlay = this.add.rectangle(0, 0, 10, 10, 0x000000, 0.72)
+            .setDepth(200)
+            .setVisible(false)
+            .setInteractive({ useHandCursor: true });
+        this.helpOverlay.on('pointerdown', () => this.hideHelpOverlay());
+        this.helpPanel = this.add.graphics().setDepth(201).setVisible(false);
+        this.helpTitle = this.add.text(0, 0, '', {
+            fontFamily: FONT_UI,
+            fontSize: '22px',
+            color: '#f2f8ff',
+            fontStyle: '700',
+            align: 'center',
+            wordWrap: { width: 700 },
+        }).setOrigin(0.5, 0).setDepth(202).setVisible(false);
+        this.helpBody = this.add.text(0, 0, '', {
+            fontFamily: FONT_UI,
+            fontSize: '14px',
+            color: '#d8e9f8',
+            align: 'left',
+            lineSpacing: 5,
+            wordWrap: { width: 700 },
+        }).setOrigin(0.5, 0).setDepth(202).setVisible(false);
+        this.helpCloseBtn = this.add.graphics().setDepth(203).setVisible(false);
+        this.helpCloseHit = this.add.rectangle(0, 0, 42, 42, 0x000000, 0)
+            .setDepth(204)
+            .setVisible(false)
+            .setInteractive({ useHandCursor: true });
+        if (this.helpCloseHit.input) this.helpCloseHit.input.enabled = false;
+        this.helpCloseLabel = this.add.text(0, 0, 'X', {
+            fontFamily: FONT_UI,
+            fontSize: '22px',
+            color: '#f7fdff',
+            fontStyle: '700',
+        }).setOrigin(0.5).setDepth(205).setVisible(false);
+        this.helpCloseFx = createSimpleButtonFx(
+            this,
+            this.helpCloseHit,
+            [this.helpCloseBtn, this.helpCloseLabel],
+            { onClick: () => this.hideHelpOverlay() },
+        );
+
         this.applyTextResolution();
         this.scale.on('resize', this.handleResize, this);
         this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
             this.scale.off('resize', this.handleResize, this);
             this.actionButtonFx?.destroy();
+            this.helpButtonFx?.destroy();
+            this.helpCloseFx?.destroy();
             if (this.serverManager.onStateChange === this.handleStateChange) this.serverManager.onStateChange = undefined;
             if (this.serverManager.onPlayerChange === this.handlePlayerChange) this.serverManager.onPlayerChange = undefined;
             if (this.serverManager.onRoomMessage === this.handleRoomMessage) this.serverManager.onRoomMessage = undefined;
@@ -319,6 +411,7 @@ export class PreLobbyScene extends Phaser.Scene {
     private enterGame(state: IGameState) {
         if (this.enteringGame) return;
         this.enteringGame = true;
+        if (this.helpVisible) this.hideHelpOverlay();
 
         const room = this.serverManager.room;
         const isHost = Boolean(room && state.hostSessionId === room.sessionId);
@@ -337,21 +430,40 @@ export class PreLobbyScene extends Phaser.Scene {
         const w = size.width;
         const h = size.height;
         const minSide = Math.min(w, h);
-        const isLandscape = w > h;
+        const tier = resolveLayoutTier(w, h);
+        const safe = getSafeAreaByTier(tier);
+        const buttonContract = getButtonContractByTier(tier);
+        const isLandscape = tier === 'C' || tier === 'E';
         const cx = w * 0.5;
 
         drawPokemonBackdrop(this.bg, w, h, 0.62);
         this.cloudLayer.setSize(w, h);
         this.ditherLayer.setSize(w, h);
+        syncUiRootViewport(w, h);
 
-        applyBrandTypography(this.title, this.subtitle, minSide);
-        const header = layoutBrandHeader(w, h, minSide);
-        placeBrandHeader(this.title, this.subtitle, cx, header.titleY, minSide);
+        const header = getBrandHeaderMetrics(w, h);
+        applyBrandTypography(this.title, this.subtitle, header);
+        placeBrandHeader(this.title, this.subtitle, cx, header);
 
-        const panelW = Phaser.Math.Clamp(w * (isLandscape ? 0.9 : 0.95), 320, 980);
-        const panelH = Phaser.Math.Clamp(h * (isLandscape ? 0.82 : 0.82), 360, 780);
+        const panelW = Phaser.Math.Clamp(
+            tier === 'C'
+                ? w * 0.58
+                : (isLandscape ? w * 0.82 : w * 0.92),
+            320,
+            tier === 'C' ? 620 : 980,
+        );
+        const panelTop = Math.max(safe.top + 8, header.bottomY + 10);
+        const availablePanelH = Math.max(220, h - panelTop - safe.bottom);
+        const desiredPanelH = tier === 'C'
+            ? 300
+            : Phaser.Math.Clamp(h * (isLandscape ? 0.78 : 0.82), isLandscape ? 230 : 320, 780);
+        const panelH = Phaser.Math.Clamp(
+            desiredPanelH,
+            Math.min(isLandscape ? 220 : 300, availablePanelH),
+            availablePanelH,
+        );
         const px = cx - panelW * 0.5;
-        const py = h - panelH - Phaser.Math.Clamp(h * 0.03, 8, 24);
+        const py = Math.max(panelTop, h - panelH - safe.bottom);
 
         this.panel.clear();
         this.panel.fillStyle(0x2a4257, 0.92);
@@ -361,7 +473,7 @@ export class PreLobbyScene extends Phaser.Scene {
         this.panel.lineStyle(1, 0xffffff, 0.08);
         this.panel.strokeRoundedRect(px + 4, py + 4, panelW - 8, panelH - 8, 16);
 
-        const topY = py + Phaser.Math.Clamp(panelH * 0.08, 30, 54);
+        const topY = py + Phaser.Math.Clamp(panelH * 0.08, 24, 52);
         this.roomCodeText
             .setPosition(cx, topY)
             .setFontSize(`${Phaser.Math.Clamp(minSide * 0.038, 20, 34)}px`);
@@ -371,8 +483,8 @@ export class PreLobbyScene extends Phaser.Scene {
             .setWordWrapWidth(panelW * 0.9, true)
             .setFontSize(`${Phaser.Math.Clamp(minSide * 0.018, 12, 17)}px`);
 
-        const contentTop = topY + Phaser.Math.Clamp(panelH * 0.17, 64, 96);
-        const contentBottom = py + panelH * 0.83;
+        const contentTop = topY + Phaser.Math.Clamp(panelH * 0.17, 48, 90);
+        const contentBottom = py + panelH * 0.84;
         const contentH = Math.max(150, contentBottom - contentTop);
 
         if (isLandscape) {
@@ -421,7 +533,7 @@ export class PreLobbyScene extends Phaser.Scene {
         }
 
         const buttonW = Phaser.Math.Clamp(panelW * 0.58, 220, 420);
-        const buttonH = Phaser.Math.Clamp(panelH * 0.1, 48, 62);
+        const buttonH = Math.max(44, buttonContract.primaryHeight);
         const buttonY = py + panelH * 0.89;
         this.actionButtonHit.setPosition(cx, buttonY).setSize(buttonW, buttonH);
         this.actionButtonGfx.setPosition(cx, buttonY);
@@ -433,6 +545,17 @@ export class PreLobbyScene extends Phaser.Scene {
             .setPosition(cx, py + panelH * 0.96)
             .setWordWrapWidth(panelW * 0.9, true)
             .setFontSize(`${Phaser.Math.Clamp(minSide * 0.0155, 11, 14)}px`);
+
+        const helpSize = Phaser.Math.Clamp(minSide * 0.08, 34, 44);
+        this.helpButtonHit
+            .setPosition(px + panelW - helpSize * 0.5 - 10, topY - 2)
+            .setSize(helpSize, helpSize);
+        this.helpButtonGfx.setPosition(this.helpButtonHit.x, this.helpButtonHit.y);
+        this.helpButtonText
+            .setPosition(this.helpButtonHit.x, this.helpButtonHit.y - 1)
+            .setFontSize(`${Phaser.Math.Clamp(helpSize * 0.5, 16, 22)}px`);
+        this.drawHelpButton(true);
+        this.layoutHelpOverlay();
 
         this.drawActionButton(Boolean(this.actionButtonHit.input?.enabled));
     }
@@ -460,6 +583,136 @@ export class PreLobbyScene extends Phaser.Scene {
         this.actionButtonText.setColor(active ? '#ffffff' : '#d5e3df');
     }
 
+    private drawHelpButton(active: boolean) {
+        const w = this.helpButtonHit.width;
+        const h = this.helpButtonHit.height;
+        paintRetroButton(
+            this.helpButtonGfx,
+            { width: w, height: h, radius: 12, borderWidth: 1.2 },
+            {
+                base: active ? 0x496786 : 0x32465b,
+                border: active ? 0xd6ecff : 0x89a3bb,
+                glossAlpha: active ? 0.17 : 0.08,
+            },
+        );
+        this.helpButtonText.setColor(active ? '#f7fdff' : '#c6d6e6');
+    }
+
+    private layoutHelpOverlay() {
+        const w = this.scale.width;
+        const h = this.scale.height;
+        const cx = w * 0.5;
+        const cy = h * 0.5;
+        const panelW = Phaser.Math.Clamp(w * (w > h ? 0.72 : 0.92), 300, 860);
+        const panelH = Phaser.Math.Clamp(h * (w > h ? 0.82 : 0.88), 280, 760);
+        const panelX = cx - panelW * 0.5;
+        const panelY = cy - panelH * 0.5;
+
+        this.helpOverlay.setPosition(cx, cy).setSize(w, h);
+
+        this.helpPanel.clear();
+        this.helpPanel.fillStyle(0x1a2a3b, 0.97);
+        this.helpPanel.fillRoundedRect(panelX, panelY, panelW, panelH, 18);
+        this.helpPanel.fillStyle(0xffffff, 0.08);
+        this.helpPanel.fillRoundedRect(panelX + 3, panelY + 3, panelW - 6, 38, { tl: 14, tr: 14, bl: 0, br: 0 });
+        this.helpPanel.lineStyle(2, 0xb7d2eb, 0.92);
+        this.helpPanel.strokeRoundedRect(panelX, panelY, panelW, panelH, 18);
+
+        const closeSize = Phaser.Math.Clamp(panelW * 0.05, 30, 40);
+        const closeX = panelX + panelW - closeSize * 0.5 - 12;
+        const closeY = panelY + closeSize * 0.5 + 10;
+        this.helpCloseBtn.clear();
+        this.helpCloseBtn.fillStyle(0x2d4257, 0.98);
+        this.helpCloseBtn.fillCircle(closeX, closeY, closeSize * 0.5);
+        this.helpCloseBtn.lineStyle(2, 0xf0f8ff, 0.95);
+        this.helpCloseBtn.strokeCircle(closeX, closeY, closeSize * 0.5);
+        this.helpCloseHit.setPosition(closeX, closeY).setSize(closeSize + 14, closeSize + 14);
+        this.helpCloseLabel
+            .setPosition(closeX, closeY - 1)
+            .setFontSize(`${Phaser.Math.Clamp(closeSize * 0.56, 18, 24)}px`);
+
+        const helpContent = buildMatchHelpContent(this.tr.bind(this));
+        this.helpTitle
+            .setText(helpContent.title)
+            .setPosition(cx, panelY + 14)
+            .setWordWrapWidth(panelW - 56)
+            .setFontSize(`${Phaser.Math.Clamp(panelW * 0.036, 18, 30)}px`);
+        this.helpBody
+            .setText(`${helpContent.sections.map((section) => `${section.title}\n${section.body}`).join('\n\n')}\n\n${helpContent.closeHint}`)
+            .setPosition(cx, panelY + 62)
+            .setWordWrapWidth(panelW - 44)
+            .setFontSize(`${Phaser.Math.Clamp(panelW * 0.018, 12, 17)}px`);
+
+        if (!this.helpVisible) {
+            this.helpPanel.setVisible(false);
+            this.helpTitle.setVisible(false);
+            this.helpBody.setVisible(false);
+            this.helpCloseBtn.setVisible(false);
+            this.helpCloseHit.setVisible(false);
+            this.helpCloseLabel.setVisible(false);
+        }
+    }
+
+    private showHelpOverlay() {
+        if (this.helpVisible) return;
+        this.helpVisible = true;
+        this.layoutHelpOverlay();
+        this.helpOverlay.setVisible(true).setAlpha(0);
+        this.helpPanel.setVisible(true).setAlpha(0);
+        this.helpTitle.setVisible(true).setAlpha(0);
+        this.helpBody.setVisible(true).setAlpha(0);
+        this.helpCloseBtn.setVisible(true).setAlpha(0);
+        this.helpCloseHit.setVisible(true).setAlpha(0);
+        this.helpCloseLabel.setVisible(true).setAlpha(0);
+        if (this.helpCloseHit.input) this.helpCloseHit.input.enabled = true;
+
+        this.tweens.add({
+            targets: [
+                this.helpOverlay,
+                this.helpPanel,
+                this.helpTitle,
+                this.helpBody,
+                this.helpCloseBtn,
+                this.helpCloseHit,
+                this.helpCloseLabel,
+            ],
+            alpha: 1,
+            duration: 160,
+            ease: 'Sine.Out',
+        });
+    }
+
+    private hideHelpOverlay() {
+        if (!this.helpVisible) return;
+        this.helpVisible = false;
+        if (this.helpCloseHit.input) this.helpCloseHit.input.enabled = false;
+
+        this.tweens.add({
+            targets: [
+                this.helpOverlay,
+                this.helpPanel,
+                this.helpTitle,
+                this.helpBody,
+                this.helpCloseBtn,
+                this.helpCloseHit,
+                this.helpCloseLabel,
+            ],
+            alpha: 0,
+            duration: 140,
+            ease: 'Sine.In',
+            onComplete: () => {
+                if (this.helpVisible) return;
+                this.helpOverlay.setVisible(false).setAlpha(1);
+                this.helpPanel.setVisible(false).setAlpha(1);
+                this.helpTitle.setVisible(false).setAlpha(1);
+                this.helpBody.setVisible(false).setAlpha(1);
+                this.helpCloseBtn.setVisible(false).setAlpha(1);
+                this.helpCloseHit.setVisible(false).setAlpha(1);
+                this.helpCloseLabel.setVisible(false).setAlpha(1);
+            },
+        });
+    }
+
     private applyTextResolution() {
         [
             this.title,
@@ -472,6 +725,10 @@ export class PreLobbyScene extends Phaser.Scene {
             this.playersTitle,
             this.playersBody,
             this.actionButtonText,
+            this.helpButtonText,
+            this.helpTitle,
+            this.helpBody,
+            this.helpCloseLabel,
         ].forEach((txt) => txt.setResolution(this.textResolution));
     }
 }

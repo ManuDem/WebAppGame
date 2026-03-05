@@ -1,6 +1,6 @@
 ﻿import Phaser from 'phaser';
 import { CardGameObject } from '../gameobjects/CardGameObject';
-import { ServerManager } from '../network/ServerManager';
+import { ReconnectStatus, ServerManager } from '../network/ServerManager';
 import { VisualEventQueue } from '../systems/VisualEventQueue';
 import { DEFAULT_LANGUAGE, sanitizeLanguage, SupportedLanguage, t } from '../i18n';
 import { createSimpleButtonFx, SimpleButtonController } from '../ui/SimpleButtonFx';
@@ -9,7 +9,7 @@ import { paintRetroButton } from '../ui/RetroButtonPainter';
 import { APP_FONT_FAMILY } from '../ui/Typography';
 import { requestCardArtwork, resolveCardArtworkTexture } from '../ui/CardArtworkResolver';
 import { fitTextToBox } from '../ui/text/FitText';
-import { buildInspectPresentation } from '../ui/cards/CardPresentationModel';
+import { buildInspectPresentation, getCardDisplayName } from '../ui/cards/CardPresentationModel';
 import {
     ActionBlockReasonKey,
     MatchActionState,
@@ -23,7 +23,14 @@ import {
     rollbackPendingCard as rollbackPendingModel,
     stashPendingCard,
 } from '../systems/PendingPlayModel';
+import { buildCardRegistryPlan } from '../systems/CardObjectRegistry';
 import { computeMatchLayout, drawMatchLayoutDebug, LayoutRect, MatchLayout } from '../ui/layout/MatchLayout';
+import { buildActionPanelModel, buildHudModel, compactPlayerName } from '../ui/match/MatchUiPresenter';
+import { buildMatchContextHint, buildMatchHelpContent } from '../ui/match/MatchHelpContent';
+import { createMockServerManager, isQaMatchModeEnabled } from '../qa/MockMatchState';
+import { getButtonContractByTier } from '../ui/layout/LayoutTokens';
+import { ensureUiRoot, removeUiRootChildById, setUiRootLanguage, setUiRootScreen, syncUiRootViewport } from '../ui/dom/UiRoot';
+import { MatchUiDom } from '../ui/dom/MatchUiDom';
 import {
     CardType,
     GamePhase,
@@ -41,15 +48,18 @@ type CrisisView = {
     crisis: ICardData;
     zone: Phaser.GameObjects.Zone;
     card: CardGameObject;
+    slotBg?: Phaser.GameObjects.Graphics;
     meta?: Phaser.GameObjects.Text;
     actionBg?: Phaser.GameObjects.Graphics;
     actionHit?: Phaser.GameObjects.Rectangle;
     actionLabel?: Phaser.GameObjects.Text;
+    actionFx?: SimpleButtonController;
 };
 
 export class GameScene extends Phaser.Scene {
     private serverManager!: ServerManager;
     private visualQueue!: VisualEventQueue;
+    private mockMode = false;
 
     private latestState?: IGameState;
     private latestPlayer?: IPlayer;
@@ -60,8 +70,10 @@ export class GameScene extends Phaser.Scene {
     private uiX = 0;
     private topH = 130;
     private centerH = 360;
-    private bottomH = 230;
     private matchLayout!: MatchLayout;
+    private matchDom?: MatchUiDom;
+    // Use DOM shell for textual match UI to avoid canvas crowding/overlap on small viewports.
+    private readonly useDomMatchUi = true;
     private handCardsRect: LayoutRect = { x: 0, y: 0, w: 0, h: 0 };
 
     private centerDropX = 0;
@@ -124,13 +136,19 @@ export class GameScene extends Phaser.Scene {
     private gameLogExpanded = false;
     private gameLogEntries: string[] = [];
     private gameLogLimit = 28;
-
     private handTitle!: Phaser.GameObjects.Text;
     private paLabel!: Phaser.GameObjects.Text;
     private actionPanel!: Phaser.GameObjects.Graphics;
     private actionPanelTitle!: Phaser.GameObjects.Text;
     private actionPanelHint!: Phaser.GameObjects.Text;
     private actionPanelDetail!: Phaser.GameObjects.Text;
+    private actionPanelContext!: Phaser.GameObjects.Text;
+    private helpButton!: Phaser.GameObjects.Graphics;
+    private helpHit!: Phaser.GameObjects.Rectangle;
+    private helpButtonText!: Phaser.GameObjects.Text;
+    private emoteButton!: Phaser.GameObjects.Graphics;
+    private emoteHit!: Phaser.GameObjects.Rectangle;
+    private emoteButtonText!: Phaser.GameObjects.Text;
     private paOrbs: Phaser.GameObjects.Arc[] = [];
     private playersIcon!: Phaser.GameObjects.Image;
     private apIcon!: Phaser.GameObjects.Image;
@@ -155,6 +173,8 @@ export class GameScene extends Phaser.Scene {
     private cardInspectPanel!: Phaser.GameObjects.Graphics;
     private cardInspectArtwork!: Phaser.GameObjects.Graphics;
     private cardInspectArtworkImage!: Phaser.GameObjects.Image;
+    private cardInspectArtworkMaskShape!: Phaser.GameObjects.Graphics;
+    private cardInspectArtworkMask!: Phaser.Display.Masks.GeometryMask;
     private cardInspectCloseBtn!: Phaser.GameObjects.Graphics;
     private cardInspectCloseHit!: Phaser.GameObjects.Rectangle;
     private cardInspectCloseLabel!: Phaser.GameObjects.Text;
@@ -163,11 +183,23 @@ export class GameScene extends Phaser.Scene {
     private cardInspectBody!: Phaser.GameObjects.Text;
     private cardInspectHint!: Phaser.GameObjects.Text;
     private cardInspectVisible = false;
+    private cardInspectAnimating = false;
+    private cardInspectOpenTween?: Phaser.Tweens.Tween;
+    private cardInspectCloseTween?: Phaser.Tweens.Tween;
     private inspectedCard?: ICardData;
     private diceToastPanel!: Phaser.GameObjects.Graphics;
     private diceToastText!: Phaser.GameObjects.Text;
     private diceToastVisible = false;
     private diceToastTween?: Phaser.Tweens.Tween;
+    private reconnectOverlay!: Phaser.GameObjects.Rectangle;
+    private reconnectPanel!: Phaser.GameObjects.Graphics;
+    private reconnectTitle!: Phaser.GameObjects.Text;
+    private reconnectBody!: Phaser.GameObjects.Text;
+    private reconnectActive = false;
+    private reconnectRedirectTimer?: Phaser.Time.TimerEvent;
+    private reconnectDomNode?: HTMLDivElement;
+    private reconnectDomTitle?: HTMLParagraphElement;
+    private reconnectDomBody?: HTMLParagraphElement;
 
     private fxEmitter?: Phaser.GameObjects.Particles.ParticleEmitter;
     private ambientEmitter?: Phaser.GameObjects.Particles.ParticleEmitter;
@@ -180,11 +212,17 @@ export class GameScene extends Phaser.Scene {
 
     private pendingPlayedCard?: CardGameObject;
     private pendingPlayState = createPendingPlayState();
+    private pendingTransitionId = 0;
     private myTurnTween?: Phaser.Tweens.Tween;
     private deckButtonFx?: SimpleButtonController;
     private endButtonFx?: SimpleButtonController;
     private readyButtonFx?: SimpleButtonController;
     private gameLogToggleFx?: SimpleButtonController;
+    private cardInspectCloseFx?: SimpleButtonController;
+    private helpButtonFx?: SimpleButtonController;
+    private emoteButtonFx?: SimpleButtonController;
+    private helpCloseFx?: SimpleButtonController;
+    private emoteCycleIndex = 0;
     private previousAP = -1;
     private redirectingToPreLobby = false;
     private estimatedDeckBase = 0;
@@ -193,20 +231,45 @@ export class GameScene extends Phaser.Scene {
         || localStorage.getItem('lucrare_ui_debug') === '1'
     );
     private layoutDebugGfx?: Phaser.GameObjects.Graphics;
+    private qaInspectRequested = false;
+    private qaHelpRequested = false;
+    private qaOverlayApplied = false;
 
     // Target Selector state
     private targetSelectorOverlay?: Phaser.GameObjects.Rectangle;
     private targetSelectorElements: Phaser.GameObjects.GameObject[] = [];
     private targetSelectorFx: SimpleButtonController[] = [];
+    private helpOverlay!: Phaser.GameObjects.Rectangle;
+    private helpPanel!: Phaser.GameObjects.Graphics;
+    private helpTitle!: Phaser.GameObjects.Text;
+    private helpBody!: Phaser.GameObjects.Text;
+    private helpCloseBtn!: Phaser.GameObjects.Graphics;
+    private helpCloseHit!: Phaser.GameObjects.Rectangle;
+    private helpCloseLabel!: Phaser.GameObjects.Text;
+    private helpVisible = false;
 
     constructor() {
         super({ key: 'GameScene' });
     }
 
-    init(data: { serverManager: ServerManager; lang?: SupportedLanguage; roomCode?: string; isHost?: boolean }) {
-        this.serverManager = data?.serverManager;
-        this.lang = sanitizeLanguage(data?.lang ?? localStorage.getItem('lucrare_lang'));
-        this.roomCode = String(data?.roomCode ?? '');
+    init(data: { serverManager?: ServerManager; lang?: SupportedLanguage; roomCode?: string; isHost?: boolean }) {
+        const params = new URLSearchParams(window.location.search);
+        const queryLang = params.get('lang');
+        this.lang = sanitizeLanguage(data?.lang ?? queryLang ?? localStorage.getItem('lucrare_lang'));
+        if (queryLang) localStorage.setItem('lucrare_lang', this.lang);
+        setUiRootScreen('match');
+        setUiRootLanguage(this.lang);
+        this.mockMode = isQaMatchModeEnabled(window.location.search);
+        this.qaInspectRequested = params.get('qaInspect') === '1';
+        this.qaHelpRequested = params.get('qaHelp') === '1';
+        this.qaOverlayApplied = false;
+
+        this.serverManager = data?.serverManager as ServerManager;
+        if (!this.serverManager && this.mockMode) {
+            this.serverManager = createMockServerManager(window.location.search, this.lang) as unknown as ServerManager;
+        }
+
+        this.roomCode = String(data?.roomCode ?? (this.mockMode ? 'QAM4' : ''));
         this.visualQueue = new VisualEventQueue();
         this.redirectingToPreLobby = false;
         this.liveCardObjects.clear();
@@ -217,13 +280,21 @@ export class GameScene extends Phaser.Scene {
             this.serverManager.onStateChange = this.handleStateChange.bind(this);
             this.serverManager.onPlayerChange = this.handlePlayerChange.bind(this);
             this.serverManager.onRoomMessage = this.handleRoomMessage.bind(this);
+            this.serverManager.onReconnectStatus = this.handleReconnectStatus.bind(this);
         }
     }
 
     create() {
+        if (!this.serverManager) {
+            this.scene.start('LoginScene', { serverManager: new ServerManager() });
+            return;
+        }
+
         this.createAnimatedBackground();
         this.createUiObjects();
         this.createOverlay();
+        this.createReconnectDomOverlay();
+        this.createMatchDomOverlay();
         this.createParticles();
         this.applyLocalizedLabels();
         this.wireButtons();
@@ -241,11 +312,31 @@ export class GameScene extends Phaser.Scene {
             this.endButtonFx?.destroy();
             this.readyButtonFx?.destroy();
             this.gameLogToggleFx?.destroy();
+            this.cardInspectCloseFx?.destroy();
+            this.helpButtonFx?.destroy();
+            this.emoteButtonFx?.destroy();
+            this.helpCloseFx?.destroy();
             this.liveCardObjects.clear();
+            if (this.cardInspectOpenTween) this.cardInspectOpenTween.stop();
+            if (this.cardInspectCloseTween) this.cardInspectCloseTween.stop();
+            if (this.reconnectRedirectTimer) this.reconnectRedirectTimer.remove(false);
+            if (this.serverManager) {
+                this.serverManager.onReconnectStatus = undefined;
+            }
+            removeUiRootChildById('game-reconnect-overlay');
+            removeUiRootChildById('game-match-shell');
+            this.reconnectDomNode = undefined;
+            this.reconnectDomTitle = undefined;
+            this.reconnectDomBody = undefined;
+            this.matchDom?.destroy();
+            this.matchDom = undefined;
         });
 
         this.handleResize(this.scale.gameSize);
         this.appendGameLog(this.tr('game_log_match_ready'));
+        if (this.mockMode) {
+            this.appendGameLog(this.tr('game_mock_mode_active'));
+        }
 
         this.cameras.main.fadeIn(280, 8, 13, 20);
         this.tweens.add({
@@ -307,17 +398,15 @@ export class GameScene extends Phaser.Scene {
     }
 
     private isCompactLandscapeLayout() {
-        return this.isLandscapeLayout && this.screenH < 520;
-    }
-
-    private compactName(value: string, maxLen = 8) {
-        const clean = String(value ?? '').trim();
-        if (clean.length <= maxLen) return clean;
-        return `${clean.slice(0, Math.max(1, maxLen - 1))}.`;
+        return this.isLandscapeLayout && (this.matchLayout?.tier === 'C' || this.screenH <= 430);
     }
 
     private boostText(...texts: Array<Phaser.GameObjects.Text | undefined>) {
         texts.forEach((text) => text?.setResolution(this.textResolution));
+    }
+
+    private hasPendingPlayInFlight() {
+        return Boolean(this.pendingPlayedCard?.active || this.pendingPlayState.pendingCardId);
     }
 
     private createAnimatedBackground() {
@@ -345,6 +434,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     private applyLocalizedLabels() {
+        this.matchDom?.setLanguage(this.lang);
         this.topTitle.setText(this.tr('game_top_title'));
         this.opponentsPlaceholder.setText(this.tr('game_waiting_opponents'));
         this.roomCodeText.setText(this.tr('game_room_code', { code: this.roomCode || '----' }));
@@ -361,11 +451,18 @@ export class GameScene extends Phaser.Scene {
         this.actionPanelTitle.setText(this.tr('game_action_panel_title'));
         this.actionPanelHint.setText(this.tr('game_action_panel_waiting'));
         this.actionPanelDetail.setText('');
+        this.actionPanelContext.setText(this.tr('game_hint_wait_phase'));
+        this.helpButtonText.setText('?');
+        this.emoteButtonText.setText(this.tr('game_emote_button'));
         this.gameLogTitle.setText(this.tr('game_log_title'));
         this.gameLogToggleLabel.setText(this.gameLogExpanded ? this.tr('game_log_less') : this.tr('game_log_more'));
         this.reactionTitle.setText(this.tr('game_reaction_title'));
         this.reactionSubtitle.setText(this.tr('game_reaction_subtitle'));
         this.cardInspectHint.setText(this.tr('game_close_hint'));
+        const helpContent = buildMatchHelpContent(this.tr.bind(this));
+        this.helpTitle.setText(helpContent.title);
+        this.helpBody.setText(`${helpContent.sections.map((section) => `${section.title}\n${section.body}`).join('\n\n')}\n\n${helpContent.closeHint}`);
+        this.refreshMatchDomUi();
     }
 
     private localizeServerError(message: any): string {
@@ -414,6 +511,15 @@ export class GameScene extends Phaser.Scene {
     }
 
     private tryDrawCard() {
+        if (this.reconnectActive) {
+            this.floatText(this.tr('game_reconnect_action_blocked'), '#ff9aa7');
+            return;
+        }
+        if (this.hasPendingPlayInFlight()) {
+            const reason = this.localizeActionBlockReason('game_reason_action_pending');
+            this.floatText(this.tr('game_draw_blocked', { reason }), '#ff9aa7');
+            return;
+        }
         const room = this.serverManager?.room;
         if (!room) {
             this.floatText(this.tr('game_no_connection'), '#ff9aa7');
@@ -439,6 +545,15 @@ export class GameScene extends Phaser.Scene {
     }
 
     private tryEndTurn() {
+        if (this.reconnectActive) {
+            this.floatText(this.tr('game_reconnect_action_blocked'), '#ff9aa7');
+            return;
+        }
+        if (this.hasPendingPlayInFlight()) {
+            const reason = this.localizeActionBlockReason('game_reason_action_pending');
+            this.floatText(this.tr('game_end_turn_blocked', { reason }), '#ff9aa7');
+            return;
+        }
         const room = this.serverManager?.room;
         if (!room) {
             this.floatText(this.tr('game_no_connection'), '#ff9aa7');
@@ -462,6 +577,15 @@ export class GameScene extends Phaser.Scene {
     }
 
     private tryAttackCrisis(crisis: ICardData) {
+        if (this.reconnectActive) {
+            this.floatText(this.tr('game_reconnect_action_blocked'), '#ff9aa7');
+            return;
+        }
+        if (this.hasPendingPlayInFlight()) {
+            const reason = this.localizeActionBlockReason('game_reason_action_pending');
+            this.floatText(this.tr('game_attack_blocked', { reason }), '#ff9aa7');
+            return;
+        }
         const room = this.serverManager?.room;
         if (!room) {
             this.floatText(this.tr('game_no_connection'), '#ff9aa7');
@@ -482,9 +606,9 @@ export class GameScene extends Phaser.Scene {
             return;
         }
 
-        this.serverManager.solveCrisis('', String(crisis.id));
+        this.serverManager.solveCrisis(String(crisis.id));
         this.floatText(this.tr('game_attack_sent', { cost: attack.cost }), '#9ff3c2');
-        this.appendGameLog(this.tr('game_attack_sent_log', { name: String(crisis.name ?? this.tr('game_card_unknown')) }));
+        this.appendGameLog(this.tr('game_attack_sent_log', { name: getCardDisplayName(crisis, this.lang, this.tr.bind(this)) }));
     }
 
     private createUiObjects() {
@@ -712,6 +836,36 @@ export class GameScene extends Phaser.Scene {
             lineSpacing: 2,
             wordWrap: { width: 280 },
         }).setOrigin(0, 0).setDepth(19);
+        this.actionPanelContext = this.add.text(0, 0, '', {
+            fontFamily: FONT_UI,
+            fontSize: '10px',
+            color: '#d9edff',
+            fontStyle: '700',
+            lineSpacing: 1,
+            wordWrap: { width: 280 },
+        }).setOrigin(0, 0).setDepth(19);
+
+        this.helpButton = this.add.graphics().setDepth(20);
+        this.helpHit = this.add.rectangle(0, 0, 42, 42, 0x000000, 0)
+            .setDepth(21)
+            .setInteractive({ useHandCursor: true });
+        this.helpButtonText = this.add.text(0, 0, '?', {
+            fontFamily: FONT_UI,
+            fontSize: '19px',
+            color: '#f7fcff',
+            fontStyle: '700',
+        }).setOrigin(0.5).setDepth(22);
+
+        this.emoteButton = this.add.graphics().setDepth(20);
+        this.emoteHit = this.add.rectangle(0, 0, 42, 42, 0x000000, 0)
+            .setDepth(21)
+            .setInteractive({ useHandCursor: true });
+        this.emoteButtonText = this.add.text(0, 0, 'EM', {
+            fontFamily: FONT_UI,
+            fontSize: '13px',
+            color: '#f7fcff',
+            fontStyle: '700',
+        }).setOrigin(0.5).setDepth(22);
 
         this.playersIcon = this.add.image(0, 0, this.textures.exists('ui-players') ? 'ui-players' : 'retro-grid').setDepth(23).setScale(0.3).setAlpha(0.95);
         this.deckIcon = this.add.image(0, 0, this.textures.exists('ui-deck') ? 'ui-deck' : 'retro-grid').setDepth(23).setScale(0.26).setAlpha(0.95);
@@ -759,6 +913,9 @@ export class GameScene extends Phaser.Scene {
             this.actionPanelTitle,
             this.actionPanelHint,
             this.actionPanelDetail,
+            this.actionPanelContext,
+            this.helpButtonText,
+            this.emoteButtonText,
         );
     }
     private createOverlay() {
@@ -792,11 +949,15 @@ export class GameScene extends Phaser.Scene {
             0,
             this.textures.exists('ui-deck') ? 'ui-deck' : 'poke-dither',
         ).setDepth(542).setVisible(false);
+        this.cardInspectArtworkMaskShape = this.add.graphics().setDepth(541).setVisible(false);
+        this.cardInspectArtworkMask = this.cardInspectArtworkMaskShape.createGeometryMask();
+        this.cardInspectArtworkImage.setMask(this.cardInspectArtworkMask);
         this.cardInspectCloseBtn = this.add.graphics().setDepth(543).setVisible(false);
         this.cardInspectCloseHit = this.add.rectangle(0, 0, 44, 44, 0x000000, 0)
             .setDepth(544)
             .setVisible(false)
             .setInteractive({ useHandCursor: true });
+        if (this.cardInspectCloseHit.input) this.cardInspectCloseHit.input.enabled = false;
         this.cardInspectCloseHit.on('pointerdown', () => this.hideCardInspect());
         this.cardInspectCloseLabel = this.add.text(0, 0, 'X', {
             fontFamily: FONT_UI,
@@ -836,6 +997,43 @@ export class GameScene extends Phaser.Scene {
             align: 'center',
         }).setOrigin(0.5, 1).setDepth(542).setVisible(false);
 
+        this.helpOverlay = this.add.rectangle(0, 0, 10, 10, 0x000000, 0.7)
+            .setDepth(532)
+            .setVisible(false)
+            .setInteractive({ useHandCursor: true });
+        this.helpOverlay.on('pointerdown', () => this.hideHelpOverlay());
+        this.helpPanel = this.add.graphics().setDepth(533).setVisible(false);
+        this.helpTitle = this.add.text(0, 0, '', {
+            fontFamily: FONT_UI,
+            fontSize: '22px',
+            color: '#f5f9ff',
+            fontStyle: '700',
+            align: 'center',
+            letterSpacing: 1,
+            wordWrap: { width: 700 },
+        }).setOrigin(0.5, 0).setDepth(534).setVisible(false);
+        this.helpBody = this.add.text(0, 0, '', {
+            fontFamily: FONT_UI,
+            fontSize: '14px',
+            color: '#dcecff',
+            align: 'left',
+            lineSpacing: 5,
+            wordWrap: { width: 720 },
+        }).setOrigin(0.5, 0).setDepth(534).setVisible(false);
+        this.helpCloseBtn = this.add.graphics().setDepth(535).setVisible(false);
+        this.helpCloseHit = this.add.rectangle(0, 0, 44, 44, 0x000000, 0)
+            .setDepth(536)
+            .setVisible(false)
+            .setInteractive({ useHandCursor: true });
+        if (this.helpCloseHit.input) this.helpCloseHit.input.enabled = false;
+        this.helpCloseHit.on('pointerdown', () => this.hideHelpOverlay());
+        this.helpCloseLabel = this.add.text(0, 0, 'X', {
+            fontFamily: FONT_UI,
+            fontSize: '22px',
+            color: '#f8fdff',
+            fontStyle: '700',
+        }).setOrigin(0.5).setDepth(537).setVisible(false);
+
         this.diceToastPanel = this.add.graphics().setDepth(546).setVisible(false);
         this.diceToastText = this.add.text(0, 0, '', {
             fontFamily: FONT_UI,
@@ -847,6 +1045,31 @@ export class GameScene extends Phaser.Scene {
             lineSpacing: 3,
         }).setOrigin(0.5).setDepth(547).setVisible(false);
 
+        this.reconnectOverlay = this.add.rectangle(0, 0, 10, 10, 0x000000, 0.66)
+            .setDepth(700)
+            .setVisible(false)
+            .setInteractive({ useHandCursor: false });
+        this.reconnectOverlay.on('pointerdown', () => undefined);
+
+        this.reconnectPanel = this.add.graphics().setDepth(701).setVisible(false);
+        this.reconnectTitle = this.add.text(0, 0, '', {
+            fontFamily: FONT_UI,
+            fontSize: '24px',
+            color: '#f4f9ff',
+            fontStyle: '700',
+            align: 'center',
+            letterSpacing: 1.2,
+            wordWrap: { width: 560 },
+        }).setOrigin(0.5, 0).setDepth(702).setVisible(false);
+        this.reconnectBody = this.add.text(0, 0, '', {
+            fontFamily: FONT_UI,
+            fontSize: '14px',
+            color: '#dcecff',
+            align: 'center',
+            lineSpacing: 4,
+            wordWrap: { width: 560 },
+        }).setOrigin(0.5, 0).setDepth(702).setVisible(false);
+
         this.boostText(
             this.reactionTitle,
             this.reactionSubtitle,
@@ -855,7 +1078,28 @@ export class GameScene extends Phaser.Scene {
             this.cardInspectBody,
             this.cardInspectHint,
             this.cardInspectCloseLabel,
+            this.helpTitle,
+            this.helpBody,
+            this.helpCloseLabel,
             this.diceToastText,
+            this.reconnectTitle,
+            this.reconnectBody,
+        );
+
+        this.cardInspectCloseFx?.destroy();
+        this.cardInspectCloseFx = createSimpleButtonFx(
+            this,
+            this.cardInspectCloseHit,
+            [this.cardInspectCloseBtn, this.cardInspectCloseLabel],
+            { onClick: () => this.hideCardInspect() },
+        );
+
+        this.helpCloseFx?.destroy();
+        this.helpCloseFx = createSimpleButtonFx(
+            this,
+            this.helpCloseHit,
+            [this.helpCloseBtn, this.helpCloseLabel],
+            { onClick: () => this.hideHelpOverlay() },
         );
     }
 
@@ -938,16 +1182,22 @@ export class GameScene extends Phaser.Scene {
             this.gameLogToggleHit,
             [this.gameLogToggleBg, this.gameLogToggleLabel],
             {
-                onClick: () => {
-                    this.gameLogExpanded = !this.gameLogExpanded;
-                    this.layoutPanels();
-                    const state = this.serverManager?.room?.state as IGameState | undefined;
-                    const me = state && this.serverManager?.room
-                        ? (state.players as unknown as Map<string, IPlayer>).get(this.serverManager.room.sessionId)
-                        : undefined;
-                    if (state && me) this.applyState(state, me);
-                },
+                onClick: () => this.toggleGameLog(),
             },
+        );
+
+        this.helpButtonFx = createSimpleButtonFx(
+            this,
+            this.helpHit,
+            [this.helpButton, this.helpButtonText],
+            { onClick: () => this.showHelpOverlay() },
+        );
+
+        this.emoteButtonFx = createSimpleButtonFx(
+            this,
+            this.emoteHit,
+            [this.emoteButton, this.emoteButtonText],
+            { onClick: () => this.sendQuickEmote() },
         );
     }
 
@@ -959,6 +1209,16 @@ export class GameScene extends Phaser.Scene {
         ) => {
             const card = gameObject as CardGameObject;
             const zoneType = String(zone.getData('type') ?? '');
+
+            if (this.reconnectActive) {
+                this.snapBack(card, this.tr('game_reconnect_action_blocked'));
+                return;
+            }
+
+            if (this.hasPendingPlayInFlight() && this.pendingPlayedCard !== card) {
+                this.snapBack(card, this.tr('game_action_pending_wait'));
+                return;
+            }
 
             const state = this.serverManager.room?.state as IGameState | undefined;
             const myId = this.serverManager.room?.sessionId;
@@ -1009,6 +1269,7 @@ export class GameScene extends Phaser.Scene {
     private handleResize(size: Phaser.Structs.Size) {
         this.screenW = size.width;
         this.screenH = size.height;
+        syncUiRootViewport(this.screenW, this.screenH);
 
         this.matchLayout = computeMatchLayout(this.screenW, this.screenH);
         this.isLandscapeLayout = this.matchLayout.isLandscape;
@@ -1016,7 +1277,6 @@ export class GameScene extends Phaser.Scene {
         this.uiX = this.matchLayout.content.x;
         this.topH = this.matchLayout.topBar.h;
         this.centerH = this.matchLayout.board.h;
-        this.bottomH = this.matchLayout.hand.h;
         this.handCardsRect = this.matchLayout.handCards;
 
         this.retroLayerA.setSize(this.screenW, this.screenH);
@@ -1025,6 +1285,8 @@ export class GameScene extends Phaser.Scene {
         this.drawBackground();
         this.layoutPanels();
         this.layoutOverlay();
+        this.layoutReconnectDomOverlay();
+        this.matchDom?.applyLayout(this.matchLayout);
         this.updateAmbientEmitterBounds();
 
         const state = this.serverManager?.room?.state as IGameState | undefined;
@@ -1037,26 +1299,38 @@ export class GameScene extends Phaser.Scene {
     private drawBackground() {
         drawPokemonBackdrop(this.bg, this.screenW, this.screenH, 0.58);
 
+        const content = this.matchLayout.content;
+        const topBar = this.matchLayout.topBar;
+        const board = this.matchLayout.board;
+        const hand = this.matchLayout.hand;
         this.bg.fillStyle(0xf6e2b9, 0.14);
-        this.bg.fillRect(this.uiX + 18, this.topH + 2, this.uiW - 36, 2);
-        this.bg.fillRect(this.uiX + 18, this.topH + this.centerH + 2, this.uiW - 36, 2);
+        this.bg.fillRect(content.x + 12, topBar.y + topBar.h + 1, content.w - 24, 2);
+        if (this.matchLayout.sidebar) {
+            this.bg.fillRect(this.matchLayout.sidebar.x - 1, board.y + 6, 2, board.h - 12);
+        } else {
+            this.bg.fillRect(content.x + 12, hand.y - 1, content.w - 24, 2);
+        }
     }
 
     private updateAmbientEmitterBounds() {
         if (!this.ambientEmitter) return;
+        const content = this.matchLayout.content;
         this.ambientEmitter.setConfig({
-            x: { min: this.uiX + 16, max: this.uiX + this.uiW - 16 },
-            y: { min: this.topH + 12, max: this.topH + this.centerH + this.bottomH - 18 },
+            x: { min: content.x + 16, max: content.x + content.w - 16 },
+            y: { min: content.y + 12, max: content.y + content.h - 18 },
         });
     }
 
     private layoutPanels() {
-        const topY = 0;
-        const centerY = this.topH;
-        const bottomY = this.topH + this.centerH;
+        const topRect = this.matchLayout.topBar;
+        const boardRect = this.matchLayout.board;
+        const handRect = this.matchLayout.hand;
+        const sidebarRect = this.matchLayout.sidebar;
+        const topY = topRect.y;
 
         const compactLandscape = this.isCompactLandscapeLayout();
         const compactPortrait = !this.isLandscapeLayout && this.uiW < 470;
+        const buttonContract = getButtonContractByTier(this.matchLayout.tier);
 
         this.showPlayersIcon = !compactLandscape && this.uiW >= (this.isLandscapeLayout ? 860 : 520);
         this.showDeckIcon = !compactLandscape && this.uiW >= (this.isLandscapeLayout ? 760 : 500);
@@ -1069,55 +1343,83 @@ export class GameScene extends Phaser.Scene {
 
         this.topPanel.clear();
         this.topPanel.fillStyle(0x262b37, 0.86);
-        this.topPanel.fillRoundedRect(this.uiX + 8, topY + 8, this.uiW - 16, this.topH - 14, 16);
+        this.topPanel.fillRoundedRect(topRect.x + 4, topRect.y + 4, topRect.w - 8, topRect.h - 8, 16);
         this.topPanel.lineStyle(1.1, 0x978369, 0.9);
-        this.topPanel.strokeRoundedRect(this.uiX + 8, topY + 8, this.uiW - 16, this.topH - 14, 16);
+        this.topPanel.strokeRoundedRect(topRect.x + 4, topRect.y + 4, topRect.w - 8, topRect.h - 8, 16);
 
         this.centerPanel.clear();
         this.centerPanel.fillStyle(0x1b2130, 0.84);
-        this.centerPanel.fillRoundedRect(this.uiX + 8, centerY + 4, this.uiW - 16, this.centerH - 8, 16);
+        this.centerPanel.fillRoundedRect(boardRect.x + 4, boardRect.y + 2, boardRect.w - 8, boardRect.h - 4, 16);
         this.centerPanel.lineStyle(1.1, 0x7188a8, 0.84);
-        this.centerPanel.strokeRoundedRect(this.uiX + 8, centerY + 4, this.uiW - 16, this.centerH - 8, 16);
+        this.centerPanel.strokeRoundedRect(boardRect.x + 4, boardRect.y + 2, boardRect.w - 8, boardRect.h - 4, 16);
+
+        if (sidebarRect) {
+            this.centerPanel.fillStyle(0x1d2636, 0.88);
+            this.centerPanel.fillRoundedRect(sidebarRect.x + 2, sidebarRect.y + 2, sidebarRect.w - 4, sidebarRect.h - 4, 14);
+            this.centerPanel.lineStyle(1, 0x7a8fad, 0.78);
+            this.centerPanel.strokeRoundedRect(sidebarRect.x + 2, sidebarRect.y + 2, sidebarRect.w - 4, sidebarRect.h - 4, 14);
+        }
 
         this.bottomPanel.clear();
         this.bottomPanel.fillStyle(0x202736, 0.92);
-        this.bottomPanel.fillRoundedRect(this.uiX + 8, bottomY + 2, this.uiW - 16, this.bottomH - 10, 16);
+        this.bottomPanel.fillRoundedRect(handRect.x + 2, handRect.y + 2, handRect.w - 4, handRect.h - 4, 14);
         this.bottomPanel.lineStyle(1.1, 0x7e96b6, 0.8);
-        this.bottomPanel.strokeRoundedRect(this.uiX + 8, bottomY + 2, this.uiW - 16, this.bottomH - 10, 16);
+        this.bottomPanel.strokeRoundedRect(handRect.x + 2, handRect.y + 2, handRect.w - 4, handRect.h - 4, 14);
 
         const topInfoY = compactLandscape
-            ? topY + Phaser.Math.Clamp(this.topH * 0.2, 14, 24)
-            : topY + Phaser.Math.Clamp(this.topH * 0.16, 18, 30);
+            ? topY + Phaser.Math.Clamp(topRect.h * 0.16, 11, 20)
+            : topY + Phaser.Math.Clamp(topRect.h * 0.12, 16, 30);
         const opponentRowY = compactLandscape
-            ? topY + Phaser.Math.Clamp(this.topH * 0.48, 34, this.topH - 44)
-            : topY + Phaser.Math.Clamp(this.topH * 0.43, 46, this.topH - 58);
+            ? topY + Phaser.Math.Clamp(topRect.h * 0.38, 22, topRect.h - 20)
+            : topY + Phaser.Math.Clamp(topRect.h * 0.34, 34, topRect.h - 24);
+        const showTopTitle = !compactLandscape && !compactPortrait;
+        const showTopMeta = !compactLandscape && !(compactPortrait && this.matchLayout.tier === 'A');
 
-        const logDockWidth = this.gameLogExpanded ? 0 : (this.matchLayout?.log?.w ?? 0) + 18;
+        const logDockWidth = (this.gameLogExpanded || this.isLandscapeLayout) ? 0 : (this.matchLayout?.log?.w ?? 0) + 18;
         const topTitleWrap = Phaser.Math.Clamp(
             this.uiW - (this.showPlayersIcon ? 84 : 50) - logDockWidth,
             120,
             this.uiW * (compactLandscape ? 0.56 : 0.7),
         );
 
-        this.topTitle
-            .setPosition(this.uiX + (this.showPlayersIcon ? 54 : 18), topInfoY)
-            .setWordWrapWidth(topTitleWrap, true)
-            .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.014, compactLandscape ? 11 : 12, compactLandscape ? 17 : 19)}px`);
+        this.topTitle.setVisible(showTopTitle);
+        if (showTopTitle) {
+            this.topTitle
+                .setPosition(this.uiX + (this.showPlayersIcon ? 54 : 18), topInfoY)
+                .setWordWrapWidth(topTitleWrap, true)
+                .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.014, 12, 19)}px`);
+            fitTextToBox(this.topTitle, this.topTitle.text, topTitleWrap, Math.max(20, this.topH * 0.2), { maxLines: 2, ellipsis: true });
+        }
         this.roomCodeText
-            .setPosition(this.uiX + 18, opponentRowY)
+            .setPosition(this.uiX + 14, showTopTitle ? opponentRowY : topInfoY)
             .setOrigin(0, 0.5)
-            .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.0115, compactLandscape ? 10 : 11, 14)}px`);
+            .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.0115, compactLandscape ? 11 : 11, 14)}px`)
+            .setVisible(showTopMeta);
+        if (showTopMeta) {
+            fitTextToBox(this.roomCodeText, this.roomCodeText.text, Math.max(88, this.uiW * 0.25), 16, { maxLines: 1, ellipsis: true });
+        }
         if (this.showPlayersIcon) {
-            this.playersIcon.setPosition(this.uiX + 30, opponentRowY).setDisplaySize(26, 26);
+            this.playersIcon.setPosition(this.uiX + 28, opponentRowY).setDisplaySize(compactLandscape ? 22 : 26, compactLandscape ? 22 : 26);
         }
         this.opponentsPlaceholder
             .setPosition(this.uiX + this.uiW * 0.5, opponentRowY)
-            .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.0118, 11, 16)}px`);
-        this.layoutHud(topY, compactLandscape);
+            .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.0118, compactLandscape ? 11 : 11, 16)}px`);
+        if (showTopMeta) {
+            fitTextToBox(
+                this.opponentsPlaceholder,
+                this.opponentsPlaceholder.text,
+                Math.max(120, this.uiW - (this.showPlayersIcon ? 120 : 86)),
+                Math.max(16, this.topH * 0.18),
+                { maxLines: 1, ellipsis: true },
+            );
+        } else {
+            this.opponentsPlaceholder.setVisible(false);
+        }
+        this.layoutHud(compactLandscape);
 
-        const centerTop = centerY + (this.isLandscapeLayout ? (compactLandscape ? 8 : 12) : 14);
+        const centerTop = boardRect.y + (this.isLandscapeLayout ? (compactLandscape ? 8 : 12) : 14);
         const centerTitleY = centerTop + 2;
-        const crisisTitleY = centerTop + Phaser.Math.Clamp(this.centerH * (compactLandscape ? 0.18 : 0.3), compactLandscape ? 28 : 52, 98);
+        const crisisTitleY = centerTop + Phaser.Math.Clamp(boardRect.h * (compactLandscape ? 0.18 : 0.3), compactLandscape ? 28 : 52, 98);
 
         this.centerTitle
             .setPosition(this.uiX + this.uiW * 0.5, centerTitleY)
@@ -1126,13 +1428,13 @@ export class GameScene extends Phaser.Scene {
         this.turnText.setVisible(false);
 
         this.centerDropW = this.isLandscapeLayout
-            ? Phaser.Math.Clamp(this.uiW * (compactLandscape ? 0.56 : 0.5), 280, 620)
-            : Phaser.Math.Clamp(this.uiW * 0.86, 280, 580);
+            ? Phaser.Math.Clamp(boardRect.w * (compactLandscape ? 0.64 : 0.58), 220, 620)
+            : Phaser.Math.Clamp(boardRect.w * 0.86, 280, 580);
         this.centerDropH = this.isLandscapeLayout
-            ? Phaser.Math.Clamp(this.centerH * (compactLandscape ? 0.46 : 0.36), 98, compactLandscape ? 198 : 176)
-            : Phaser.Math.Clamp(this.centerH * 0.42, 124, 230);
-        this.centerDropX = this.uiX + this.uiW * 0.5;
-        this.centerDropY = centerY + this.centerH * (this.isLandscapeLayout ? (compactLandscape ? 0.55 : 0.58) : 0.56);
+            ? Phaser.Math.Clamp(boardRect.h * (compactLandscape ? 0.46 : 0.36), 98, compactLandscape ? 198 : 176)
+            : Phaser.Math.Clamp(boardRect.h * 0.42, 124, 230);
+        this.centerDropX = boardRect.x + boardRect.w * 0.5;
+        this.centerDropY = boardRect.y + boardRect.h * (this.isLandscapeLayout ? (compactLandscape ? 0.55 : 0.58) : 0.56);
 
         this.tableGuide.clear();
         this.tableGuide.lineStyle(2, 0xd1d9ec, 0.35);
@@ -1147,12 +1449,12 @@ export class GameScene extends Phaser.Scene {
         this.centerDropZone.setPosition(this.centerDropX, this.centerDropY).setSize(this.centerDropW, this.centerDropH);
         this.centerDropZone.input?.hitArea.setTo(0, 0, this.centerDropW, this.centerDropH);
 
-        this.crisisTitle.setPosition(this.uiX + this.uiW * 0.5, crisisTitleY).setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.011, 11, 14)}px`);
+        this.crisisTitle.setPosition(boardRect.x + boardRect.w * 0.5, crisisTitleY).setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.011, 11, 14)}px`);
         this.companyTitle
-            .setPosition(this.uiX + this.uiW * 0.5, centerY + this.centerH - Phaser.Math.Clamp(this.centerH * (compactLandscape ? 0.1 : 0.13), 20, 34))
+            .setPosition(boardRect.x + boardRect.w * 0.5, boardRect.y + boardRect.h - Phaser.Math.Clamp(boardRect.h * (compactLandscape ? 0.1 : 0.13), 20, 34))
             .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.011, 11, 14)}px`);
-        this.crisisTitle.setVisible((!compactPortrait || this.centerH > 250) && !compactLandscape);
-        this.companyTitle.setVisible((!compactPortrait || this.centerH > 250) && !compactLandscape);
+        this.crisisTitle.setVisible((!compactPortrait || boardRect.h > 250) && !compactLandscape);
+        this.companyTitle.setVisible((!compactPortrait || boardRect.h > 250) && !compactLandscape);
 
         const controls = this.matchLayout.controls;
         const controlsY = controls.y + controls.h * 0.5;
@@ -1180,7 +1482,7 @@ export class GameScene extends Phaser.Scene {
         const endW = this.isLandscapeLayout
             ? Phaser.Math.Clamp(deckW * (compactLandscape ? 1.64 : 1.78), 96, 132)
             : Phaser.Math.Clamp(deckW * 1.85, 122, 154);
-        const endH = Phaser.Math.Clamp(deckH * 0.44, 46, 56);
+        const endH = Math.max(buttonContract.primaryHeight, Phaser.Math.Clamp(deckH * 0.44, 40, 56));
         const endX = deckX - (deckW * 0.5 + endW * 0.5 + 12);
         this.endHit.setSize(Math.max(48, endW), Math.max(46, endH)).setPosition(endX, controlsY);
         this.endButton.setPosition(endX, controlsY);
@@ -1195,7 +1497,7 @@ export class GameScene extends Phaser.Scene {
             ? Phaser.Math.Clamp(this.centerH * (compactLandscape ? 1 : 0.95), compactLandscape ? 160 : 170, 330)
             : Phaser.Math.Clamp(this.centerH * 0.88, 220, 380);
         const lobbyX = this.uiX + this.uiW * 0.5;
-        const lobbyY = centerY + this.centerH * 0.56;
+        const lobbyY = boardRect.y + boardRect.h * 0.56;
 
         this.lobbyPanel.clear();
         this.lobbyPanel.fillStyle(0x2d2623, 0.93);
@@ -1218,7 +1520,7 @@ export class GameScene extends Phaser.Scene {
             .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.0102, 10, 14)}px`);
 
         const readyW = Phaser.Math.Clamp(lobbyW * 0.72, 230, 340);
-        const readyH = Phaser.Math.Clamp(lobbyH * 0.2, 46, 56);
+        const readyH = Math.max(buttonContract.primaryHeight, Phaser.Math.Clamp(lobbyH * 0.2, 40, 56));
         const readyY = lobbyY + lobbyH * 0.34;
         this.readyHit.setPosition(lobbyX, readyY).setSize(readyW, readyH);
         this.readyButton.setPosition(lobbyX, readyY);
@@ -1229,42 +1531,87 @@ export class GameScene extends Phaser.Scene {
 
         const handTitleY = controls.y + Phaser.Math.Clamp(controls.h * 0.2, 12, 18);
         const apY = controls.y + Phaser.Math.Clamp(controls.h * 0.43, 24, 34);
+        const compactControls = compactLandscape || controls.w < 280;
+        const showInlineApIcon = this.showApIcon && controls.w >= 240;
         this.handTitle
             .setPosition(controls.x + 14, handTitleY)
-            .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.012, 12, 16)}px`);
+            .setFontSize(`${Phaser.Math.Clamp(this.uiW * (compactControls ? 0.0102 : 0.012), 11, 16)}px`);
         this.paLabel
-            .setPosition(controls.x + (this.showApIcon ? 42 : 14), apY)
-            .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.0105, 11, 14)}px`);
-        if (this.showApIcon) {
-            this.apIcon.setPosition(controls.x + 20, apY + 2).setDisplaySize(18, 18);
+            .setPosition(controls.x + (showInlineApIcon ? 42 : 14), apY)
+            .setFontSize(`${Phaser.Math.Clamp(this.uiW * (compactControls ? 0.0095 : 0.0105), 11, 14)}px`);
+        if (showInlineApIcon) {
+            this.apIcon.setPosition(controls.x + 20, apY + 2).setDisplaySize(18, 18).setVisible(true);
+        } else {
+            this.apIcon.setVisible(false);
         }
-        const orbStart = controls.x + (this.showApIcon ? 106 : 44);
-        const orbGap = Phaser.Math.Clamp(this.uiW * 0.018, 22, 28);
+        const orbStart = controls.x + (showInlineApIcon ? 106 : 44);
+        const orbGap = Phaser.Math.Clamp(this.uiW * (compactControls ? 0.013 : 0.018), compactControls ? 17 : 22, compactControls ? 22 : 28);
         this.paOrbs.forEach((orb, index) => orb.setPosition(orbStart + index * orbGap, apY + 2));
 
         const actionLeft = controls.x + 10;
         const actionRight = endX - endW * 0.5 - 12;
-        const actionAvailable = Math.max(120, actionRight - actionLeft);
-        const actionW = Phaser.Math.Clamp(actionAvailable, 120, this.isLandscapeLayout ? 540 : 420);
+        const actionAvailable = Math.max(0, actionRight - actionLeft);
+        const actionW = actionAvailable >= 110
+            ? Phaser.Math.Clamp(actionAvailable, 110, this.isLandscapeLayout ? 540 : 420)
+            : actionAvailable;
         const actionH = Math.max(46, controls.h - 10);
         const actionY = controls.y + 5;
+        const showActionPanel = actionW >= 118;
+        const compactPortraitAction = !this.isLandscapeLayout && (this.matchLayout.tier === 'A' || this.matchLayout.tier === 'B');
+        const compactAction = (compactLandscape || controls.w < 270 || compactPortraitAction) && showActionPanel;
+        const actionWrap = Math.max(80, actionW - 62);
         this.actionPanel.clear();
-        this.actionPanel.fillStyle(0x1a2736, 0.92);
-        this.actionPanel.fillRoundedRect(actionLeft, actionY, actionW, actionH, 10);
-        this.actionPanel.lineStyle(1, 0x89a8c7, 0.72);
-        this.actionPanel.strokeRoundedRect(actionLeft, actionY, actionW, actionH, 10);
+        if (showActionPanel) {
+            this.actionPanel.fillStyle(0x1a2736, 0.92);
+            this.actionPanel.fillRoundedRect(actionLeft, actionY, actionW, actionH, 10);
+            this.actionPanel.lineStyle(1, 0x89a8c7, 0.72);
+            this.actionPanel.strokeRoundedRect(actionLeft, actionY, actionW, actionH, 10);
+        }
 
         this.actionPanelTitle
             .setPosition(actionLeft + 10, actionY + 10)
-            .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.0098, 10, 12)}px`);
+            .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.0098, compactLandscape ? 11 : 10, 12)}px`)
+            .setVisible(showActionPanel && !compactAction);
         this.actionPanelHint
-            .setPosition(actionLeft + 10, actionY + 20)
-            .setWordWrapWidth(Math.max(80, actionW - 20), true)
-            .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.0098, 10, 13)}px`);
+            .setPosition(actionLeft + 10, actionY + (compactAction ? 8 : 20))
+            .setWordWrapWidth(actionWrap, true)
+            .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.0098, compactLandscape ? 11 : 10, 13)}px`)
+            .setVisible(showActionPanel);
         this.actionPanelDetail
             .setPosition(actionLeft + 10, actionY + actionH * 0.56)
-            .setWordWrapWidth(Math.max(80, actionW - 20), true)
-            .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.0088, 9, 12)}px`);
+            .setWordWrapWidth(actionWrap, true)
+            .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.0088, compactLandscape ? 11 : 9, 12)}px`)
+            .setVisible(showActionPanel && !compactAction);
+        this.actionPanelContext
+            .setPosition(actionLeft + 10, actionY + (compactAction ? actionH - 12 : actionH - 18))
+            .setWordWrapWidth(actionWrap, true)
+            .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.0082, compactLandscape ? 11 : 8, 11)}px`)
+            .setVisible(showActionPanel && !compactAction);
+
+        const helpSize = Phaser.Math.Clamp(actionH * 0.5, 34, 42);
+        const helpX = showActionPanel
+            ? actionLeft + actionW - helpSize * 0.5 - 8
+            : endX - endW * 0.5 - helpSize * 0.5 - 8;
+        const helpY = showActionPanel ? actionY + helpSize * 0.5 + 3 : controlsY;
+        this.helpHit.setSize(helpSize, helpSize).setPosition(helpX, helpY).setVisible(true);
+        this.helpButton.setPosition(helpX, helpY).setVisible(true);
+        this.helpButtonText
+            .setPosition(helpX, helpY - 1)
+            .setFontSize(`${Phaser.Math.Clamp(helpSize * 0.48, 14, 22)}px`)
+            .setVisible(true);
+        this.drawHelpButton(true);
+
+        const showEmoteButton = showActionPanel && actionW >= 210;
+        const emoteX = helpX - helpSize - 8;
+        const emoteY = helpY;
+        this.emoteHit.setSize(helpSize, helpSize).setPosition(emoteX, emoteY).setVisible(showEmoteButton);
+        this.emoteButton.setPosition(emoteX, emoteY).setVisible(showEmoteButton);
+        this.emoteButtonText
+            .setPosition(emoteX, emoteY)
+            .setFontSize(`${Phaser.Math.Clamp(helpSize * 0.28, 9, 13)}px`)
+            .setVisible(showEmoteButton);
+        if (this.emoteHit.input) this.emoteHit.input.enabled = showEmoteButton;
+        this.drawEmoteButton(showEmoteButton);
 
         this.handCardsRect = {
             ...this.matchLayout.handCards,
@@ -1276,13 +1623,66 @@ export class GameScene extends Phaser.Scene {
         this.drawDeckButton(false);
         this.drawEndButton(false);
         this.drawReadyButton(false);
+        this.syncCanvasUiForDomMode();
     }
 
-    private layoutHud(topY: number, compactLandscape: boolean) {
-        const hudW = this.uiW - 24;
-        const hudH = Phaser.Math.Clamp(this.topH * (compactLandscape ? 0.36 : 0.34), 30, 54);
-        const hudX = this.uiX + 12;
-        const hudY = topY + this.topH - hudH - 8;
+    private syncCanvasUiForDomMode() {
+        if (!this.useDomMatchUi) return;
+        const hideCanvasUi = !this.isPreLobbyPhase(this.serverManager?.room?.state?.phase);
+        if (!hideCanvasUi) return;
+
+        const hide = (obj?: Phaser.GameObjects.GameObject & Phaser.GameObjects.Components.Visible) => obj?.setVisible(false);
+        hide(this.topPanel);
+        hide(this.topTitle);
+        hide(this.roomCodeText);
+        hide(this.opponentsPlaceholder);
+        hide(this.hudPanel);
+        hide(this.hudTurnText);
+        hide(this.hudStatsText);
+        hide(this.hudStateText);
+        hide(this.hudReactionText);
+        hide(this.deckButton);
+        hide(this.deckHit);
+        hide(this.deckLabel);
+        hide(this.deckCountText);
+        hide(this.deckIcon);
+        hide(this.endButton);
+        hide(this.endHit);
+        hide(this.endButtonText);
+        hide(this.handTitle);
+        hide(this.paLabel);
+        hide(this.actionPanel);
+        hide(this.actionPanelTitle);
+        hide(this.actionPanelHint);
+        hide(this.actionPanelDetail);
+        hide(this.actionPanelContext);
+        hide(this.helpButton);
+        hide(this.helpHit);
+        hide(this.helpButtonText);
+        hide(this.emoteButton);
+        hide(this.emoteHit);
+        hide(this.emoteButtonText);
+        hide(this.gameLogPanel);
+        hide(this.gameLogTitle);
+        hide(this.gameLogBody);
+        hide(this.gameLogToggleBg);
+        hide(this.gameLogToggleHit);
+        hide(this.gameLogToggleLabel);
+
+        if (this.deckHit.input) this.deckHit.input.enabled = false;
+        if (this.endHit.input) this.endHit.input.enabled = false;
+        if (this.helpHit.input) this.helpHit.input.enabled = false;
+        if (this.emoteHit.input) this.emoteHit.input.enabled = false;
+        if (this.gameLogToggleHit.input) this.gameLogToggleHit.input.enabled = false;
+    }
+
+    private layoutHud(compactLandscape: boolean) {
+        const hudRect = this.matchLayout.hud;
+        const hudW = Math.max(120, hudRect.w);
+        const compactHud = compactLandscape || this.uiW < 560 || this.matchLayout.tier === 'C';
+        const hudH = Math.max(28, hudRect.h);
+        const hudX = hudRect.x;
+        const hudY = hudRect.y;
 
         this.hudPanel.clear();
         this.hudPanel.fillStyle(0x1a2838, 0.9);
@@ -1293,23 +1693,23 @@ export class GameScene extends Phaser.Scene {
         const padX = Phaser.Math.Clamp(this.uiW * 0.012, 10, 18);
         const leftX = hudX + padX;
         const rightX = hudX + hudW - padX;
-        const line1Y = hudY + hudH * 0.37;
+        const line1Y = hudY + (compactHud ? hudH * 0.5 : hudH * 0.37);
         const line2Y = hudY + hudH * 0.74;
 
         this.hudTurnText
             .setPosition(leftX, line1Y)
-            .setWordWrapWidth(hudW * 0.48, true)
-            .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.0108, 10, 14)}px`);
-        fitTextToBox(this.hudTurnText, this.hudTurnText.text, hudW * 0.48, hudH * 0.42, {
-            maxLines: 2,
+            .setWordWrapWidth(hudW * (compactHud ? 0.58 : 0.48), true)
+            .setFontSize(`${Phaser.Math.Clamp(this.uiW * (compactHud ? 0.0112 : 0.0108), 10, compactHud ? 15 : 14)}px`);
+        fitTextToBox(this.hudTurnText, this.hudTurnText.text, hudW * (compactHud ? 0.58 : 0.48), hudH * 0.44, {
+            maxLines: compactHud ? 1 : 2,
             ellipsis: true,
         });
         this.hudReactionText
             .setPosition(rightX, line1Y)
-            .setWordWrapWidth(hudW * 0.44, true)
+            .setWordWrapWidth(hudW * (compactHud ? 0.38 : 0.44), true)
             .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.01, 9, 13)}px`);
-        fitTextToBox(this.hudReactionText, this.hudReactionText.text, hudW * 0.44, hudH * 0.42, {
-            maxLines: 2,
+        fitTextToBox(this.hudReactionText, this.hudReactionText.text, hudW * (compactHud ? 0.38 : 0.44), hudH * 0.44, {
+            maxLines: 1,
             ellipsis: true,
         });
         this.hudStatsText
@@ -1317,7 +1717,7 @@ export class GameScene extends Phaser.Scene {
             .setWordWrapWidth(hudW * 0.7, true)
             .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.0098, 9, 13)}px`);
         fitTextToBox(this.hudStatsText, this.hudStatsText.text, hudW * 0.7, hudH * 0.42, {
-            maxLines: 2,
+            maxLines: compactHud ? 1 : 2,
             ellipsis: true,
         });
         this.hudStateText
@@ -1326,30 +1726,88 @@ export class GameScene extends Phaser.Scene {
             .setWordWrapWidth(hudW * 0.3, true)
             .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.0094, 9, 12)}px`);
         fitTextToBox(this.hudStateText, this.hudStateText.text, hudW * 0.3, hudH * 0.42, {
-            maxLines: 2,
+            maxLines: 1,
             ellipsis: true,
         });
+
+        if (compactHud) {
+            this.hudStatsText.setVisible(false);
+            this.hudStateText.setVisible(false);
+            this.hudReactionText.setVisible(this.hudReactionText.text.trim().length > 0);
+        } else {
+            this.hudStatsText.setVisible(true);
+            this.hudStateText.setVisible(true);
+            this.hudReactionText.setVisible(true);
+        }
     }
 
     private layoutGameLog() {
         const log = this.matchLayout?.log;
         if (!log) return;
+        if (!this.isLandscapeLayout) {
+            // Keep portrait mode clean and deterministic: avoid expanded log panels over board/controls.
+            this.gameLogExpanded = false;
+        }
+        const domDrivenLog = this.useDomMatchUi && !this.isPreLobbyPhase(this.serverManager?.room?.state?.phase);
+        if (domDrivenLog) {
+            this.gameLogPanel.setVisible(false);
+            this.gameLogTitle.setVisible(false);
+            this.gameLogBody.setVisible(false);
+            this.gameLogToggleBg.setVisible(false);
+            this.gameLogToggleHit.setVisible(false);
+            this.gameLogToggleLabel.setVisible(false);
+            if (this.gameLogToggleHit.input) this.gameLogToggleHit.input.enabled = false;
+            return;
+        }
+        if (!this.isLandscapeLayout) {
+            // Portrait hotfix: hide floating game log to prevent overlap with controls + hand.
+            this.gameLogPanel.setVisible(false);
+            this.gameLogTitle.setVisible(false);
+            this.gameLogBody.setVisible(false);
+            this.gameLogToggleBg.setVisible(false);
+            this.gameLogToggleHit.setVisible(false);
+            this.gameLogToggleLabel.setVisible(false);
+            if (this.gameLogToggleHit.input) this.gameLogToggleHit.input.enabled = false;
+            return;
+        }
 
         const content = this.matchLayout.content;
 
         const pad = 8;
         const compactPortrait = !this.isLandscapeLayout && this.uiW < 470;
-        const collapsedW = Phaser.Math.Clamp(log.w, 180, this.isLandscapeLayout ? 360 : 500);
-        const collapsedH = Phaser.Math.Clamp(log.h, 34, 52);
+        const compactLandscape = this.isCompactLandscapeLayout();
+        if (compactLandscape && this.gameLogExpanded) {
+            this.gameLogExpanded = false;
+        }
+        // Keep portrait log docked to top/log slot so it never overlays action controls.
+        const tinyPortraitDock = false;
+        const collapsedW = Phaser.Math.Clamp(
+            tinyPortraitDock ? this.matchLayout.controls.w * 0.46 : log.w,
+            this.isLandscapeLayout ? (compactLandscape ? 168 : 220) : (tinyPortraitDock ? 146 : 180),
+            this.isLandscapeLayout ? (compactLandscape ? 280 : 340) : (tinyPortraitDock ? 210 : 500),
+        );
+        const collapsedH = Phaser.Math.Clamp(
+            tinyPortraitDock ? this.matchLayout.controls.h * 0.58 : log.h,
+            compactLandscape ? 30 : (tinyPortraitDock ? 30 : 36),
+            compactLandscape ? 44 : (tinyPortraitDock ? 40 : 52),
+        );
         const expandedW = Phaser.Math.Clamp(content.w * (this.isLandscapeLayout ? 0.56 : 0.9), 280, 760);
         const expandedH = Phaser.Math.Clamp(this.matchLayout.board.h * (this.isLandscapeLayout ? 0.72 : 0.56), 180, 360);
         const logH = this.gameLogExpanded ? expandedH : collapsedH;
+        const compactDockX = this.matchLayout.controls.x + this.matchLayout.controls.w - collapsedW - 8;
+        const compactDockY = this.matchLayout.controls.y + this.matchLayout.controls.h - collapsedH - 4;
         const x = this.gameLogExpanded
             ? content.x + (content.w - expandedW) * 0.5
-            : log.x + Math.max(0, log.w - collapsedW);
+            : (tinyPortraitDock
+                ? compactDockX
+                : log.x + Math.max(0, log.w - collapsedW));
         const y = this.gameLogExpanded
             ? this.matchLayout.board.y + Math.max(8, this.matchLayout.board.h * 0.08)
-            : log.y;
+            : (
+                compactLandscape
+                    ? log.y
+                    : (tinyPortraitDock ? compactDockY : log.y)
+            );
         const w = this.gameLogExpanded ? expandedW : collapsedW;
         const headerH = this.gameLogExpanded ? 28 : collapsedH;
 
@@ -1359,18 +1817,26 @@ export class GameScene extends Phaser.Scene {
         this.gameLogPanel.lineStyle(1, 0x7ea3c8, this.gameLogExpanded ? 0.9 : 0.75);
         this.gameLogPanel.strokeRoundedRect(x, y, w, logH, 10);
 
-        this.gameLogTitle
-            .setPosition(x + pad, y + headerH * 0.52)
-            .setWordWrapWidth(this.gameLogExpanded ? w * 0.54 : w * 0.42, true)
-            .setFontSize(this.gameLogExpanded
-                ? `${Phaser.Math.Clamp(this.uiW * 0.0105, 10, 14)}px`
-                : `${Phaser.Math.Clamp(this.uiW * 0.0096, 9, 12)}px`);
-        this.gameLogTitle.setText(this.tr('game_log_title'));
-
         const toggleW = Phaser.Math.Clamp(w * (this.gameLogExpanded ? 0.18 : 0.24), 68, 100);
-        const toggleH = this.gameLogExpanded ? 18 : 20;
+        const toggleH = this.gameLogExpanded ? 18 : (compactLandscape ? 18 : 20);
         const toggleX = x + w - toggleW - pad;
         const toggleY = y + (this.gameLogExpanded ? 6 : (logH - toggleH) * 0.5);
+
+        this.gameLogTitle
+            .setPosition(x + pad, y + headerH * 0.52)
+            .setWordWrapWidth(Math.max(90, w - toggleW - pad * 3), true)
+            .setFontSize(this.gameLogExpanded
+                ? `${Phaser.Math.Clamp(this.uiW * 0.0105, 10, 14)}px`
+                : `${Phaser.Math.Clamp(this.uiW * 0.0096, compactLandscape ? 11 : 9, 12)}px`);
+        this.gameLogTitle.setText(this.tr('game_log_title'));
+        fitTextToBox(
+            this.gameLogTitle,
+            this.gameLogTitle.text,
+            Math.max(90, w - toggleW - pad * 3),
+            Math.max(16, headerH - 8),
+            { maxLines: 1, ellipsis: true },
+        );
+
         this.gameLogToggleBg.clear();
         this.gameLogToggleBg.fillStyle(0x315173, 0.92);
         this.gameLogToggleBg.fillRoundedRect(toggleX, toggleY, toggleW, toggleH, 7);
@@ -1381,26 +1847,31 @@ export class GameScene extends Phaser.Scene {
             .setSize(toggleW + 12, 44);
         this.gameLogToggleLabel
             .setPosition(toggleX + toggleW * 0.5, toggleY + toggleH * 0.5)
-            .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.0088, 9, 11)}px`)
+            .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.0088, compactLandscape ? 11 : 9, 11)}px`)
             .setText(this.gameLogExpanded ? this.tr('game_log_less') : this.tr('game_log_more'));
 
+        const showCollapsedBody = !this.gameLogExpanded && !this.isLandscapeLayout && !tinyPortraitDock && (!compactPortrait || this.uiW > 420);
         const bodyY = this.gameLogExpanded ? y + headerH + 2 : y + logH * 0.5;
         const maxBodyH = Math.max(0, logH - headerH - pad);
-        const maxLines = this.gameLogExpanded
-            ? Math.max(2, Math.floor(maxBodyH / 15))
-            : 1;
+        const maxLines = compactLandscape
+            ? (this.gameLogExpanded ? 2 : 1)
+            : (this.gameLogExpanded ? Math.max(2, Math.floor(maxBodyH / 15)) : 1);
         const rendered = this.gameLogEntries.slice(-maxLines).join('\n');
 
         this.gameLogBody
             .setPosition(x + pad, bodyY)
             .setOrigin(0, this.gameLogExpanded ? 0 : 0.5)
             .setWordWrapWidth(this.gameLogExpanded ? (w - (pad * 2)) : Math.max(80, w - (pad * 2) - toggleW - 8), true)
-            .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.0096, 9, 12)}px`)
-            .setVisible(this.gameLogExpanded ? maxBodyH > 10 : !compactPortrait || rendered.length > 0)
+            .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.0096, compactLandscape ? 11 : 9, 12)}px`)
+            .setVisible(this.gameLogExpanded ? maxBodyH > 10 : showCollapsedBody && rendered.length > 0)
             .setText(rendered.length > 0 ? rendered : this.tr('game_log_empty'));
 
-        if (!this.gameLogExpanded) {
+        if (!this.gameLogExpanded && showCollapsedBody) {
             this.gameLogBody.setText((this.gameLogEntries[this.gameLogEntries.length - 1] ?? this.tr('game_log_empty')).replace(/\n/g, ' '));
+            fitTextToBox(this.gameLogBody, this.gameLogBody.text, Math.max(80, w - (pad * 2) - toggleW - 8), 18, {
+                maxLines: 1,
+                ellipsis: true,
+            });
         }
     }
 
@@ -1422,6 +1893,8 @@ export class GameScene extends Phaser.Scene {
             this.toLayoutRect(this.actionPanelDetail.getBounds()),
             this.toLayoutRect(this.deckHit.getBounds()),
             this.toLayoutRect(this.endHit.getBounds()),
+            this.toLayoutRect(this.helpHit.getBounds()),
+            this.toLayoutRect(this.emoteHit.getBounds()),
             this.toLayoutRect(this.gameLogToggleHit.getBounds()),
             ...this.crisisViews
                 .map((view) => view.actionHit)
@@ -1449,15 +1922,194 @@ export class GameScene extends Phaser.Scene {
         this.reactionTitle.setPosition(cx, cy - 34).setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.035, 30, 54)}px`);
         this.reactionSubtitle.setPosition(cx, cy + 6).setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.013, 13, 18)}px`);
         this.redrawReactionBar();
+        this.layoutHelpOverlay();
         this.layoutCardInspectOverlay();
         this.layoutDiceToast();
+        this.layoutReconnectOverlay();
+        this.layoutReconnectDomOverlay();
+    }
+
+    private createReconnectDomOverlay() {
+        const root = ensureUiRoot();
+        if (!root) return;
+
+        removeUiRootChildById('game-reconnect-overlay');
+
+        const panel = document.createElement('div');
+        panel.id = 'game-reconnect-overlay';
+        panel.className = 'ui-reconnect-overlay';
+
+        const title = document.createElement('p');
+        title.className = 'ui-reconnect-title';
+        title.textContent = this.tr('game_reconnect_title');
+
+        const body = document.createElement('p');
+        body.className = 'ui-reconnect-body';
+        body.textContent = this.tr('game_reconnect_body', { attempt: 1, seconds: 30, retry: this.tr('game_reconnect_retry_now') });
+
+        panel.appendChild(title);
+        panel.appendChild(body);
+        root.appendChild(panel);
+
+        this.reconnectDomNode = panel;
+        this.reconnectDomTitle = title;
+        this.reconnectDomBody = body;
+        this.layoutReconnectDomOverlay();
+    }
+
+    private createMatchDomOverlay() {
+        if (!this.useDomMatchUi) return;
+        const root = ensureUiRoot();
+        if (!root) return;
+        this.matchDom?.destroy();
+        this.matchDom = new MatchUiDom(this.lang, {
+            onDraw: () => this.tryDrawCard(),
+            onEndTurn: () => this.tryEndTurn(),
+            onDetails: () => this.showActionDetailsOverlay(),
+            onToggleLog: () => this.toggleGameLog(),
+            onHelp: () => this.showHelpOverlay(),
+            onEmote: () => this.sendQuickEmote(),
+        });
+        this.matchDom.setVisible(true);
+        if (this.matchLayout) {
+            this.matchDom.applyLayout(this.matchLayout);
+        }
+    }
+
+    private layoutReconnectDomOverlay() {
+        const node = this.reconnectDomNode;
+        if (!node) return;
+        const compactLandscape = this.isCompactLandscapeLayout();
+        if (compactLandscape) {
+            node.style.width = 'min(64vw, 520px)';
+        } else if (this.matchLayout?.tier === 'D' || this.matchLayout?.tier === 'E') {
+            node.style.width = 'min(62vw, 620px)';
+        } else {
+            node.style.width = 'min(92vw, 560px)';
+        }
+    }
+
+    private setReconnectDomVisible(visible: boolean, title?: string, body?: string) {
+        if (!this.reconnectDomNode) return;
+        if (title && this.reconnectDomTitle) this.reconnectDomTitle.textContent = title;
+        if (body && this.reconnectDomBody) this.reconnectDomBody.textContent = body;
+        this.reconnectDomNode.classList.toggle('active', visible);
+    }
+
+    private layoutReconnectOverlay() {
+        const cx = this.screenW * 0.5;
+        const cy = this.screenH * 0.5;
+        const panelW = Phaser.Math.Clamp(this.screenW * (this.isLandscapeLayout ? 0.52 : 0.88), 260, 560);
+        const panelH = Phaser.Math.Clamp(this.screenH * (this.isLandscapeLayout ? 0.34 : 0.26), 132, 240);
+        const panelX = cx - panelW * 0.5;
+        const panelY = cy - panelH * 0.5;
+
+        this.reconnectOverlay.setPosition(cx, cy).setSize(this.screenW, this.screenH);
+        this.reconnectPanel.clear();
+        this.reconnectPanel.fillStyle(0x1d2b3b, 0.97);
+        this.reconnectPanel.fillRoundedRect(panelX, panelY, panelW, panelH, 18);
+        this.reconnectPanel.fillStyle(0xffffff, 0.08);
+        this.reconnectPanel.fillRoundedRect(panelX + 3, panelY + 3, panelW - 6, 40, { tl: 14, tr: 14, bl: 0, br: 0 });
+        this.reconnectPanel.lineStyle(1.8, 0xb9d5ef, 0.92);
+        this.reconnectPanel.strokeRoundedRect(panelX, panelY, panelW, panelH, 18);
+
+        this.reconnectTitle
+            .setPosition(cx, panelY + 18)
+            .setWordWrapWidth(panelW - 30)
+            .setFontSize(`${Phaser.Math.Clamp(panelW * 0.052, 16, 26)}px`);
+        fitTextToBox(this.reconnectTitle, this.reconnectTitle.text, panelW - 30, 52, { maxLines: 2, ellipsis: true });
+
+        const bodyY = panelY + 68;
+        const bodyH = panelH - 80;
+        this.reconnectBody
+            .setPosition(cx, bodyY)
+            .setWordWrapWidth(panelW - 36)
+            .setFontSize(`${Phaser.Math.Clamp(panelW * 0.028, 12, 15)}px`);
+        fitTextToBox(this.reconnectBody, this.reconnectBody.text, panelW - 36, bodyH, { maxLines: 4, ellipsis: true });
+
+        if (!this.reconnectActive) {
+            this.reconnectOverlay.setVisible(false);
+            this.reconnectPanel.setVisible(false);
+            this.reconnectTitle.setVisible(false);
+            this.reconnectBody.setVisible(false);
+        }
+    }
+
+    private layoutHelpOverlay() {
+        const cx = this.screenW * 0.5;
+        const cy = this.screenH * 0.5;
+        const panelW = Phaser.Math.Clamp(this.screenW * (this.isLandscapeLayout ? 0.72 : 0.94), 300, 860);
+        const panelH = Phaser.Math.Clamp(this.screenH * (this.isLandscapeLayout ? 0.82 : 0.9), 280, 760);
+        const panelX = cx - panelW * 0.5;
+        const panelY = cy - panelH * 0.5;
+
+        this.helpOverlay.setPosition(cx, cy).setSize(this.screenW, this.screenH);
+
+        this.helpPanel.clear();
+        this.helpPanel.fillStyle(0x1b2b3d, 0.97);
+        this.helpPanel.fillRoundedRect(panelX, panelY, panelW, panelH, 20);
+        this.helpPanel.fillStyle(0xffffff, 0.08);
+        this.helpPanel.fillRoundedRect(panelX + 3, panelY + 3, panelW - 6, 40, { tl: 16, tr: 16, bl: 0, br: 0 });
+        this.helpPanel.lineStyle(2, 0xbad5ee, 0.92);
+        this.helpPanel.strokeRoundedRect(panelX, panelY, panelW, panelH, 20);
+        this.helpPanel.lineStyle(1, 0x92acc2, 0.22);
+        this.helpPanel.strokeRoundedRect(panelX + 4, panelY + 4, panelW - 8, panelH - 8, 16);
+
+        const closeSize = Phaser.Math.Clamp(panelW * 0.05, 30, 40);
+        const closeCx = panelX + panelW - closeSize * 0.5 - 14;
+        const closeCy = panelY + closeSize * 0.5 + 12;
+        this.helpCloseBtn.clear();
+        this.helpCloseBtn.fillStyle(0x2d4257, 0.98);
+        this.helpCloseBtn.fillCircle(closeCx, closeCy, closeSize * 0.5);
+        this.helpCloseBtn.lineStyle(2, 0xf0f8ff, 0.95);
+        this.helpCloseBtn.strokeCircle(closeCx, closeCy, closeSize * 0.5);
+        this.helpCloseHit
+            .setPosition(closeCx, closeCy)
+            .setSize(closeSize + 14, closeSize + 14);
+        this.helpCloseLabel
+            .setPosition(closeCx, closeCy - 1)
+            .setFontSize(`${Phaser.Math.Clamp(closeSize * 0.56, 18, 24)}px`);
+
+        this.helpTitle
+            .setPosition(cx, panelY + 16)
+            .setWordWrapWidth(panelW - 60)
+            .setFontSize(`${Phaser.Math.Clamp(panelW * 0.036, 18, 30)}px`);
+        fitTextToBox(this.helpTitle, this.helpTitle.text, panelW - 60, 46, {
+            maxLines: 2,
+            ellipsis: true,
+        });
+
+        const bodyY = panelY + 66;
+        const bodyMaxH = panelH - 82;
+        this.helpBody
+            .setPosition(cx, bodyY)
+            .setWordWrapWidth(panelW - 44)
+            .setFontSize(`${Phaser.Math.Clamp(panelW * 0.019, 12, 17)}px`);
+        fitTextToBox(this.helpBody, this.helpBody.text, panelW - 44, bodyMaxH, {
+            maxLines: Math.max(6, Math.floor(bodyMaxH / Phaser.Math.Clamp(panelW * 0.021, 18, 28))),
+            ellipsis: true,
+        });
+
+        if (!this.helpVisible) {
+            this.helpPanel.setVisible(false);
+            this.helpTitle.setVisible(false);
+            this.helpBody.setVisible(false);
+            this.helpCloseBtn.setVisible(false);
+            this.helpCloseHit.setVisible(false);
+            this.helpCloseLabel.setVisible(false);
+        }
     }
 
     private layoutCardInspectOverlay() {
         const cx = this.screenW * 0.5;
         const cy = this.screenH * 0.5;
-        const panelW = Phaser.Math.Clamp(this.screenW * (this.isLandscapeLayout ? 0.74 : 0.96), 320, 900);
-        const panelH = Phaser.Math.Clamp(this.screenH * (this.isLandscapeLayout ? 0.84 : 0.9), 320, 780);
+        const safePad = this.isLandscapeLayout ? 18 : 12;
+        const maxPanelW = Math.max(280, this.screenW - safePad * 2);
+        const maxPanelH = Math.max(280, this.screenH - safePad * 2);
+        const panelW = this.isLandscapeLayout
+            ? Phaser.Math.Clamp(Math.min(this.screenW * 0.7, 760), 360, maxPanelW)
+            : Phaser.Math.Clamp(Math.min(this.screenW * 0.92, 420), 300, maxPanelW);
+        const panelH = Phaser.Math.Clamp(this.screenH * 0.88, 320, maxPanelH);
         const panelX = cx - panelW * 0.5;
         const panelY = cy - panelH * 0.5;
 
@@ -1488,10 +2140,32 @@ export class GameScene extends Phaser.Scene {
         this.cardInspectPanel.lineStyle(1, 0x6e655c, 0.24);
         this.cardInspectPanel.strokeRoundedRect(panelX + 4, panelY + 4, panelW - 8, panelH - 8, 16);
 
-        const artX = panelX + 18;
-        const artY = panelY + panelH * 0.18;
-        const artW = panelW - 36;
-        const artH = panelH * (this.isLandscapeLayout ? 0.3 : 0.34);
+        const textureRatio = this.getInspectArtworkRatio();
+        const artPad = this.isLandscapeLayout ? 22 : 20;
+        const artMaxW = panelW - 36;
+        const artMinW = Phaser.Math.Clamp(panelW * (this.isLandscapeLayout ? 0.42 : 0.62), 220, artMaxW);
+        const artMaxH = Phaser.Math.Clamp(panelH * (this.isLandscapeLayout ? 0.41 : 0.39), 170, 260);
+        const artMinH = Phaser.Math.Clamp(panelH * (this.isLandscapeLayout ? 0.2 : 0.22), 150, 220);
+        const headerBottomY = panelY + Phaser.Math.Clamp(panelH * 0.205, 78, 138);
+
+        let artH = Phaser.Math.Clamp((artMaxW - artPad) / textureRatio + artPad, artMinH, artMaxH);
+        let artW = Phaser.Math.Clamp((artH - artPad) * textureRatio + artPad, artMinW, artMaxW);
+
+        const minBodyH = Phaser.Math.Clamp(panelH * 0.28, 96, 220);
+        const hintY = panelY + panelH - 14;
+        let artY = headerBottomY;
+        let bodyY = artY + artH + 18;
+        let bodyMaxH = hintY - bodyY - 10;
+        if (bodyMaxH < minBodyH) {
+            const reduceBy = Math.min(minBodyH - bodyMaxH, artH - artMinH);
+            artH -= reduceBy;
+            artW = Phaser.Math.Clamp((artH - artPad) * textureRatio + artPad, artMinW, artMaxW);
+            bodyY = artY + artH + 18;
+            bodyMaxH = hintY - bodyY - 10;
+        }
+        bodyMaxH = Math.max(84, bodyMaxH);
+        const artX = panelX + (panelW - artW) * 0.5;
+
         const artTint = typeValue === CardType.MONSTER ? 0x375273
             : typeValue === CardType.ITEM ? 0x5b625c
                 : typeValue === CardType.HERO || typeValue === CardType.EMPLOYEE ? 0x365a47
@@ -1506,6 +2180,10 @@ export class GameScene extends Phaser.Scene {
         this.cardInspectArtwork.strokeRoundedRect(artX, artY, artW, artH, 16);
         this.cardInspectArtwork.lineStyle(1, 0xffffff, 0.22);
         this.cardInspectArtwork.strokeRoundedRect(artX + 3, artY + 3, artW - 6, artH - 6, 12);
+        this.cardInspectArtworkMaskShape.clear();
+        this.cardInspectArtworkMaskShape.fillStyle(0xffffff, 1);
+        this.cardInspectArtworkMaskShape.fillRoundedRect(artX + 5, artY + 5, Math.max(1, artW - 10), Math.max(1, artH - 10), 10);
+        this.cardInspectArtworkMaskShape.setVisible(this.cardInspectVisible || this.cardInspectAnimating);
         this.layoutCardInspectArtworkImage(artX, artY, artW, artH);
 
         const closeSize = Phaser.Math.Clamp(panelW * 0.052, 30, 42);
@@ -1541,24 +2219,42 @@ export class GameScene extends Phaser.Scene {
             ellipsis: true,
         });
         this.cardInspectBody
-            .setPosition(cx, artY + artH + 18)
+            .setPosition(cx, bodyY)
             .setWordWrapWidth(panelW - 38)
             .setLineSpacing(4)
             .setColor('#2a2f37')
             .setFontSize(`${Phaser.Math.Clamp(panelW * 0.019, 14, 21)}px`);
+        fitTextToBox(this.cardInspectBody, this.cardInspectBody.text, panelW - 38, bodyMaxH, {
+            maxLines: Math.max(3, Math.floor(bodyMaxH / Phaser.Math.Clamp(panelW * 0.019 * 1.28, 18, 28))),
+            ellipsis: true,
+        });
         this.cardInspectHint
-            .setPosition(cx, panelY + panelH - 14)
+            .setPosition(cx, hintY)
             .setColor('#4b6075')
             .setFontSize(`${Phaser.Math.Clamp(panelW * 0.014, 11, 14)}px`);
 
-        if (!this.cardInspectVisible) {
+        if (!this.cardInspectVisible && !this.cardInspectAnimating) {
             this.cardInspectPanel.setVisible(false);
             this.cardInspectArtwork.setVisible(false);
             this.cardInspectArtworkImage.setVisible(false);
+            this.cardInspectArtworkMaskShape.setVisible(false);
             this.cardInspectCloseBtn.setVisible(false);
             this.cardInspectCloseHit.setVisible(false);
             this.cardInspectCloseLabel.setVisible(false);
         }
+    }
+
+    private getInspectArtworkRatio(): number {
+        if (!this.inspectedCard) return 1.35;
+        const textureKey = resolveCardArtworkTexture(this, this.inspectedCard);
+        if (!textureKey || !this.textures.exists(textureKey)) return 1.35;
+        const sourceImage = this.textures.get(textureKey)?.getSourceImage() as { width?: number; height?: number } | undefined;
+        const sourceW = Number(sourceImage?.width ?? 0);
+        const sourceH = Number(sourceImage?.height ?? 0);
+        if (!Number.isFinite(sourceW) || !Number.isFinite(sourceH) || sourceW <= 0 || sourceH <= 0) {
+            return 1.35;
+        }
+        return Phaser.Math.Clamp(sourceW / sourceH, 0.65, 1.9);
     }
 
     private layoutCardInspectArtworkImage(artX: number, artY: number, artW: number, artH: number) {
@@ -1580,17 +2276,23 @@ export class GameScene extends Phaser.Scene {
         const frame = this.cardInspectArtworkImage.frame;
         const sourceW = Math.max(1, frame.realWidth || frame.width);
         const sourceH = Math.max(1, frame.realHeight || frame.height);
-        const scale = Math.min((artW - 12) / sourceW, (artH - 12) / sourceH);
+        const scale = Math.min((artW - 10) / sourceW, (artH - 10) / sourceH);
+        if (!Number.isFinite(scale) || scale <= 0) {
+            this.cardInspectArtworkImage.setVisible(false);
+            return;
+        }
         this.cardInspectArtworkImage.setDisplaySize(
             Math.max(1, Math.floor(sourceW * scale)),
             Math.max(1, Math.floor(sourceH * scale)),
         );
-        this.cardInspectArtworkImage.setVisible(this.cardInspectVisible);
+        this.cardInspectArtworkImage.setVisible(this.cardInspectVisible || this.cardInspectAnimating);
     }
 
     private layoutDiceToast() {
         const toastW = Phaser.Math.Clamp(this.uiW * (this.isLandscapeLayout ? 0.42 : 0.9), 240, 540);
-        const toastH = Phaser.Math.Clamp(this.screenH * 0.13, 66, 110);
+        const lineCount = Math.max(1, String(this.diceToastText?.text ?? '').split('\n').length);
+        const dynamicHeight = this.screenH * 0.1 + lineCount * 14;
+        const toastH = Phaser.Math.Clamp(dynamicHeight, 66, 148);
         const x = this.uiX + this.uiW * 0.5 - toastW * 0.5;
         const y = this.matchLayout?.board?.y
             ? this.matchLayout.board.y + 10
@@ -1665,20 +2367,34 @@ export class GameScene extends Phaser.Scene {
     }
 
     private showCardInspect(card: ICardData) {
+        if (this.helpVisible) this.hideHelpOverlay();
+        this.matchDom?.setInteractionEnabled(false);
+        if (this.cardInspectCloseTween) {
+            this.cardInspectCloseTween.stop();
+            this.cardInspectCloseTween = undefined;
+        }
+        if (this.cardInspectOpenTween) {
+            this.cardInspectOpenTween.stop();
+            this.cardInspectOpenTween = undefined;
+        }
+
         this.inspectedCard = card;
-        const presentation = buildInspectPresentation(card, this.tr.bind(this));
+        const presentation = buildInspectPresentation(card, this.lang, this.tr.bind(this));
         this.cardInspectTitle.setText(presentation.title);
         this.cardInspectType.setText(presentation.meta);
         this.cardInspectBody.setText(presentation.lines.join('\n\n'));
         this.cardInspectHint.setText(this.tr('game_close_hint'));
 
         this.cardInspectVisible = true;
-        this.cardInspectOverlay.setVisible(true);
+        this.cardInspectAnimating = true;
+        this.cardInspectOverlay.setVisible(true).setAlpha(0);
         this.cardInspectPanel.setVisible(true);
         this.cardInspectArtwork.setVisible(true);
-        this.cardInspectArtworkImage.setVisible(false);
+        this.cardInspectArtworkMaskShape.setVisible(true);
+        this.cardInspectArtworkImage.setVisible(false).setAlpha(0);
         this.cardInspectCloseBtn.setVisible(true);
         this.cardInspectCloseHit.setVisible(true);
+        if (this.cardInspectCloseHit.input) this.cardInspectCloseHit.input.enabled = true;
         this.cardInspectCloseLabel.setVisible(true);
         this.cardInspectTitle.setVisible(true);
         this.cardInspectType.setVisible(true);
@@ -1694,23 +2410,235 @@ export class GameScene extends Phaser.Scene {
         });
 
         this.layoutCardInspectOverlay();
+
+        const panelTargets: Array<Phaser.GameObjects.GameObject & { alpha: number; scaleX: number; scaleY: number }> = [
+            this.cardInspectPanel,
+            this.cardInspectArtwork,
+        ];
+        panelTargets.forEach((target) => {
+            target.alpha = 0;
+            target.scaleX = 0.965;
+            target.scaleY = 0.965;
+        });
+
+        const textTargets: Array<Phaser.GameObjects.GameObject & { alpha: number }> = [
+            this.cardInspectCloseBtn,
+            this.cardInspectCloseLabel,
+            this.cardInspectTitle,
+            this.cardInspectType,
+            this.cardInspectBody,
+            this.cardInspectHint,
+        ];
+        textTargets.forEach((target) => {
+            target.alpha = 0;
+        });
+        this.cardInspectArtworkImage.alpha = 0;
+
+        this.tweens.add({
+            targets: this.cardInspectOverlay,
+            alpha: 0.72,
+            duration: 140,
+            ease: 'Sine.Out',
+        });
+
+        this.tweens.add({
+            targets: [...textTargets, this.cardInspectArtworkImage],
+            alpha: 1,
+            duration: 190,
+            ease: 'Cubic.Out',
+        });
+
+        this.cardInspectOpenTween = this.tweens.add({
+            targets: panelTargets,
+            alpha: 1,
+            scaleX: 1,
+            scaleY: 1,
+            duration: 190,
+            ease: 'Cubic.Out',
+            onComplete: () => {
+                this.cardInspectAnimating = false;
+            },
+        });
     }
 
     private hideCardInspect() {
-        if (!this.cardInspectVisible) return;
+        if (!this.cardInspectVisible && !this.cardInspectAnimating) return;
+        if (this.cardInspectOpenTween) {
+            this.cardInspectOpenTween.stop();
+            this.cardInspectOpenTween = undefined;
+        }
+
         this.cardInspectVisible = false;
-        this.inspectedCard = undefined;
-        this.cardInspectOverlay.setVisible(false);
-        this.cardInspectPanel.setVisible(false);
-        this.cardInspectArtwork.setVisible(false);
-        this.cardInspectArtworkImage.setVisible(false);
-        this.cardInspectCloseBtn.setVisible(false);
         this.cardInspectCloseHit.setVisible(false);
-        this.cardInspectCloseLabel.setVisible(false);
-        this.cardInspectTitle.setVisible(false);
-        this.cardInspectType.setVisible(false);
-        this.cardInspectBody.setVisible(false);
-        this.cardInspectHint.setVisible(false);
+        if (this.cardInspectCloseHit.input) this.cardInspectCloseHit.input.enabled = false;
+        this.cardInspectAnimating = true;
+
+        const panelFadeTargets: Array<Phaser.GameObjects.GameObject & { alpha: number; scaleX?: number; scaleY?: number }> = [
+            this.cardInspectPanel,
+            this.cardInspectArtwork,
+            this.cardInspectArtworkMaskShape,
+        ];
+        const textFadeTargets: Array<Phaser.GameObjects.GameObject & { alpha: number }> = [
+            this.cardInspectArtworkImage,
+            this.cardInspectCloseBtn,
+            this.cardInspectCloseLabel,
+            this.cardInspectTitle,
+            this.cardInspectType,
+            this.cardInspectBody,
+            this.cardInspectHint,
+        ];
+
+        this.tweens.add({
+            targets: textFadeTargets,
+            alpha: 0,
+            duration: 130,
+            ease: 'Sine.In',
+        });
+
+        this.cardInspectCloseTween = this.tweens.add({
+            targets: panelFadeTargets,
+            alpha: 0,
+            scaleX: 0.97,
+            scaleY: 0.97,
+            duration: 150,
+            ease: 'Sine.In',
+            onComplete: () => {
+                this.cardInspectOverlay.setVisible(false).setAlpha(1);
+                this.cardInspectPanel.setVisible(false).setAlpha(1).setScale(1);
+                this.cardInspectArtwork.setVisible(false).setAlpha(1).setScale(1);
+                this.cardInspectArtworkMaskShape.setVisible(false).setAlpha(1).setScale(1);
+                this.cardInspectArtworkImage.setVisible(false).setAlpha(1);
+                this.cardInspectCloseBtn.setVisible(false).setAlpha(1);
+                this.cardInspectCloseLabel.setVisible(false).setAlpha(1);
+                this.cardInspectTitle.setVisible(false).setAlpha(1);
+                this.cardInspectType.setVisible(false).setAlpha(1);
+                this.cardInspectBody.setVisible(false).setAlpha(1);
+                this.cardInspectHint.setVisible(false).setAlpha(1);
+                this.inspectedCard = undefined;
+                this.cardInspectAnimating = false;
+                if (!this.helpVisible) {
+                    this.matchDom?.setInteractionEnabled(true);
+                }
+            },
+        });
+
+        this.tweens.add({
+            targets: this.cardInspectOverlay,
+            alpha: 0,
+            duration: 140,
+            ease: 'Sine.In',
+        });
+    }
+
+    private showActionDetailsOverlay() {
+        const room = this.serverManager?.room;
+        const state = room?.state as IGameState | undefined;
+        const me = room
+            ? (state?.players as unknown as Map<string, IPlayer> | undefined)?.get(room.sessionId)
+            : undefined;
+        if (!room || !state || !me) {
+            this.showHelpOverlay();
+            return;
+        }
+
+        const active = (state.players as unknown as Map<string, IPlayer>).get(state.currentTurnPlayerId);
+        const actionState = evaluateMatchActionState({ state, me, myId: room.sessionId });
+        const panelModel = buildActionPanelModel(
+            actionState,
+            String(active?.username ?? this.tr('game_unknown_player')),
+            this.tr.bind(this),
+            this.localizeActionBlockReason.bind(this),
+        );
+        const contextHint = buildMatchContextHint({
+            phase: state.phase,
+            actionState,
+            pendingAction: this.hasPendingPlayInFlight(),
+            tr: this.tr.bind(this),
+            localizeReason: this.localizeActionBlockReason.bind(this),
+        });
+        const bodyLines = [panelModel.hint, panelModel.detail, contextHint]
+            .map((line) => String(line ?? '').trim())
+            .filter((line) => line.length > 0);
+        this.showHelpOverlay({
+            title: this.tr('game_action_details_title'),
+            body: bodyLines.join('\n\n'),
+        });
+    }
+
+    private showHelpOverlay(custom?: { title: string; body: string }) {
+        if (this.helpVisible) return;
+        this.helpVisible = true;
+        this.matchDom?.setInteractionEnabled(false);
+        this.hideTargetSelector();
+        if (this.cardInspectVisible) this.hideCardInspect();
+
+        if (custom) {
+            this.helpTitle.setText(custom.title);
+            this.helpBody.setText(`${custom.body}\n\n${this.tr('game_help_close_hint')}`);
+        } else {
+            const helpContent = buildMatchHelpContent(this.tr.bind(this));
+            this.helpTitle.setText(helpContent.title);
+            this.helpBody.setText(`${helpContent.sections.map((section) => `${section.title}\n${section.body}`).join('\n\n')}\n\n${helpContent.closeHint}`);
+        }
+        this.layoutHelpOverlay();
+
+        this.helpOverlay.setVisible(true).setAlpha(0);
+        this.helpPanel.setVisible(true).setAlpha(0);
+        this.helpTitle.setVisible(true).setAlpha(0);
+        this.helpBody.setVisible(true).setAlpha(0);
+        this.helpCloseBtn.setVisible(true).setAlpha(0);
+        this.helpCloseHit.setVisible(true).setAlpha(0);
+        this.helpCloseLabel.setVisible(true).setAlpha(0);
+        if (this.helpCloseHit.input) this.helpCloseHit.input.enabled = true;
+
+        this.tweens.add({
+            targets: [
+                this.helpOverlay,
+                this.helpPanel,
+                this.helpTitle,
+                this.helpBody,
+                this.helpCloseBtn,
+                this.helpCloseHit,
+                this.helpCloseLabel,
+            ],
+            alpha: 1,
+            duration: 160,
+            ease: 'Sine.Out',
+        });
+    }
+
+    private hideHelpOverlay() {
+        if (!this.helpVisible) return;
+        this.helpVisible = false;
+        if (this.helpCloseHit.input) this.helpCloseHit.input.enabled = false;
+
+        this.tweens.add({
+            targets: [
+                this.helpOverlay,
+                this.helpPanel,
+                this.helpTitle,
+                this.helpBody,
+                this.helpCloseBtn,
+                this.helpCloseHit,
+                this.helpCloseLabel,
+            ],
+            alpha: 0,
+            duration: 140,
+            ease: 'Sine.In',
+            onComplete: () => {
+                if (this.helpVisible) return;
+                this.helpOverlay.setVisible(false).setAlpha(1);
+                this.helpPanel.setVisible(false).setAlpha(1);
+                this.helpTitle.setVisible(false).setAlpha(1);
+                this.helpBody.setVisible(false).setAlpha(1);
+                this.helpCloseBtn.setVisible(false).setAlpha(1);
+                this.helpCloseHit.setVisible(false).setAlpha(1);
+                this.helpCloseLabel.setVisible(false).setAlpha(1);
+                if (!this.cardInspectVisible && !this.cardInspectAnimating) {
+                    this.matchDom?.setInteractionEnabled(true);
+                }
+            },
+        });
     }
 
     private handleStateChange(state: IGameState) {
@@ -1760,6 +2688,7 @@ export class GameScene extends Phaser.Scene {
         this.updateHud(state, me, myId);
         this.updateLobby(state, myId, me);
         this.updateControls(state, me, myId);
+        this.applyQaOverlayIfNeeded();
 
         if (state.phase === GamePhase.REACTION_WINDOW && !this.reactionVisible) {
             const remaining = state.reactionEndTime ? Math.max(250, state.reactionEndTime - Date.now()) : 5000;
@@ -1771,9 +2700,32 @@ export class GameScene extends Phaser.Scene {
         }
     }
 
+    private applyQaOverlayIfNeeded() {
+        if (this.qaOverlayApplied) return;
+        if (!this.qaInspectRequested && !this.qaHelpRequested) return;
+
+        if (this.qaInspectRequested && !this.cardInspectVisible) {
+            const card = this.handCards[0]?.cardData ?? this.companyCards[0]?.cardData ?? this.crisisViews[0]?.crisis;
+            if (card) {
+                this.showCardInspect(card);
+            }
+        } else if (this.qaHelpRequested && !this.helpVisible) {
+            this.showHelpOverlay();
+        }
+
+        const inspectReady = !this.qaInspectRequested || this.cardInspectVisible;
+        const helpReady = !this.qaHelpRequested || this.helpVisible;
+        if (inspectReady && helpReady) {
+            this.qaOverlayApplied = true;
+        }
+    }
+
     private redirectToPreLobby() {
         if (this.redirectingToPreLobby) return;
         this.redirectingToPreLobby = true;
+        if (this.helpVisible) this.hideHelpOverlay();
+        if (this.cardInspectVisible) this.hideCardInspect();
+        this.hideTargetSelector();
         this.scene.start('PreLobbyScene', {
             serverManager: this.serverManager,
             lang: this.lang,
@@ -1809,59 +2761,41 @@ export class GameScene extends Phaser.Scene {
         const opponents = players.filter((p) => p.sessionId !== myId);
         const active = (state.players as unknown as Map<string, IPlayer>).get(state.currentTurnPlayerId);
 
-        const handCount = Number((me.hand as unknown as ICardData[])?.length ?? 0);
-        const companyCards = (me.company as unknown as ICardData[]) ?? [];
-        const companyCount = companyCards.length;
-        const equippedCount = companyCards.reduce((sum, card) => {
-            const eq = Number((card as any)?.equippedItems?.length ?? 0);
-            return sum + (Number.isFinite(eq) ? Math.max(0, eq) : 0);
-        }, 0);
         const deckCount = Number(state.deckCount ?? 0);
         const discardCount = this.estimateDiscardCount(state);
-
-        const oppScore = opponents.length > 0
-            ? opponents
-                .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-                .slice(0, 3)
-                .map((p) => `${this.compactName(p.username, 7)}:${p.score ?? 0}`)
-                .join('  ')
-            : this.tr('game_waiting_opponents');
-
-        const turnLabel = active
-            ? (active.sessionId === myId ? this.tr('game_turn_your') : this.tr('game_turn_other', { name: active.username }))
-            : this.tr('game_waiting');
-        this.hudTurnText.setText(turnLabel);
-
-        this.hudStatsText.setText(this.tr('game_hud_stats', {
-            ap: me.actionPoints ?? 0,
-            score: me.score ?? 0,
-            deck: deckCount,
-            discard: discardCount,
-            hand: handCount,
-            company: companyCount,
-            equipped: equippedCount,
-        }));
-
-        this.hudStateText.setText(this.tr('game_hud_phase', {
+        const compactHud = this.isCompactLandscapeLayout() || this.uiW < 560;
+        const hud = buildHudModel({
+            me,
+            opponents,
+            activePlayer: active,
+            myId,
+            deckCount,
+            discardCount,
+            reactionActive: state.phase === GamePhase.REACTION_WINDOW,
             phase: String(state.phase ?? '').replace(/_/g, ' '),
-        }));
-
-        const reactionText = state.phase === GamePhase.REACTION_WINDOW
-            ? this.tr('game_hud_reaction_active')
-            : this.tr('game_hud_reaction_idle');
-        this.hudReactionText.setText(reactionText);
-
-        this.topTitle.setText(this.tr('game_hud_opponents', { value: oppScore }));
-
+            compact: compactHud,
+            tr: this.tr.bind(this),
+        });
+        this.hudTurnText.setText(hud.turnLabel);
+        this.hudStatsText.setText(hud.statsLabel);
+        this.hudStateText.setText(hud.phaseLabel);
+        this.hudReactionText.setText(hud.reactionLabel);
+        if (compactHud) {
+            this.topTitle.setText(this.tr('game_hud_opponents', { value: this.tr('game_opponents_count', { count: opponents.length }) }));
+        } else {
+            this.topTitle.setText(hud.opponentsLabel);
+        }
         const getWrap = (textObj: Phaser.GameObjects.Text, fallback: number) => {
             const raw = Number((textObj.style as any)?.wordWrapWidth ?? fallback);
             return Number.isFinite(raw) && raw > 0 ? raw : fallback;
         };
-        fitTextToBox(this.hudTurnText, this.hudTurnText.text, getWrap(this.hudTurnText, this.uiW * 0.46), Math.max(20, this.topH * 0.18), { maxLines: 2, ellipsis: true });
-        fitTextToBox(this.hudReactionText, this.hudReactionText.text, getWrap(this.hudReactionText, this.uiW * 0.4), Math.max(20, this.topH * 0.18), { maxLines: 2, ellipsis: true });
-        fitTextToBox(this.hudStatsText, this.hudStatsText.text, getWrap(this.hudStatsText, this.uiW * 0.66), Math.max(20, this.topH * 0.18), { maxLines: 2, ellipsis: true });
-        fitTextToBox(this.hudStateText, this.hudStateText.text, getWrap(this.hudStateText, this.uiW * 0.28), Math.max(20, this.topH * 0.18), { maxLines: 2, ellipsis: true });
-        fitTextToBox(this.topTitle, this.topTitle.text, getWrap(this.topTitle, this.uiW * 0.54), Math.max(22, this.topH * 0.24), { maxLines: 2, ellipsis: true });
+        const hudHeightCap = Math.max(20, this.matchLayout.hud.h * 0.46);
+        fitTextToBox(this.hudTurnText, this.hudTurnText.text, getWrap(this.hudTurnText, this.uiW * 0.46), hudHeightCap, { maxLines: 2, ellipsis: true });
+        fitTextToBox(this.hudReactionText, this.hudReactionText.text, getWrap(this.hudReactionText, this.uiW * 0.4), hudHeightCap, { maxLines: 2, ellipsis: true });
+        fitTextToBox(this.hudStatsText, this.hudStatsText.text, getWrap(this.hudStatsText, this.uiW * 0.66), hudHeightCap, { maxLines: 2, ellipsis: true });
+        fitTextToBox(this.hudStateText, this.hudStateText.text, getWrap(this.hudStateText, this.uiW * 0.28), hudHeightCap, { maxLines: 2, ellipsis: true });
+        fitTextToBox(this.topTitle, this.topTitle.text, getWrap(this.topTitle, this.uiW * 0.54), Math.max(22, this.matchLayout.topBar.h * 0.24), { maxLines: 2, ellipsis: true });
+        this.refreshMatchDomUi();
     }
 
     private estimateDiscardCount(state: IGameState): number {
@@ -1978,18 +2912,39 @@ export class GameScene extends Phaser.Scene {
     }
 
     private updateControls(state: IGameState, me: IPlayer, myId: string) {
-        const actionState = evaluateMatchActionState({ state, me, myId });
+        const baseState = evaluateMatchActionState({ state, me, myId });
+        const pendingAction = this.hasPendingPlayInFlight();
+        const actionState: MatchActionState = pendingAction
+            ? {
+                ...baseState,
+                canDraw: false,
+                canEndTurn: false,
+                canAttackMonster: false,
+                drawReasonKey: 'game_reason_action_pending',
+                endReasonKey: 'game_reason_action_pending',
+                attackReasonKey: 'game_reason_action_pending',
+            }
+            : baseState;
 
-        if (this.deckHit.input) this.deckHit.input.enabled = true;
-        if (this.endHit.input) this.endHit.input.enabled = true;
+        const domMatchUiActive = this.useDomMatchUi && !this.isPreLobbyPhase(state.phase);
+        if (domMatchUiActive) {
+            if (this.deckHit.input) this.deckHit.input.enabled = false;
+            if (this.endHit.input) this.endHit.input.enabled = false;
+            if (this.helpHit.input) this.helpHit.input.enabled = false;
+            if (this.emoteHit.input) this.emoteHit.input.enabled = false;
+            if (this.gameLogToggleHit.input) this.gameLogToggleHit.input.enabled = false;
+        } else {
+            if (this.deckHit.input) this.deckHit.input.enabled = true;
+            if (this.endHit.input) this.endHit.input.enabled = true;
+        }
 
         this.drawDeckButton(actionState.canDraw);
         this.drawEndButton(actionState.canEndTurn);
         if (!actionState.canDraw) this.deckButtonFx?.reset();
         if (!actionState.canEndTurn) this.endButtonFx?.reset();
 
-        const canReact = state.phase === GamePhase.REACTION_WINDOW && state.pendingAction?.playerId !== myId;
-        const canPlayTurn = actionState.isMyTurn && state.phase === GamePhase.PLAYER_TURN;
+        const canReact = !pendingAction && state.phase === GamePhase.REACTION_WINDOW && state.pendingAction?.playerId !== myId;
+        const canPlayTurn = !pendingAction && actionState.isMyTurn && state.phase === GamePhase.PLAYER_TURN;
 
         this.handCards.forEach((card) => {
             const canPlayThisCard = canPlayTurn || (canReact && this.isReactionCard(card.cardData));
@@ -2000,44 +2955,61 @@ export class GameScene extends Phaser.Scene {
             this.input.setDraggable(card as unknown as Phaser.GameObjects.GameObject, canPlayThisCard);
         });
 
-        this.updateActionPanel(state, me, myId, actionState);
+        if (!domMatchUiActive) {
+            this.updateActionPanel(state, me, myId, actionState);
+        }
         this.updateCrisisActionButtons(state, me, myId);
+        this.refreshMatchDomUi(actionState);
     }
 
     private updateActionPanel(state: IGameState, _me: IPlayer, myId: string, actionState: MatchActionState) {
         const active = (state.players as unknown as Map<string, IPlayer>).get(state.currentTurnPlayerId);
-        const turnInfo = actionState.isMyTurn
-            ? this.tr('game_action_turn_you')
-            : this.tr('game_action_turn_other', { name: String(active?.username ?? this.tr('game_unknown_player')) });
-        const attackText = actionState.canAttackMonster
-            ? this.tr('game_action_attack_ready', { cost: actionState.attackCost })
-            : this.tr('game_action_attack_blocked', {
-                reason: this.localizeActionBlockReason(actionState.attackReasonKey),
-            });
-        const drawText = actionState.canDraw
-            ? this.tr('game_action_draw_ready', { cost: actionState.drawCost })
-            : this.tr('game_action_draw_blocked_panel', {
-                reason: this.localizeActionBlockReason(actionState.drawReasonKey),
-            });
-        const endText = actionState.canEndTurn
-            ? this.tr('game_action_end_ready')
-            : this.tr('game_action_end_blocked', {
-                reason: this.localizeActionBlockReason(actionState.endReasonKey),
-            });
-
-        this.actionPanelHint.setText(attackText);
-        this.actionPanelDetail.setText(`${drawText}\n${turnInfo} • ${endText}`);
+        const panelModel = buildActionPanelModel(
+            actionState,
+            String(active?.username ?? this.tr('game_unknown_player')),
+            this.tr.bind(this),
+            this.localizeActionBlockReason.bind(this),
+        );
+        const contextHint = buildMatchContextHint({
+            phase: state.phase,
+            actionState,
+            pendingAction: this.hasPendingPlayInFlight(),
+            tr: this.tr.bind(this),
+            localizeReason: this.localizeActionBlockReason.bind(this),
+        });
+        this.actionPanelHint.setText(panelModel.hint);
+        this.actionPanelDetail.setText(panelModel.detail);
+        this.actionPanelContext.setText(contextHint);
 
         const hintWrap = Number((this.actionPanelHint.style as any)?.wordWrapWidth ?? 240);
         const detailWrap = Number((this.actionPanelDetail.style as any)?.wordWrapWidth ?? 240);
+        const contextWrap = Number((this.actionPanelContext.style as any)?.wordWrapWidth ?? 240);
+        const compactAction = this.isCompactLandscapeLayout()
+            || this.matchLayout.controls.w < 270
+            || (!this.isLandscapeLayout && (this.matchLayout.tier === 'A' || this.matchLayout.tier === 'B'));
+        if (compactAction) {
+            this.actionPanelHint.setText(
+                actionState.canAttackMonster
+                    ? this.tr('game_attack_cta_compact')
+                    : this.tr('game_attack_cta_locked_compact'),
+            );
+            this.actionPanelDetail.setText('');
+            this.actionPanelContext.setText('');
+        }
         fitTextToBox(this.actionPanelHint, this.actionPanelHint.text, hintWrap, Math.max(18, this.matchLayout.controls.h * 0.38), {
-            maxLines: 2,
+            maxLines: compactAction ? 1 : 2,
             ellipsis: true,
         });
-        fitTextToBox(this.actionPanelDetail, this.actionPanelDetail.text, detailWrap, Math.max(18, this.matchLayout.controls.h * 0.46), {
-            maxLines: 2,
-            ellipsis: true,
-        });
+        if (!compactAction) {
+            fitTextToBox(this.actionPanelDetail, this.actionPanelDetail.text, detailWrap, Math.max(18, this.matchLayout.controls.h * 0.46), {
+                maxLines: 2,
+                ellipsis: true,
+            });
+            fitTextToBox(this.actionPanelContext, this.actionPanelContext.text, contextWrap, Math.max(16, this.matchLayout.controls.h * 0.22), {
+                maxLines: 2,
+                ellipsis: true,
+            });
+        }
 
         if (this.targetSelectorOverlay?.visible && state.currentTurnPlayerId !== myId) {
             this.hideTargetSelector();
@@ -2049,8 +3021,9 @@ export class GameScene extends Phaser.Scene {
             if (!view.actionBg || !view.actionHit || !view.actionLabel) return;
             const evalAttack = evaluateSingleMonsterAttack({ state, me, myId }, view.crisis);
             const hit = view.actionHit;
-            const w = Math.max(82, hit.width);
-            const h = Math.max(44, hit.height);
+            const w = Phaser.Math.Clamp(hit.width, 52, 96);
+            const h = Phaser.Math.Clamp(hit.height, 34, 48);
+            const compactCta = w < 76;
             view.actionBg.clear();
             paintRetroButton(
                 view.actionBg,
@@ -2065,12 +3038,172 @@ export class GameScene extends Phaser.Scene {
             view.actionLabel
                 .setText(
                     evalAttack.canAttack
-                        ? this.tr('game_attack_cta_cost', { cost: evalAttack.cost })
-                        : this.tr('game_attack_cta_locked'),
+                        ? (compactCta ? this.tr('game_attack_cta_compact') : this.tr('game_attack_cta_cost', { cost: evalAttack.cost }))
+                        : (compactCta ? this.tr('game_attack_cta_locked_compact') : this.tr('game_attack_cta_locked')),
                 )
                 .setColor(evalAttack.canAttack ? '#f6fff8' : '#c7d6e6');
             fitTextToBox(view.actionLabel, view.actionLabel.text, w - 10, h - 6, { maxLines: 1, ellipsis: true });
         });
+    }
+
+    private refreshMatchDomUi(actionStateInput?: MatchActionState) {
+        if (!this.useDomMatchUi || !this.matchDom) return;
+        const room = this.serverManager?.room;
+        if (!room) return;
+        const state = room.state as IGameState | undefined;
+        if (!state) return;
+        const me = (state.players as unknown as Map<string, IPlayer>).get(room.sessionId);
+        if (!me) return;
+        if (!this.matchLayout) return;
+
+        const waiting = this.isPreLobbyPhase(state.phase);
+        this.matchDom.setVisible(!waiting);
+        if (waiting) return;
+
+        const players = Array.from((state.players as unknown as Map<string, IPlayer>).values());
+        const opponents = players.filter((p) => p.sessionId !== room.sessionId);
+        const active = (state.players as unknown as Map<string, IPlayer>).get(state.currentTurnPlayerId);
+        const compactHud = this.isCompactLandscapeLayout() || this.uiW < 560;
+        const actionStateBase = actionStateInput ?? evaluateMatchActionState({
+            state,
+            me,
+            myId: room.sessionId,
+        });
+        const actionState: MatchActionState = this.hasPendingPlayInFlight()
+            ? {
+                ...actionStateBase,
+                canDraw: false,
+                canEndTurn: false,
+                canAttackMonster: false,
+                drawReasonKey: 'game_reason_action_pending',
+                endReasonKey: 'game_reason_action_pending',
+                attackReasonKey: 'game_reason_action_pending',
+            }
+            : actionStateBase;
+
+        const panelModel = buildActionPanelModel(
+            actionState,
+            String(active?.username ?? this.tr('game_unknown_player')),
+            this.tr.bind(this),
+            this.localizeActionBlockReason.bind(this),
+        );
+        const controlsWidth = this.matchLayout?.controls?.w ?? 300;
+        const compactDomText = this.isCompactLandscapeLayout()
+            || controlsWidth < 300
+            || this.matchLayout.tier === 'A'
+            || this.matchLayout.tier === 'B';
+        const portraitTier = this.matchLayout.tier === 'A' || this.matchLayout.tier === 'B';
+        const contextHint = buildMatchContextHint({
+            phase: state.phase,
+            actionState,
+            pendingAction: this.hasPendingPlayInFlight(),
+            tr: this.tr.bind(this),
+            localizeReason: this.localizeActionBlockReason.bind(this),
+        });
+        const deckCount = Number(state.deckCount ?? 0);
+        const discardCount = this.estimateDiscardCount(state);
+        const hud = buildHudModel({
+            me,
+            opponents,
+            activePlayer: active,
+            myId: room.sessionId,
+            deckCount,
+            discardCount,
+            reactionActive: state.phase === GamePhase.REACTION_WINDOW,
+            phase: String(state.phase ?? '').replace(/_/g, ' '),
+            compact: compactHud,
+            tr: this.tr.bind(this),
+        });
+        const compactStats = this.tr('game_hud_stats_micro', {
+            ap: Math.max(0, Number(me.actionPoints ?? 0)),
+            score: Math.max(0, Number(me.score ?? 0)),
+        });
+
+        const canDrawNow = !this.reconnectActive && actionState.canDraw;
+        const canEndNow = !this.reconnectActive && actionState.canEndTurn;
+        this.matchDom.update({
+            roomCode: this.tr('game_room_code', { code: this.roomCode || '----' }),
+            opponents: portraitTier
+                ? ''
+                : compactHud
+                ? this.tr('game_hud_opponents', { value: this.tr('game_opponents_count', { count: opponents.length }) })
+                : hud.opponentsLabel,
+            turn: hud.turnLabel,
+            stats: portraitTier ? compactStats : hud.statsLabel,
+            phase: portraitTier ? '' : hud.phaseLabel,
+            reaction: portraitTier ? '' : hud.reactionLabel,
+            actionHint: compactDomText
+                ? this.tr('game_action_compact_hint')
+                : panelModel.hint,
+            actionDetail: compactDomText ? '' : panelModel.detail.replace(/\n/g, ' | '),
+            actionContext: compactDomText ? '' : contextHint,
+            canDraw: canDrawNow,
+            canEndTurn: canEndNow,
+            showEmote: !portraitTier && controlsWidth >= 210 && !this.isCompactLandscapeLayout(),
+            drawLabel: this.tr('game_deck'),
+            endLabel: this.tr('game_end_turn'),
+            detailsLabel: this.tr('game_details_button'),
+            helpLabel: this.tr('game_help_button_short'),
+            emoteLabel: this.tr('game_emote_button'),
+            logTitle: this.tr('game_log_title'),
+            logToggle: this.gameLogExpanded ? this.tr('game_log_less') : this.tr('game_log_more'),
+            logEntries: portraitTier ? [] : this.gameLogEntries,
+            logExpanded: this.gameLogExpanded,
+        });
+    }
+
+    private drawHelpButton(active: boolean) {
+        const w = this.helpHit.width;
+        const h = this.helpHit.height;
+        paintRetroButton(
+            this.helpButton,
+            { width: w, height: h, radius: 12, borderWidth: 1.2 },
+            {
+                base: active ? 0x4d6788 : 0x37475c,
+                border: active ? 0xd8ebff : 0x8ea3bb,
+                glossAlpha: active ? 0.18 : 0.09,
+            },
+        );
+        this.helpButtonText.setColor(active ? '#f7fdff' : '#c7d6e6');
+    }
+
+    private drawEmoteButton(active: boolean) {
+        const w = this.emoteHit.width;
+        const h = this.emoteHit.height;
+        paintRetroButton(
+            this.emoteButton,
+            { width: w, height: h, radius: 12, borderWidth: 1.2 },
+            {
+                base: active ? 0x5d4a7b : 0x3f3f58,
+                border: active ? 0xf0dcff : 0x98a3bb,
+                glossAlpha: active ? 0.17 : 0.08,
+            },
+        );
+        this.emoteButtonText.setColor(active ? '#f8f1ff' : '#ced4e1');
+    }
+
+    private getEmoteLabel(emoteId: string | undefined): string {
+        switch (String(emoteId ?? '')) {
+            case 'fire': return this.tr('game_emote_fire');
+            case 'laugh': return this.tr('game_emote_laugh');
+            case 'thumbs_up':
+            default:
+                return this.tr('game_emote_thumbs_up');
+        }
+    }
+
+    private sendQuickEmote() {
+        if (this.reconnectActive) {
+            this.floatText(this.tr('game_reconnect_action_blocked'), '#ff9aa7');
+            return;
+        }
+        const emotes = ['thumbs_up', 'fire', 'laugh'];
+        const emoteId = emotes[this.emoteCycleIndex % emotes.length];
+        this.emoteCycleIndex += 1;
+
+        this.serverManager.sendEmote(emoteId);
+        const label = this.getEmoteLabel(emoteId);
+        this.floatText(this.tr('game_emote_sent', { emote: label }), '#d6ddff', this.emoteHit.x, this.emoteHit.y - 34);
     }
 
     private drawDeckButton(active: boolean) {
@@ -2147,11 +3280,30 @@ export class GameScene extends Phaser.Scene {
         this.opponentsPlaceholder.setVisible(false);
 
         const compactTop = this.isCompactLandscapeLayout() || (!this.isLandscapeLayout && this.uiW < 500);
+        if (compactTop) {
+            if (!this.topTitle.visible) {
+                this.opponentsPlaceholder.setVisible(false);
+                return;
+            }
+            const summary = opponents
+                .slice()
+                .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+                .slice(0, 4)
+                .map((opp) => `${compactPlayerName(opp.username, 7)} ${this.tr('game_vp_short')} ${opp.score ?? 0}`)
+                .join('  |  ');
+            this.opponentsPlaceholder
+                .setText(summary || this.tr('game_waiting_opponents'))
+                .setVisible(true)
+                .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.0116, 10, 14)}px`);
+            return;
+        }
+
         const gapX = this.isLandscapeLayout ? 8 : 10;
         const gapY = this.isLandscapeLayout ? 8 : 9;
-        const topHeaderH = Phaser.Math.Clamp(this.topH * 0.28, 30, 46);
-        const areaTop = topHeaderH + 14;
-        const areaBottom = this.topH - 12;
+        const topRect = this.matchLayout.topBar;
+        const topHeaderH = Phaser.Math.Clamp(topRect.h * 0.28, 30, 46);
+        const areaTop = topRect.y + topHeaderH + 14;
+        const areaBottom = topRect.y + topRect.h - 12;
         const areaW = this.uiW - 34;
         const areaH = Math.max(40, areaBottom - areaTop);
         const minPanelW = this.isLandscapeLayout ? 112 : (compactTop ? 102 : 114);
@@ -2227,9 +3379,11 @@ export class GameScene extends Phaser.Scene {
     }
 
     private rebuildCrises(crises: ICardData[]) {
-        this.crisisViews.forEach(({ zone, card, meta, actionBg, actionHit, actionLabel }) => {
+        this.crisisViews.forEach(({ zone, card, slotBg, meta, actionBg, actionHit, actionLabel, actionFx }) => {
+            actionFx?.destroy();
             zone.destroy();
             card.destroy();
+            slotBg?.destroy();
             meta?.destroy();
             actionBg?.destroy();
             actionHit?.destroy();
@@ -2240,18 +3394,35 @@ export class GameScene extends Phaser.Scene {
         if (!crises || crises.length === 0) return;
 
         const compactLandscape = this.isCompactLandscapeLayout();
+        const boardRect = this.matchLayout.board;
+        const boardTop = boardRect.y + 8;
+        const boardBottom = boardRect.y + boardRect.h - 8;
+        const bandTop = boardTop + boardRect.h * (this.isLandscapeLayout ? (compactLandscape ? 0.04 : 0.07) : 0.06);
+        const bandBottom = boardTop + boardRect.h * (this.isLandscapeLayout ? (compactLandscape ? 0.5 : 0.54) : 0.5);
         const y = Phaser.Math.Clamp(
-            this.centerDropY - this.centerDropH * (this.isLandscapeLayout ? (compactLandscape ? 0.84 : 0.72) : 0.76),
-            this.topH + (compactLandscape ? 34 : 46),
-            this.centerDropY - 44,
+            (bandTop + bandBottom) * 0.5,
+            bandTop + 12,
+            bandBottom - 12,
         );
-        const available = this.centerDropW * (this.isLandscapeLayout ? (compactLandscape ? 0.82 : 0.88) : 0.94);
-        const scale = this.isLandscapeLayout
-            ? Phaser.Math.Clamp(available / Math.max(1, crises.length * 128), compactLandscape ? 0.34 : 0.4, compactLandscape ? 0.52 : 0.58)
-            : Phaser.Math.Clamp(available / Math.max(1, crises.length * 128), 0.52, 0.7);
-        const spacing = 108 * scale;
+
+        const available = boardRect.w * (this.isLandscapeLayout ? (compactLandscape ? 0.74 : 0.8) : 0.86);
+        const slotW = available / Math.max(1, crises.length);
+        const targetScale = this.matchLayout.cardSizes.boardW / 126;
+        const maxScaleByWidth = (slotW * 0.82) / 126;
+        const maxScaleByHeight = ((bandBottom - bandTop) * 0.78) / 178;
+        const scale = Phaser.Math.Clamp(
+            Math.min(
+                targetScale,
+                maxScaleByWidth,
+                maxScaleByHeight,
+                this.isLandscapeLayout ? (compactLandscape ? 0.48 : 0.58) : 0.68,
+            ),
+            this.isLandscapeLayout ? (compactLandscape ? 0.31 : 0.35) : 0.44,
+            this.isLandscapeLayout ? (compactLandscape ? 0.48 : 0.58) : 0.68,
+        );
+        const spacing = Math.max(slotW, 96 * scale);
         const total = (crises.length - 1) * spacing;
-        const startX = this.uiX + this.uiW * 0.5 - total * 0.5;
+        const startX = boardRect.x + boardRect.w * 0.5 - total * 0.5;
 
         crises.forEach((cr, i) => {
             const x = startX + i * spacing;
@@ -2261,10 +3432,17 @@ export class GameScene extends Phaser.Scene {
             card.setDepth(35 + i);
             card.disableInteractive();
 
+            const slotBg = this.add.graphics().setDepth(34 + i);
+            const slotW = Math.max(90, card.displayWidth * 1.04);
+            const slotH = Math.max(120, card.displayHeight * 1.08);
+            slotBg.fillStyle(0x203247, 0.58);
+            slotBg.fillRoundedRect(x - slotW * 0.5, y - slotH * 0.5, slotW, slotH, 12);
+            slotBg.lineStyle(1.2, 0x91bad8, 0.6);
+            slotBg.strokeRoundedRect(x - slotW * 0.5, y - slotH * 0.5, slotW, slotH, 12);
+
             const zoneW = Math.max(72, card.displayWidth * 0.92);
             const zoneH = Math.max(96, card.displayHeight * 1.02);
             const zone = this.add.zone(x, y, zoneW, zoneH)
-                .setRectangleDropZone(zoneW, zoneH)
                 .setData('type', 'crisis')
                 .setData('crisisId', cr.id)
                 .setDepth(42)
@@ -2274,7 +3452,12 @@ export class GameScene extends Phaser.Scene {
             const metaValue = typeof cr.targetRoll === 'number'
                 ? this.tr('game_crisis_roll_badge', { value: cr.targetRoll })
                 : this.tr('game_crisis_roll_badge_unknown');
-            const meta = this.add.text(x, y - card.displayHeight * 0.56, metaValue, {
+            const metaY = Phaser.Math.Clamp(
+                y - card.displayHeight * 0.56,
+                boardTop + 8,
+                y - card.displayHeight * 0.34,
+            );
+            const meta = this.add.text(x, metaY, metaValue, {
                 fontFamily: FONT_UI,
                 fontSize: `${Phaser.Math.Clamp(this.uiW * 0.0094, 9, 12)}px`,
                 color: '#ffe7bc',
@@ -2290,20 +3473,35 @@ export class GameScene extends Phaser.Scene {
             const actionBg = this.add.graphics().setDepth(43);
             const actionLabel = this.add.text(0, 0, '', {
                 fontFamily: FONT_UI,
-                fontSize: `${Phaser.Math.Clamp(this.uiW * 0.0088, 9, 12)}px`,
+                fontSize: `${Phaser.Math.Clamp(this.uiW * 0.0088, compactLandscape ? 8 : 9, 12)}px`,
                 color: '#f4f8ff',
                 fontStyle: '700',
                 letterSpacing: 0.4,
             }).setOrigin(0.5).setDepth(44).setResolution(this.textResolution);
-            const actionHit = this.add.rectangle(0, 0, 92, 44, 0x000000, 0)
+            const actionW = Phaser.Math.Clamp(
+                spacing - 10,
+                compactLandscape ? 54 : 60,
+                compactLandscape ? 82 : 96,
+            );
+            const actionH = compactLandscape ? 38 : 44;
+            const actionHit = this.add.rectangle(0, 0, actionW, actionH, 0x000000, 0)
                 .setDepth(45)
                 .setInteractive({ useHandCursor: true });
-            const actionY = y + card.displayHeight * 0.52 + 12;
+            const actionY = Phaser.Math.Clamp(
+                y + card.displayHeight * 0.52 + (compactLandscape ? 8 : 12),
+                y + card.displayHeight * 0.38,
+                boardBottom - actionH * 0.5 - 6,
+            );
             actionHit.setPosition(x, actionY);
             actionLabel.setPosition(x, actionY);
-            actionHit.on('pointerdown', () => this.tryAttackCrisis(cr));
+            const actionFx = createSimpleButtonFx(
+                this,
+                actionHit,
+                [actionBg, actionLabel],
+                { onClick: () => this.tryAttackCrisis(cr) },
+            );
 
-            this.crisisViews.push({ crisis: cr, zone, card, meta, actionBg, actionHit, actionLabel });
+            this.crisisViews.push({ crisis: cr, zone, card, slotBg, meta, actionBg, actionHit, actionLabel, actionFx });
         });
     }
 
@@ -2326,18 +3524,34 @@ export class GameScene extends Phaser.Scene {
         if (!cards || cards.length === 0) return;
 
         const compactLandscape = this.isCompactLandscapeLayout();
+        const boardRect = this.matchLayout.board;
+        const boardTop = boardRect.y + 8;
+        const boardBottom = boardRect.y + boardRect.h - 8;
+        const bandTop = boardTop + boardRect.h * (this.isLandscapeLayout ? (compactLandscape ? 0.58 : 0.6) : 0.56);
+        const bandBottom = boardBottom - (compactLandscape ? 8 : 10);
         const y = Phaser.Math.Clamp(
-            this.centerDropY + this.centerDropH * (compactLandscape ? 0.61 : 0.67),
-            this.centerDropY + 54,
-            this.topH + this.centerH - (compactLandscape ? 16 : 24),
+            (bandTop + bandBottom) * 0.5,
+            bandTop + 10,
+            bandBottom - 10,
         );
-        const available = this.uiW * (this.isLandscapeLayout ? 0.72 : 0.86);
-        const scale = this.isLandscapeLayout
-            ? Phaser.Math.Clamp(available / Math.max(1, cards.length * 126), compactLandscape ? 0.38 : 0.44, compactLandscape ? 0.6 : 0.7)
-            : Phaser.Math.Clamp(available / Math.max(1, cards.length * 126), 0.56, 0.86);
-        const spacing = 110 * scale;
+        const available = boardRect.w * (this.isLandscapeLayout ? (compactLandscape ? 0.68 : 0.72) : 0.8);
+        const slotW = available / Math.max(1, cards.length);
+        const targetScale = this.matchLayout.cardSizes.boardW / 126;
+        const maxScaleByWidth = (slotW * 0.84) / 126;
+        const maxScaleByHeight = ((bandBottom - bandTop) * 0.8) / 178;
+        const scale = Phaser.Math.Clamp(
+            Math.min(
+                targetScale,
+                maxScaleByWidth,
+                maxScaleByHeight,
+                this.isLandscapeLayout ? (compactLandscape ? 0.48 : 0.56) : 0.72,
+            ),
+            this.isLandscapeLayout ? (compactLandscape ? 0.31 : 0.36) : 0.5,
+            this.isLandscapeLayout ? (compactLandscape ? 0.48 : 0.56) : 0.72,
+        );
+        const spacing = Math.max(slotW, 96 * scale);
         const total = (cards.length - 1) * spacing;
-        const startX = this.uiX + this.uiW * 0.5 - total * 0.5;
+        const startX = boardRect.x + boardRect.w * 0.5 - total * 0.5;
 
         cards.forEach((data, i) => {
             const card = this.createCardObject(startX + i * spacing, y, data);
@@ -2367,39 +3581,26 @@ export class GameScene extends Phaser.Scene {
         if (!cards || cards.length === 0) return;
 
         const compactLandscape = this.isCompactLandscapeLayout();
+        const area = this.handCardsRect;
         const cardCount = cards.length;
-        const useTwoRows = this.isLandscapeLayout
-            ? (compactLandscape ? cardCount > 4 : cardCount > 6)
-            : cardCount > 5;
-        const cardsPerRow = useTwoRows ? Math.ceil(cardCount / 2) : cardCount;
-        const available = Math.max(120, this.handCardsRect.w - (compactLandscape ? 10 : 16));
-
+        const targetCardW = this.matchLayout.cardSizes.handW;
+        const targetCardH = this.matchLayout.cardSizes.handH;
         const baseCardW = 126;
-        let scale = this.isLandscapeLayout
-            ? Phaser.Math.Clamp(
-                available / Math.max(1, cardsPerRow * (baseCardW * (compactLandscape ? 0.98 : 0.94))),
-                compactLandscape ? 0.48 : 0.56,
-                compactLandscape ? 0.74 : 0.86,
-            )
-            : Phaser.Math.Clamp(available / Math.max(1, cardsPerRow * (baseCardW * 0.9)), 0.68, 0.96);
-        if (useTwoRows) {
-            scale = Math.max(scale, this.isLandscapeLayout ? (compactLandscape ? 0.5 : 0.58) : 0.7);
-        }
+        const scale = Phaser.Math.Clamp(targetCardW / baseCardW, 0.24, 0.82);
 
-        const spacing = cardsPerRow > 1
-            ? Math.min(baseCardW * (compactLandscape ? 0.82 : 0.88) * scale, available / (cardsPerRow - 1))
+        const horizontalStride = Math.max(24, targetCardW * (compactLandscape ? 0.74 : 0.8));
+        const cardsPerRowCapacity = Math.max(1, Math.floor((area.w - targetCardW) / horizontalStride) + 1);
+        const useTwoRows = cardCount > cardsPerRowCapacity && area.h >= (targetCardH * 1.75);
+        const cardsPerRow = useTwoRows ? Math.ceil(cardCount / 2) : cardCount;
+
+        const rowSpan = Math.max(0, cardsPerRow - 1);
+        const spacing = rowSpan > 0
+            ? Math.min(horizontalStride, Math.max(22, (area.w - targetCardW) / rowSpan))
             : 0;
 
-        const area = this.handCardsRect;
-        const firstRowY = area.y + area.h * (useTwoRows
-            ? (this.isLandscapeLayout ? (compactLandscape ? 0.28 : 0.33) : 0.34)
-            : (this.isLandscapeLayout ? (compactLandscape ? 0.5 : 0.54) : 0.56));
+        const firstRowY = area.y + (useTwoRows ? (targetCardH * 0.5 + 6) : area.h * 0.5);
         const rowGap = useTwoRows
-            ? Phaser.Math.Clamp(
-                area.h * (this.isLandscapeLayout ? (compactLandscape ? 0.4 : 0.44) : 0.42),
-                compactLandscape ? 34 : 42,
-                compactLandscape ? 62 : 74,
-            )
+            ? Phaser.Math.Clamp(targetCardH * (compactLandscape ? 0.78 : 0.84), 32, 76)
             : 0;
 
         cards.forEach((data, i) => {
@@ -2409,13 +3610,19 @@ export class GameScene extends Phaser.Scene {
                 ? (row === 0 ? Math.min(cardsPerRow, cardCount) : cardCount - cardsPerRow)
                 : cardCount;
             const rowSpread = Math.max(0, rowCount - 1);
-            const rowStartX = this.uiX + this.uiW * 0.5 - (rowSpread * spacing) * 0.5;
+            const rowStartX = area.x + area.w * 0.5 - (rowSpread * spacing) * 0.5;
             const rowMid = rowSpread * 0.5;
 
             const x = rowStartX + indexInRow * spacing;
-            const y = firstRowY
+            const cardHalfH = (targetCardH) * 0.5;
+            const yRaw = firstRowY
                 + row * rowGap
                 + Math.abs(indexInRow - rowMid) * (this.isLandscapeLayout ? (compactLandscape ? 1.2 : 1.7) : 2.8);
+            const y = Phaser.Math.Clamp(
+                yRaw,
+                area.y + cardHalfH + 2,
+                area.y + area.h - cardHalfH - 2,
+            );
 
             const card = this.createCardObject(x, y, data);
             this.add.existing(card);
@@ -2445,10 +3652,13 @@ export class GameScene extends Phaser.Scene {
     }
 
     private stashPending(card: CardGameObject) {
+        this.pendingTransitionId += 1;
         if (this.pendingPlayedCard && this.pendingPlayedCard !== card) {
+            this.tweens.killTweensOf(this.pendingPlayedCard);
             this.pendingPlayedCard.destroy();
         }
         card.disableInteractive();
+        card.setData('pendingTransitionId', this.pendingTransitionId);
         this.pendingPlayedCard = card;
         this.handCards = this.handCards.filter((c) => c !== card);
         this.pendingPlayState = stashPendingCard(this.pendingPlayState, String(card.cardData.id ?? ''));
@@ -2472,6 +3682,7 @@ export class GameScene extends Phaser.Scene {
 
     private rollbackPendingCardVisual(showFeedback: boolean) {
         const pending = this.pendingPlayedCard;
+        const rollbackTransitionId = ++this.pendingTransitionId;
         this.pendingPlayedCard = undefined;
         this.pendingPlayState = rollbackPendingModel(this.pendingPlayState);
         if (!pending || !pending.active) return;
@@ -2500,6 +3711,7 @@ export class GameScene extends Phaser.Scene {
                     ? (state.players as unknown as Map<string, IPlayer>).get(myId)
                     : undefined;
                 if (pending.active) pending.destroy();
+                if (rollbackTransitionId !== this.pendingTransitionId) return;
                 if (state && me && !this.visualQueue.isBusy) {
                     this.applyState(state, me);
                 }
@@ -2509,6 +3721,7 @@ export class GameScene extends Phaser.Scene {
 
     private clearPendingCardAsAccepted() {
         const pending = this.pendingPlayedCard;
+        this.pendingTransitionId += 1;
         this.pendingPlayedCard = undefined;
         this.pendingPlayState = acceptPendingCard(this.pendingPlayState);
         if (!pending || !pending.active) return;
@@ -2516,7 +3729,7 @@ export class GameScene extends Phaser.Scene {
         this.tweens.add({
             targets: pending,
             x: this.uiX + this.uiW * 0.5,
-            y: this.topH + this.centerH * 0.78,
+            y: this.matchLayout.board.y + this.matchLayout.board.h * 0.78,
             scaleX: 0.56,
             scaleY: 0.56,
             alpha: 0,
@@ -2536,10 +3749,17 @@ export class GameScene extends Phaser.Scene {
         this.pendingPlayState = result.state;
 
         if (!this.pendingPlayedCard) return;
-        if (result.outcome === 'rollback' || result.outcome === 'accepted') {
-            if (this.pendingPlayedCard.active) this.pendingPlayedCard.destroy();
-            this.pendingPlayedCard = undefined;
-        }
+        const pendingId = String(this.pendingPlayedCard.cardData?.id ?? '').trim();
+        const mustCleanup = result.outcome === 'rollback'
+            || result.outcome === 'accepted'
+            || !this.pendingPlayState.pendingCardId
+            || (pendingId.length > 0 && handIds.includes(pendingId));
+        if (!mustCleanup) return;
+
+        this.pendingTransitionId += 1;
+        this.tweens.killTweensOf(this.pendingPlayedCard);
+        if (this.pendingPlayedCard.active) this.pendingPlayedCard.destroy();
+        this.pendingPlayedCard = undefined;
     }
 
     private cleanupOrphanCardObjects() {
@@ -2549,40 +3769,42 @@ export class GameScene extends Phaser.Scene {
             ...this.crisisViews.map((view) => view.card),
             ...(this.pendingPlayedCard ? [this.pendingPlayedCard] : []),
         ];
-        const allowed = new Set<CardGameObject>(prioritized);
-        const keepById = new Map<string, CardGameObject>();
-        prioritized.forEach((obj) => {
-            const id = String(obj.cardData?.id ?? '').trim();
-            if (!id || keepById.has(id)) return;
-            keepById.set(id, obj);
-        });
+        const plan = buildCardRegistryPlan(
+            prioritized.map((card) => ({
+                ref: card,
+                id: String(card.cardData?.id ?? ''),
+                active: card.active,
+            })),
+            Array.from(this.liveCardObjects).map((card) => ({
+                ref: card,
+                id: String(card.cardData?.id ?? ''),
+                active: card.active,
+            })),
+        );
 
+        plan.destroyRefs.forEach((card) => card.destroy());
         Array.from(this.liveCardObjects).forEach((card) => {
-            if (!card.active) {
-                this.liveCardObjects.delete(card);
-                return;
-            }
-            const id = String(card.cardData?.id ?? '').trim();
-            if (id && keepById.has(id) && keepById.get(id) !== card) {
-                card.destroy();
-                return;
-            }
-            if (!allowed.has(card)) {
-                card.destroy();
-            }
+            if (!card.active) this.liveCardObjects.delete(card);
         });
     }
 
     private snapBack(card: CardGameObject, msg: string) {
         this.floatText(msg, '#ff8392', card.x, card.homeY - 84);
+        this.tweens.killTweensOf(card);
         this.tweens.add({
             targets: card,
             x: card.homeX,
             y: card.homeY,
             scaleX: 1,
             scaleY: 1,
+            angle: 0,
+            alpha: 1,
             duration: 210,
             ease: 'Cubic.Out',
+            onComplete: () => {
+                if (!card.active) return;
+                card.setDepth((card as any).homeDepth ?? card.depth);
+            },
         });
     }
 
@@ -2602,6 +3824,18 @@ export class GameScene extends Phaser.Scene {
             this.gameLogEntries.splice(0, this.gameLogEntries.length - this.gameLogLimit);
         }
         this.layoutGameLog();
+        this.refreshMatchDomUi();
+    }
+
+    private toggleGameLog() {
+        this.gameLogExpanded = !this.gameLogExpanded;
+        this.layoutPanels();
+        const state = this.serverManager?.room?.state as IGameState | undefined;
+        const me = state && this.serverManager?.room
+            ? (state.players as unknown as Map<string, IPlayer>).get(this.serverManager.room.sessionId)
+            : undefined;
+        if (state && me) this.applyState(state, me);
+        this.refreshMatchDomUi();
     }
 
     private resolvePlayerName(playerId?: string) {
@@ -2613,15 +3847,60 @@ export class GameScene extends Phaser.Scene {
         return player?.username ?? playerId;
     }
 
+    private localizeRewardCode(rewardCode?: string): string | null {
+        if (!rewardCode) return null;
+        if (rewardCode.startsWith('vp_')) {
+            const parsed = parseInt(rewardCode.replace('vp_', ''), 10);
+            const safe = Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+            return this.tr('game_reward_vp', { value: safe });
+        }
+        return rewardCode;
+    }
+
+    private localizePenaltyCode(penaltyCode?: string): string | null {
+        if (!penaltyCode) return null;
+        switch (penaltyCode) {
+            case 'discard_2':
+                return this.tr('game_penalty_discard_2');
+            case 'lose_employee':
+                return this.tr('game_penalty_lose_employee');
+            case 'lock_tricks':
+                return this.tr('game_penalty_lock_tricks');
+            default:
+                return penaltyCode;
+        }
+    }
+
+    private buildDiceOutcomeLine(event: IDiceRolledEvent): string | null {
+        if (event.success) {
+            const reward = this.localizeRewardCode(event.rewardCode);
+            if (!reward) return null;
+            return this.tr('game_dice_reward_line', { value: reward });
+        }
+        const penalty = this.localizePenaltyCode(event.penaltyCode);
+        if (!penalty) return null;
+        return this.tr('game_dice_penalty_line', { value: penalty });
+    }
+
     private showDiceToast(event: IDiceRolledEvent) {
         const actor = this.resolvePlayerName(event.playerId);
-        const line = this.tr('game_dice_result_line', {
+        const modifier = Number.isFinite(Number(event.modifier))
+            ? Number(event.modifier)
+            : Number(event.total ?? 0) - Number(event.roll1 ?? 0) - Number(event.roll2 ?? 0);
+        const modifierText = modifier > 0 ? `+${modifier}` : (modifier < 0 ? `${modifier}` : '');
+        const targetValue = Number.isFinite(Number(event.targetRoll)) ? Number(event.targetRoll) : '-';
+
+        const headerLine = this.tr('game_dice_result_line_ext', {
             player: actor,
             roll1: event.roll1 ?? 0,
             roll2: event.roll2 ?? 0,
+            modifierText,
             total: event.total ?? 0,
+            target: targetValue,
             status: event.success ? this.tr('game_dice_success') : this.tr('game_dice_fail'),
         });
+        const outcomeLine = this.buildDiceOutcomeLine(event);
+        const line = outcomeLine ? `${headerLine}\n${outcomeLine}` : headerLine;
 
         this.diceToastText.setText(line).setVisible(true);
         this.diceToastPanel.setVisible(true);
@@ -2690,7 +3969,12 @@ export class GameScene extends Phaser.Scene {
                 this.visualQueue.enqueue(() => new Promise((resolve) => {
                     const name = String(message?.playerName ?? this.tr('game_opponent'));
                     this.appendGameLog(this.tr('game_log_reaction', { name }));
-                    this.floatText(this.tr('game_reacted', { name }), '#ffd6a6', this.screenW * 0.5, this.topH + 40);
+                    this.floatText(
+                        this.tr('game_reacted', { name }),
+                        '#ffd6a6',
+                        this.screenW * 0.5,
+                        this.matchLayout.board.y + Math.max(38, this.matchLayout.board.h * 0.14),
+                    );
                     this.time.delayedCall(460, resolve);
                 }));
                 break;
@@ -2699,15 +3983,22 @@ export class GameScene extends Phaser.Scene {
                 this.visualQueue.enqueue(() => new Promise((resolve) => {
                     const success = message?.success !== false;
                     this.appendGameLog(success ? this.tr('game_log_action_ok') : this.tr('game_log_action_fail'));
+                    const serverLog = Array.isArray(message?.log)
+                        ? message.log
+                            .map((entry: unknown) => String(entry ?? '').replace(/\s+/g, ' ').trim())
+                            .filter((entry: string) => entry.length > 0)
+                        : [];
+                    serverLog.slice(0, 3).forEach((entry: string) => this.appendGameLog(entry));
 
                     this.hideReactionOverlay();
 
                     if (success) {
                         this.floatText(this.tr('game_action_resolved'), '#9ff3c2');
-                        this.burst(this.screenW * 0.5, this.topH + this.centerH * 0.6, 36);
+                        this.burst(this.screenW * 0.5, this.matchLayout.board.y + this.matchLayout.board.h * 0.6, 36);
                         if (this.pendingPlayedCard) this.clearPendingCardAsAccepted();
                     } else {
-                        this.floatText(this.tr('game_action_failed'), '#ff8a97');
+                        const failHint = serverLog.length > 0 ? serverLog[serverLog.length - 1] : this.tr('game_action_failed');
+                        this.floatText(failHint, '#ff8a97');
                         this.cameras.main.shake(180, 0.0022);
                         this.burst(this.screenW * 0.5, this.centerDropY, 26);
                         if (this.pendingPlayedCard) this.rollbackPendingCardVisual(false);
@@ -2728,7 +4019,7 @@ export class GameScene extends Phaser.Scene {
                     ghost.setPosition(this.deckHit.x, this.deckHit.y);
 
                     const targetX = this.uiX + this.uiW * 0.5;
-                    const targetY = this.topH + this.centerH + this.bottomH * 0.67;
+                    const targetY = this.matchLayout.handCards.y + this.matchLayout.handCards.h * 0.67;
                     this.tweens.add({
                         targets: ghost,
                         x: targetX,
@@ -2752,7 +4043,12 @@ export class GameScene extends Phaser.Scene {
                     const playerId = String(message?.playerId ?? '');
                     const actor = this.resolvePlayerName(playerId);
                     this.appendGameLog(this.tr('game_log_turn_started', { player: actor, turn: message?.turnNumber ?? '-' }));
-                    this.floatText(this.tr('game_turn_number', { turn: message?.turnNumber ?? '' }), '#d8f4ff', this.screenW * 0.5, this.topH + 26);
+                    this.floatText(
+                        this.tr('game_turn_number', { turn: message?.turnNumber ?? '' }),
+                        '#d8f4ff',
+                        this.screenW * 0.5,
+                        this.matchLayout.board.y + Math.max(34, this.matchLayout.board.h * 0.12),
+                    );
                     this.time.delayedCall(320, resolve);
                 }));
                 break;
@@ -2762,16 +4058,38 @@ export class GameScene extends Phaser.Scene {
                     const payload = message as IDiceRolledEvent;
                     this.showDiceToast(payload);
                     const actor = this.resolvePlayerName(payload.playerId);
-                    this.appendGameLog(this.tr('game_log_dice', {
+                    const modifier = Number.isFinite(Number(payload.modifier))
+                        ? Number(payload.modifier)
+                        : Number(payload.total ?? 0) - Number(payload.roll1 ?? 0) - Number(payload.roll2 ?? 0);
+                    const modifierText = modifier > 0 ? `+${modifier}` : (modifier < 0 ? `${modifier}` : '');
+                    const targetValue = Number.isFinite(Number(payload.targetRoll)) ? Number(payload.targetRoll) : '-';
+                    this.appendGameLog(this.tr('game_log_dice_ext', {
                         player: actor,
                         roll1: payload.roll1 ?? 0,
                         roll2: payload.roll2 ?? 0,
+                        modifierText,
                         total: payload.total ?? 0,
+                        target: targetValue,
                         status: payload.success ? this.tr('game_dice_success') : this.tr('game_dice_fail'),
                     }));
+                    const outcomeLine = this.buildDiceOutcomeLine(payload);
+                    if (outcomeLine) this.appendGameLog(outcomeLine);
                     this.time.delayedCall(260, resolve);
                 }));
                 break;
+
+            case ServerEvents.EMOTE: {
+                const payload = message as { playerId?: string; emoteId?: string };
+                const state = this.serverManager?.room?.state as IGameState | undefined;
+                const player = payload?.playerId && state
+                    ? (state.players as unknown as Map<string, IPlayer>).get(payload.playerId)
+                    : undefined;
+                const playerName = String(player?.username ?? this.tr('game_unknown_player'));
+                const emote = this.getEmoteLabel(payload?.emoteId);
+                this.appendGameLog(this.tr('game_log_emote', { player: playerName, emote }));
+                this.floatText(`${playerName} ${emote}`, '#d4dcff');
+                break;
+            }
 
             case ServerEvents.GAME_WON: {
                 const event = message as { winnerId?: string; winnerName?: string; finalScore?: number };
@@ -2783,6 +4101,90 @@ export class GameScene extends Phaser.Scene {
                 break;
             }
         }
+    }
+
+    private handleReconnectStatus(status: ReconnectStatus) {
+        const stage = String(status?.stage ?? '');
+        const useCanvasReconnectOverlay = !this.reconnectDomNode;
+        if (stage === 'reconnecting') {
+            this.reconnectActive = true;
+            if (this.helpVisible) this.hideHelpOverlay();
+            if (this.cardInspectVisible) this.hideCardInspect();
+            this.hideTargetSelector();
+            if (this.reconnectRedirectTimer) {
+                this.reconnectRedirectTimer.remove(false);
+                this.reconnectRedirectTimer = undefined;
+            }
+            const remaining = Math.max(0, Math.ceil((status.maxWindowMs - status.elapsedMs) / 1000));
+            const retryText = Number.isFinite(Number(status.nextRetryMs)) && Number(status.nextRetryMs) > 0
+                ? this.tr('game_reconnect_retry_wait', { ms: Number(status.nextRetryMs) })
+                : this.tr('game_reconnect_retry_now');
+            this.reconnectTitle.setText(this.tr('game_reconnect_title'));
+            this.reconnectBody.setText(this.tr('game_reconnect_body', {
+                attempt: Math.max(1, Number(status.attempt ?? 1)),
+                seconds: remaining,
+                retry: retryText,
+            }));
+            this.setReconnectDomVisible(
+                true,
+                this.tr('game_reconnect_title'),
+                this.tr('game_reconnect_body', {
+                    attempt: Math.max(1, Number(status.attempt ?? 1)),
+                    seconds: remaining,
+                    retry: retryText,
+                }),
+            );
+            this.reconnectOverlay.setVisible(useCanvasReconnectOverlay).setAlpha(1);
+            this.reconnectPanel.setVisible(useCanvasReconnectOverlay).setAlpha(1);
+            this.reconnectTitle.setVisible(useCanvasReconnectOverlay).setAlpha(1);
+            this.reconnectBody.setVisible(useCanvasReconnectOverlay).setAlpha(1);
+            if (useCanvasReconnectOverlay) this.layoutReconnectOverlay();
+            return;
+        }
+
+        if (stage === 'reconnected') {
+            this.reconnectActive = false;
+            this.setReconnectDomVisible(false);
+            this.reconnectOverlay.setVisible(false);
+            this.reconnectPanel.setVisible(false);
+            this.reconnectTitle.setVisible(false);
+            this.reconnectBody.setVisible(false);
+            this.appendGameLog(this.tr('game_reconnect_ok'));
+            this.floatText(this.tr('game_reconnect_ok'), '#9ff3c2');
+            return;
+        }
+
+        if (stage === 'failed') {
+            this.reconnectActive = true;
+            this.reconnectTitle.setText(this.tr('game_reconnect_failed_title'));
+            this.reconnectBody.setText(this.tr('game_reconnect_failed_body'));
+            this.setReconnectDomVisible(
+                true,
+                this.tr('game_reconnect_failed_title'),
+                this.tr('game_reconnect_failed_body'),
+            );
+            this.reconnectOverlay.setVisible(useCanvasReconnectOverlay).setAlpha(1);
+            this.reconnectPanel.setVisible(useCanvasReconnectOverlay).setAlpha(1);
+            this.reconnectTitle.setVisible(useCanvasReconnectOverlay).setAlpha(1);
+            this.reconnectBody.setVisible(useCanvasReconnectOverlay).setAlpha(1);
+            if (useCanvasReconnectOverlay) this.layoutReconnectOverlay();
+            this.appendGameLog(this.tr('game_reconnect_failed_title'));
+            if (this.reconnectRedirectTimer) this.reconnectRedirectTimer.remove(false);
+            this.reconnectRedirectTimer = this.time.delayedCall(900, () => {
+                this.scene.start('LoginScene', {
+                    serverManager: this.serverManager,
+                    reconnectMessage: this.tr('login_reconnect_failed'),
+                });
+            });
+            return;
+        }
+
+        this.reconnectActive = false;
+        this.setReconnectDomVisible(false);
+        this.reconnectOverlay.setVisible(false);
+        this.reconnectPanel.setVisible(false);
+        this.reconnectTitle.setVisible(false);
+        this.reconnectBody.setVisible(false);
     }
 
     private floatText(message: string, color: string, x?: number, y?: number) {
@@ -2881,7 +4283,7 @@ export class GameScene extends Phaser.Scene {
                 .setDepth(603).setInteractive({ useHandCursor: true });
             createSimpleButtonFx(this, btnHit, [btnGfx], {
                 onClick: () => {
-                    window.location.reload();
+                    this.handleReturnToMainMenu();
                 },
             });
 
@@ -2905,11 +4307,39 @@ export class GameScene extends Phaser.Scene {
         }));
     }
 
+    private handleReturnToMainMenu() {
+        try {
+            const leaveResult = this.serverManager?.leaveRoom?.(true);
+            if (leaveResult && typeof (leaveResult as Promise<unknown>).catch === 'function') {
+                (leaveResult as Promise<unknown>).catch(() => undefined);
+            }
+        } catch {
+            // Best-effort cleanup only.
+        }
+
+        const sceneManager = this.scene.manager as any;
+        const canGoLogin = Boolean(sceneManager?.keys?.LoginScene);
+        if (canGoLogin) {
+            this.scene.start('LoginScene');
+            return;
+        }
+
+        window.location.assign(window.location.pathname);
+    }
+
     // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //  TARGET SELECTOR (for Trick cards)
     // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     private showTargetSelector(card: CardGameObject) {
+        if (this.reconnectActive) {
+            this.snapBack(card, this.tr('game_reconnect_action_blocked'));
+            return;
+        }
         this.hideTargetSelector();
+        if (this.hasPendingPlayInFlight() && this.pendingPlayedCard !== card) {
+            this.snapBack(card, this.tr('game_action_pending_wait'));
+            return;
+        }
 
         const state = this.serverManager.room?.state as IGameState | undefined;
         const myId = this.serverManager.room?.sessionId;
@@ -2946,7 +4376,7 @@ export class GameScene extends Phaser.Scene {
                 const itemCount = Number((hero as any)?.equippedItems?.length ?? 0);
                 const suffix = itemCount > 0 ? ` (${this.tr('card_eq_badge', { count: itemCount })})` : '';
                 selectionRows.push({
-                    label: `${String(hero.name ?? this.tr('game_card_unknown'))}${suffix}`,
+                    label: `${getCardDisplayName(hero, this.lang, this.tr.bind(this))}${suffix}`,
                     onPick: () => this.serverManager.playMagic(card.cardData.id, undefined, hero.id),
                 });
             });
@@ -3066,12 +4496,36 @@ export class GameScene extends Phaser.Scene {
         });
         this.targetSelectorFx.push(cancelFx);
         this.targetSelectorElements.push(cancelHit);
+
+        this.targetSelectorOverlay.setAlpha(0);
+        const stagedElements = this.targetSelectorElements.filter((el) => el !== this.targetSelectorOverlay);
+        stagedElements.forEach((el) => {
+            if ('setAlpha' in el) (el as Phaser.GameObjects.GameObject & { setAlpha: (v: number) => any }).setAlpha(0);
+            if ('y' in el) (el as Phaser.GameObjects.GameObject & { y: number }).y += 8;
+        });
+
+        this.tweens.add({
+            targets: this.targetSelectorOverlay,
+            alpha: 0.6,
+            duration: 130,
+            ease: 'Sine.Out',
+        });
+        this.tweens.add({
+            targets: stagedElements as any,
+            alpha: 1,
+            y: '-=8',
+            duration: 170,
+            ease: 'Cubic.Out',
+        });
     }
 
     private hideTargetSelector() {
         this.targetSelectorFx.forEach((fx) => fx.destroy());
         this.targetSelectorFx = [];
-        this.targetSelectorElements.forEach((el) => el.destroy());
+        this.targetSelectorElements.forEach((el) => {
+            this.tweens.killTweensOf(el);
+            el.destroy();
+        });
         this.targetSelectorElements = [];
         this.targetSelectorOverlay = undefined;
     }

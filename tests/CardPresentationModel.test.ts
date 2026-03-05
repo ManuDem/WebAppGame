@@ -3,6 +3,7 @@ import { t } from '../client/src/i18n';
 import {
     buildInspectPresentation,
     buildMiniCardInfo,
+    getCardDisplayName,
     localizeCardType,
 } from '../client/src/ui/cards/CardPresentationModel';
 
@@ -26,7 +27,7 @@ describe('CardPresentationModel', () => {
             shortDesc: 'Ruba 2 PA all avversario',
             templateId: 'dbg_123',
         } as unknown as ICardData;
-        const info = buildMiniCardInfo(card, trIt);
+        const info = buildMiniCardInfo(card, 'it', trIt);
         expect(info).not.toContain('dbg_123');
         expect(info.length).toBeGreaterThan(0);
     });
@@ -39,8 +40,17 @@ describe('CardPresentationModel', () => {
             costPA: 1,
             description: 'Aggiungi bonus temporaneo',
         } as unknown as ICardData;
-        const inspect = buildInspectPresentation(card, trIt);
+        const inspect = buildInspectPresentation(card, 'it', trIt);
         expect(inspect.meta).not.toContain('itm_42');
         expect(inspect.title).toBe('Taccuino Segreto');
+    });
+
+    test('display name usa catalogo carta localizzato in EN', () => {
+        const card = {
+            type: CardType.HERO,
+            templateId: 'emp_01',
+            name: 'fallback',
+        } as unknown as ICardData;
+        expect(getCardDisplayName(card, 'en', trEn)).toBe('Overworked Intern');
     });
 });

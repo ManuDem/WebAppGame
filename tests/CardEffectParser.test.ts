@@ -121,6 +121,15 @@ describe("CardEffectParser.resolve — individual effects", () => {
         expect(CardEffectParser.resolve(card, p1, null, state)).toBe(false);
     });
 
+    test("steal_pa: viene bloccato da 'protected' e consuma lo scudo", () => {
+        p2.activeEffects = ["protected"];
+        const card = makeCardTemplate({ action: "steal_pa", amount: 2 });
+        expect(CardEffectParser.resolve(card, p1, p2, state)).toBe(true);
+        expect(p2.actionPoints).toBe(3);
+        expect(p1.actionPoints).toBe(3);
+        expect(p2.activeEffects).not.toContain("protected");
+    });
+
     // ----- steal_card -----
 
     test("steal_card: empty hand does NOT crash, returns false", () => {
@@ -206,6 +215,20 @@ describe("CardEffectParser.resolve — individual effects", () => {
         const card = makeCardTemplate({ action: "steal_played_card", target: "self" });
         expect(CardEffectParser.resolve(card, p2, null, state, pa)).toBe(true);
         expect(pa.isCancelled).toBe(true);
+    });
+
+    test("steal_played_card: mantiene il tipo reale della carta rubata", () => {
+        const pa = makePendingAction({
+            playerId: "p1",
+            actionType: ClientMessages.PLAY_MAGIC,
+            targetCardId: "itm_01",
+        });
+        const card = makeCardTemplate({ action: "steal_played_card", target: "self" });
+        expect(CardEffectParser.resolve(card, p2, null, state, pa)).toBe(true);
+        expect(p2.hand.length).toBeGreaterThan(0);
+        const stolen = p2.hand[p2.hand.length - 1];
+        expect(stolen?.templateId).toBe("itm_01");
+        expect(stolen?.type).toBe(CardType.ITEM);
     });
     // ----- crisis_resolve (server-authoritative) -----
 

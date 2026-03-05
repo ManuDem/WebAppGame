@@ -1,79 +1,154 @@
-import { ColyseusTestServer, boot } from "@colyseus/testing";
-import appConfig from "../src/arena.config"; // Assumendo che esista un config standard
-import { ClientMessages, GamePhase } from "../shared/SharedTypes";
+﻿import { OfficeRoom } from '../server/src/rooms/OfficeRoom';
+import { OfficeRoomState, PlayerState, CardState } from '../server/src/State';
+import { CardType, GamePhase, ServerEvents } from '../shared/SharedTypes';
 
-describe("Reaction Window - Race Conditions & Stress Test", () => {
-    let colyseus: ColyseusTestServer;
+const createdRooms: OfficeRoom[] = [];
 
-    beforeAll(async () => {
-        // Avvia un server di test con la configurazione dell'app
-        colyseus = await boot(appConfig);
-    });
+const disposeRoom = (room: OfficeRoom) => {
+    clearInterval((room as any)._patchInterval);
+    clearTimeout((room as any)._autoDisposeTimeout);
+    room.clock?.clear?.();
+};
 
-    afterAll(async () => {
-        // Spegni il server alla fine dei test
-        await colyseus.shutdown();
-    });
+type MockClient = {
+    sessionId: string;
+    send: (event: unknown, data: unknown) => void;
+    getLastPacket: () => { event: unknown; data: unknown } | null;
+};
 
-    beforeEach(async () => {
-        // Pulisce lo stato tra un test e l'altro se necessario
-        await colyseus.cleanup();
-    });
+const createMockClient = (sessionId: string): MockClient => {
+    let lastPacket: { event: unknown; data: unknown } | null = null;
+    return {
+        sessionId,
+        send: (event: unknown, data: unknown) => {
+            lastPacket = { event, data };
+        },
+        getLastPacket: () => lastPacket,
+    };
+};
 
-    test("Deve gestire Reazioni simultanee da 3 client diversi nello stesso millisecondo senza crash e preservando l'integrità", async () => {
-        // 1. Istanzia e connetti 4 client (bot) alla stanza principale
-        const clientA = await colyseus.sdk.joinOrCreate("office_room");
-        const clientB = await colyseus.sdk.joinOrCreate("office_room");
-        const clientC = await colyseus.sdk.joinOrCreate("office_room");
-        const clientD = await colyseus.sdk.joinOrCreate("office_room");
+const createManualClock = () => {
+    let now = 0;
+    let nextId = 0;
+    const tasks: Array<{ id: number; due: number; cb: () => void }> = [];
 
-        // Aspettiamo che tutti siano pronti e che sia il turno del Client A
-        // (Qui ci sarà logica per forzare o attendere il turno di A)
-
-        // 2. Client A attiva l'azione che triggera la REACTION_WINDOW (es. Assumere un Dipendente)
-        clientA.send(ClientMessages.PLAY_EMPLOYEE, { cardId: "dipendente_1" });
-
-        // Attendiamo che il server cambi fase in REACTION_WINDOW
-        await new Promise((resolve) => {
-            clientA.onStateChange((state) => {
-                if (state.phase === GamePhase.REACTION_WINDOW) {
-                    resolve(true);
+    return {
+        setTimeout(cb: () => void, ms: number) {
+            const task = { id: ++nextId, due: now + ms, cb };
+            tasks.push(task);
+            return task.id;
+        },
+        clear() {
+            tasks.length = 0;
+        },
+        tick(ms: number) {
+            now += ms;
+            const due = tasks.filter((task) => task.due <= now).sort((a, b) => a.due - b.due);
+            due.forEach((task) => {
+                const idx = tasks.findIndex((t) => t.id === task.id);
+                if (idx >= 0) {
+                    tasks.splice(idx, 1);
+                    task.cb();
                 }
             });
-        });
+        },
+    };
+};
 
-        // 3. I Client B, C e D inviano un pacchetto "Reazione" simultaneamente
-        // Usiamo Promise.all per spararlitutti nello stesso esatto ciclo di eventi
-        await Promise.all([
-            new Promise((resolve) => {
-                clientB.send(ClientMessages.PLAY_REACTION, { cardId: "reazione_b", targetCardId: "client_a" });
-                resolve(true);
-            }),
-            new Promise((resolve) => {
-                clientC.send(ClientMessages.PLAY_REACTION, { cardId: "reazione_c", targetCardId: "client_a" });
-                resolve(true);
-            }),
-            new Promise((resolve) => {
-                clientD.send(ClientMessages.PLAY_REACTION, { cardId: "reazione_d", targetCardId: "client_a" });
-                resolve(true);
-            })
-        ]);
+const createDummyRoom = () => {
+    const room = new OfficeRoom();
+    createdRooms.push(room);
+    room.state = new OfficeRoomState();
+    room.state.phase = GamePhase.PLAYER_TURN;
+    room.broadcast = () => {};
 
-        // 4. Attendiamo la fine dei 5 secondi del timer lato server
-        // (In un ambiente di test possiamo mockare il timer o usare fast-forward per non aspettare 5 secondi reali)
-        await new Promise((resolve) => setTimeout(resolve, 5100)); // Aspetta poco più della finestra
+    const manualClock = createManualClock();
+    room.clock = manualClock as any;
 
-        // 5. Asserzioni: Verifica dell'Integrità dello Stato
-        const finalState = clientA.state;
+    for (let i = 1; i <= 3; i++) {
+        const player = new PlayerState();
+        player.sessionId = `player_${i}`;
+        player.username = `CEO_${i}`;
+        player.isConnected = true;
+        player.actionPoints = 3;
+        room.state.players.set(player.sessionId, player);
+        room.state.playerOrder.push(player.sessionId);
+    }
 
-        // - Check 1: Il server non è crashato
-        expect(finalState).toBeDefined();
+    room.state.currentTurnPlayerId = 'player_1';
+    room.state.turnIndex = 0;
+    room.state.actionStack = [];
+    room['buildCardTemplateLookup']();
 
-        // - Check 2: Il sistema ha risolto le reazioni in un ordine deterministico
-        // Solo una reazione dovrebbe aver annullato l'azione o solo la prima arrivata dovrebbe essere contata validamente (a seconda delle regole)
-        expect(finalState.phase).not.toBe(GamePhase.REACTION_WINDOW); // Deve essere tornato al turno normale
+    return room;
+};
 
-        // - Check 3: Nessun doppio addebito di PA, hand size coerente, ecc.
-        // expect(...).toBe(...);
+describe('Reaction Window - Race Conditions & Stress Test', () => {
+    afterEach(() => {
+        while (createdRooms.length > 0) {
+            disposeRoom(createdRooms.pop()!);
+        }
+    });
+
+    test('Gestisce reazioni simultanee senza corrompere lo stato', () => {
+        const room = createDummyRoom();
+        const client1 = createMockClient('player_1');
+        const client2 = createMockClient('player_2');
+        const client3 = createMockClient('player_3');
+
+        const employee = new CardState();
+        employee.id = 'card_emp_1';
+        employee.templateId = 'emp_01';
+        employee.type = CardType.EMPLOYEE;
+        room.state.players.get('player_1')!.hand.push(employee);
+
+        const reaction2 = new CardState();
+        reaction2.id = 'card_react_2';
+        reaction2.templateId = 'rea_01';
+        reaction2.type = CardType.EVENTO;
+        room.state.players.get('player_2')!.hand.push(reaction2);
+
+        const reaction3 = new CardState();
+        reaction3.id = 'card_react_3';
+        reaction3.templateId = 'rea_02';
+        reaction3.type = CardType.EVENTO;
+        room.state.players.get('player_3')!.hand.push(reaction3);
+
+        room['handlePlayEmployee'](client1 as any, { cardId: 'card_emp_1' });
+        expect(room.state.phase).toBe(GamePhase.REACTION_WINDOW);
+        expect(room.state.actionStack.length).toBe(1);
+
+        room['handlePlayReaction'](client2 as any, { cardId: 'card_react_2' });
+        room['handlePlayReaction'](client3 as any, { cardId: 'card_react_3' });
+        expect(room.state.actionStack.length).toBe(3);
+
+        (room.clock as any).tick(5100);
+
+        expect(room.state.phase).toBe(GamePhase.PLAYER_TURN);
+        expect(room.state.pendingAction).toBeNull();
+        expect(room.state.actionStack.length).toBe(0);
+        const p3Hand = room.state.players.get('player_3')!.hand as CardState[];
+        expect(p3Hand.length).toBe(1);
+        expect(p3Hand[0]?.templateId).toBe('emp_01');
+        expect(p3Hand[0]?.type).toBe(CardType.HERO);
+    });
+
+    test('Rifiuta PLAY_REACTION fuori dalla reaction window', () => {
+        const room = createDummyRoom();
+        const client2 = createMockClient('player_2');
+
+        const reaction = new CardState();
+        reaction.id = 'card_react_x';
+        reaction.templateId = 'rea_01';
+        reaction.type = CardType.EVENTO;
+        room.state.players.get('player_2')!.hand.push(reaction);
+
+        room['handlePlayReaction'](client2 as any, { cardId: 'card_react_x' });
+
+        const packet = client2.getLastPacket();
+        expect(packet).toBeTruthy();
+        expect(packet!.event).toBe(ServerEvents.ERROR);
+        expect((packet!.data as any).code).toBe('NO_REACTION_WINDOW');
+        expect(room.state.players.get('player_2')!.hand.length).toBe(1);
     });
 });

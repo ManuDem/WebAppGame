@@ -54,6 +54,7 @@ export declare enum ServerEvents {
     TRIGGER_PARTICLES = "TRIGGER_PARTICLES",// Crea effetti particellari su un target specifico
     START_REACTION_TIMER = "START_REACTION_TIMER",// Innesca un timer visivo (es. per la Reaction Window)
     GAME_WON = "GAME_WON",// Broadcast quando un giocatore raggiunge la condizione di vittoria
+    EMOTE = "EMOTE",// Broadcast emote rapido in partita
     VFX_SHAKE = "VFX_SHAKE",// Triggera una scossa (crisi o sabotaggio riuscito)
     VFX_CONFIDENZA = "VFX_CONFIDENZA",// Particelle dorate per assunzioni importanti
     UI_FEEDBACK_DENIED = "UI_FEEDBACK_DENIED"
@@ -124,8 +125,12 @@ export interface IDiceRolledEvent {
     cardId?: string;
     roll1: number;
     roll2: number;
+    modifier?: number;
+    targetRoll?: number;
     total: number;
     success: boolean;
+    rewardCode?: string;
+    penaltyCode?: string;
 }
 /** Payload per ServerEvents.SHOW_ANIMATION */
 export interface IVisualAnimationPayload {

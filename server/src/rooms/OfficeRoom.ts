@@ -1,4 +1,4 @@
-import { Room, Client, Delayed, ServerError } from "colyseus";
+﻿import { Room, Client, Delayed, ServerError } from "colyseus";
 import {
     OfficeRoomState,
     PlayerState,
@@ -38,9 +38,9 @@ import { evaluatePlayerWin } from "../game/winConditions";
 import { consumePendingDrawTags, resolveReactionQueue } from "../game/reactionResolution";
 import { createItemCardForEquip, equipItemOnHero, resolveHeroEquipTarget } from "../game/itemEquip";
 
-// ─────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //  Constants
-// ─────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const MAX_PLAYERS = 10;
 const STARTING_HAND_SIZE = 3;
 
@@ -48,9 +48,26 @@ const STARTING_HAND_SIZE = 3;
 const WIN_EMPLOYEES = 4;   // Here-to-Slay Lite: 4 Hero in company
 const WIN_CRISES = 2;   // Here-to-Slay Lite: 2 Monster risolti (VP score)
 
-// ═════════════════════════════════════════════════════════
-//  OfficeRoom — the authoritative game room
-// ═════════════════════════════════════════════════════════
+interface IMagicResolutionResult {
+    success: boolean;
+    restoreCardToHand: boolean;
+    message?: string;
+}
+
+interface IDiscountPlan {
+    amount: number;
+    sourceTag: string | null;
+}
+
+interface ICrisisResolutionSummary {
+    success: boolean;
+    rewardCode?: string;
+    penaltyCode?: string;
+}
+
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+//  OfficeRoom â€” the authoritative game room
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 export class OfficeRoom extends Room<OfficeRoomState> {
     private roomCode = "0000";
 
@@ -60,17 +77,18 @@ export class OfficeRoom extends Room<OfficeRoomState> {
     /** Server-side deck (not synchronized to state) */
     protected serverDeck: ICardData[] = [];
 
-    /** Card template lookup map (templateId → ICardTemplate) built from cards_db.json */
+    /** Card template lookup map (templateId â†’ ICardTemplate) built from cards_db.json */
     private cardTemplates: Map<string, ICardTemplate> = new Map();
     private monsterTemplateIds: string[] = [];
     private monsterBag: string[] = [];
+    private pendingRemovedCards: Map<string, ICardData> = new Map();
 
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //  Lifecycle
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     onCreate(_options: any): void {
-        console.log("🏢 OfficeRoom created!");
+        console.log("ðŸ¢ OfficeRoom created!");
         console.log("[ROOM] OfficeRoom.onCreate called with options:", _options);
         this.setState(new OfficeRoomState());
         this.state.pendingAction = null as any;
@@ -115,17 +133,17 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         }
         if (!/^[a-zA-Z0-9]+$/.test(ceoName)) {
             console.warn("[AUTH] Rejected: ceoName invalid characters", ceoName);
-            throw new ServerError(400, "Il nome CEO può contenere solo caratteri alfanumerici (niente spazi o simboli).");
+            throw new ServerError(400, "Il nome CEO puÃ² contenere solo caratteri alfanumerici (niente spazi o simboli).");
         }
 
         const existing = this.findPlayerByName(ceoName);
         if (existing && existing.player.isConnected) {
             console.warn("[AUTH] Rejected: ceoName already connected", ceoName);
-            throw new ServerError(409, "Nome CEO già in uso in questa stanza.");
+            throw new ServerError(409, "Nome CEO giÃ  in uso in questa stanza.");
         }
         if (this.state.phase !== GamePhase.WAITING_FOR_PLAYERS && this.state.phase !== GamePhase.PRE_LOBBY && !existing) {
             console.warn("[AUTH] Rejected: match already started and no reconnect slot for", ceoName);
-            throw new ServerError(403, "Partita già in corso. Puoi rientrare solo con un nome già presente.");
+            throw new ServerError(403, "Partita giÃ  in corso. Puoi rientrare solo con un nome giÃ  presente.");
         }
 
         console.log("[AUTH] Accepted client", client.sessionId, "ceoName:", ceoName, "rejoinFrom:", existing?.sessionId ?? null);
@@ -133,7 +151,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
     }
 
     onJoin(client: Client, options: JoinOptions, auth?: { ceoName: string; rejoinFromSessionId?: string | null }): void {
-        console.log(`👤 Player connected: ${client.sessionId}`);
+        console.log(`ðŸ‘¤ Player connected: ${client.sessionId}`);
         const rejoinFrom = auth?.rejoinFromSessionId ?? null;
 
         if (rejoinFrom && this.state.players.has(rejoinFrom)) {
@@ -190,85 +208,63 @@ export class OfficeRoom extends Room<OfficeRoomState> {
     async onLeave(client: Client, consented: boolean): Promise<void> {
         console.log("[LEAVE] onLeave for session", client.sessionId, "consented:", consented);
         const player = this.state.players.get(client.sessionId);
-        const wasCurrentTurn = this.state.currentTurnPlayerId === client.sessionId;
         if (player) {
             player.isConnected = false;
         }
 
-        console.log(`👋 Player left: ${client.sessionId} (consented: ${consented})`);
+        console.log(`ðŸ‘‹ Player left: ${client.sessionId} (consented: ${consented})`);
 
         // Check if it's their turn. If so, start a 5s fallback to automatically skip
         // their turn so the game isn't completely paralyzed
         let skipTimeout: Delayed | null = null;
         if (!consented && this.state.currentTurnPlayerId === client.sessionId && this.state.phase === GamePhase.PLAYER_TURN) {
-            console.log(`   ⏱️  Active player disconnected. Waiting 5s before advancing turn...`);
+            console.log(`   â±ï¸  Active player disconnected. Waiting 5s before advancing turn...`);
             skipTimeout = this.clock.setTimeout(() => {
                 const p = this.state.players.get(client.sessionId);
                 if (p && !p.isConnected && this.state.currentTurnPlayerId === client.sessionId && this.state.phase === GamePhase.PLAYER_TURN) {
-                    console.log(`   ⏭️  5s passed. Auto-skipping turn for disconnected player.`);
+                    console.log(`   â­ï¸  5s passed. Auto-skipping turn for disconnected player.`);
                     this.advanceTurn();
                 }
             }, 5000);
         }
 
         if (consented) {
-            this.state.players.delete(client.sessionId);
-            const orderIndex = this.state.playerOrder.indexOf(client.sessionId);
-            if (orderIndex !== -1) this.state.playerOrder.splice(orderIndex, 1);
-            if (this.state.hostSessionId === client.sessionId) {
-                this.assignNextHost();
-            }
+            this.removePlayerPermanently(client.sessionId);
 
             if (skipTimeout) {
                 skipTimeout.clear();
-            }
-
-            if (wasCurrentTurn && this.state.phase === GamePhase.PLAYER_TURN) {
-                if (this.state.playerOrder.length > 0) {
-                    this.advanceTurn();
-                } else {
-                    this.state.currentTurnPlayerId = "";
-                    this.state.turnIndex = 0;
-                    this.state.phase = GamePhase.PRE_LOBBY;
-                }
             }
             return;
         }
 
         if (!consented) {
             try {
-                // Se è un refresh accidentale/resize brutale aspetta 30 secondi
-                console.log(`   ⏳ Waiting for ${client.sessionId} to reconnect...`);
+                // Se Ã¨ un refresh accidentale/resize brutale aspetta 30 secondi
+                console.log(`   â³ Waiting for ${client.sessionId} to reconnect...`);
                 const newClient = await this.allowReconnection(client, 30);
 
-                // Se si riconnette, il framework mappa in automatico il nuovo client alla stessa entità
+                // Se si riconnette, il framework mappa in automatico il nuovo client alla stessa entitÃ 
                 if (player) {
                     player.isConnected = true;
-                    console.log(`   ✅ ${newClient.sessionId} (formerly ${client.sessionId}) reconnected!`);
+                    console.log(`   âœ… ${newClient.sessionId} (formerly ${client.sessionId}) reconnected!`);
                 }
 
                 // If they reconnected before the 5s skip, cancel the skip
                 if (skipTimeout) {
                     skipTimeout.clear();
-                    console.log(`   👍 Timely reconnection. Turn skip cancelled.`);
+                    console.log(`   ðŸ‘ Timely reconnection. Turn skip cancelled.`);
                 }
             } catch (e) {
                 // Timeout di 30s scaduto, cancellare il giocatore definitivamente dallo State
-                console.log(`   ❌ Timeout expired. Deleting player ${client.sessionId}.`);
-                this.state.players.delete(client.sessionId);
-
-                const orderIndex = this.state.playerOrder.indexOf(client.sessionId);
-                if (orderIndex !== -1) this.state.playerOrder.splice(orderIndex, 1);
-                if (this.state.hostSessionId === client.sessionId) {
-                    this.assignNextHost();
-                }
+                console.log(`   âŒ Timeout expired. Deleting player ${client.sessionId}.`);
+                this.removePlayerPermanently(client.sessionId);
             }
         }
     }
 
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //  Card Template Lookup
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private buildCardTemplateLookup(): void {
         if (!Array.isArray(cardsDbRaw) || cardsDbRaw.length === 0) {
@@ -287,7 +283,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         if (this.cardTemplates.size === 0) {
             console.error("[ROOM] FATAL: No valid card templates loaded from cards_db.json.");
         } else {
-            console.log(`📚 Loaded ${this.cardTemplates.size} card templates from cards_db.json`);
+            console.log(`ðŸ“š Loaded ${this.cardTemplates.size} card templates from cards_db.json`);
         }
     }
 
@@ -295,13 +291,13 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         return this.cardTemplates.get(templateId);
     }
 
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //  Game Start
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private handleJoinGame(client: Client, _data: any): void {
         if (this.state.phase !== GamePhase.WAITING_FOR_PLAYERS && this.state.phase !== GamePhase.PRE_LOBBY) {
-            client.send(ServerEvents.ERROR, { code: "GAME_ALREADY_STARTED", message: "Il gioco è già iniziato." });
+            client.send(ServerEvents.ERROR, { code: "GAME_ALREADY_STARTED", message: "Il gioco Ã¨ giÃ  iniziato." });
             return;
         }
         const player = this.state.players.get(client.sessionId);
@@ -365,9 +361,27 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         while (this.state.playerOrder.length > 0) this.state.playerOrder.pop();
         players.forEach((p) => this.state.playerOrder.push(p));
 
+        players.forEach((sessionId) => {
+            const participant = this.state.players.get(sessionId) as PlayerState | undefined;
+            if (!participant) return;
+            while ((participant.hand as any[]).length > 0) (participant.hand as any[]).pop();
+            while ((participant.company as any[]).length > 0) (participant.company as any[]).pop();
+            while ((participant.activeEffects as any[]).length > 0) (participant.activeEffects as any[]).pop();
+            participant.score = 0;
+            participant.actionPoints = 0;
+        });
+
         this.state.turnIndex = 0;
         this.state.currentTurnPlayerId = this.state.playerOrder.at(0) ?? "";
         this.state.turnNumber = 1;
+        this.state.winnerId = undefined;
+        this.state.pendingAction = null as any;
+        this.state.actionStack = [];
+        this.state.reactionEndTime = 0;
+        if (this.reactionTimeout) {
+            this.reactionTimeout.clear();
+            this.reactionTimeout = null;
+        }
 
         // Build real deck via DeckManager
         try {
@@ -393,7 +407,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         }
 
         this.state.deckCount = this.serverDeck.length;
-        console.log(`🃏 Deck ready: ${this.state.deckCount} cards`);
+        console.log(`ðŸƒ Deck ready: ${this.state.deckCount} cards`);
 
         // Assign a Party Leader to each participant (setup-only cards, outside main deck).
         this.assignPartyLeaders(players);
@@ -411,7 +425,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         const activePlayer = this.state.players.get(this.state.currentTurnPlayerId);
         if (activePlayer) activePlayer.actionPoints = MAX_ACTION_POINTS;
 
-        console.log(`🎮 Game started! First turn: ${this.state.currentTurnPlayerId} | starting hand: ${STARTING_HAND_SIZE}`);
+        console.log(`ðŸŽ® Game started! First turn: ${this.state.currentTurnPlayerId} | starting hand: ${STARTING_HAND_SIZE}`);
         this.broadcast(ServerEvents.TURN_STARTED, {
             playerId: this.state.currentTurnPlayerId,
             turnNumber: this.state.turnNumber,
@@ -516,13 +530,13 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         return card;
     }
 
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //  Turn Management
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private handleEndTurn(client: Client): void {
         if (client.sessionId !== this.state.currentTurnPlayerId) {
-            client.send(ServerEvents.ERROR, { code: "NOT_YOUR_TURN", message: "Non è il tuo turno." });
+            client.send(ServerEvents.ERROR, { code: "NOT_YOUR_TURN", message: "Non Ã¨ il tuo turno." });
             return;
         }
         if (this.state.phase !== GamePhase.PLAYER_TURN) {
@@ -538,7 +552,12 @@ export class OfficeRoom extends Room<OfficeRoomState> {
             this.state.turnIndex,
             (playerId) => Boolean(this.state.players.get(playerId)?.isConnected),
         );
-        if (!next) return;
+        if (!next) {
+            this.state.currentTurnPlayerId = "";
+            this.state.turnIndex = 0;
+            this.state.phase = GamePhase.WAITING_FOR_PLAYERS;
+            return;
+        }
 
         this.state.turnIndex = next.nextIndex;
         this.state.currentTurnPlayerId = next.nextPlayerId;
@@ -555,7 +574,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
             if (idx !== -1) effects.splice(idx, 1);
         });
 
-        console.log(`➡️  Turn ${this.state.turnNumber}: ${this.state.currentTurnPlayerId}`);
+        console.log(`âž¡ï¸  Turn ${this.state.turnNumber}: ${this.state.currentTurnPlayerId}`);
         this.broadcast(ServerEvents.TURN_STARTED, {
             playerId: this.state.currentTurnPlayerId,
             turnNumber: this.state.turnNumber,
@@ -565,16 +584,16 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         this.checkWinConditions();
     }
 
-    // ─────────────────────────────────────────────────────
-    //  DRAW_CARD — uses DeckManager.drawCard
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    //  DRAW_CARD â€” uses DeckManager.drawCard
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private handleDrawCard(client: Client): void {
         if (!this.checkPlayerTurnAction(client, DRAW_CARD_COST)) return;
 
         const drawnCard = DeckManager.drawCard(this.serverDeck);
         if (!drawnCard) {
-            client.send(ServerEvents.ERROR, { code: "DECK_EMPTY", message: "Il mazzo è vuoto." });
+            client.send(ServerEvents.ERROR, { code: "DECK_EMPTY", message: "Il mazzo Ã¨ vuoto." });
             // Refund PA
             const player = this.state.players.get(client.sessionId);
             if (player) player.actionPoints += DRAW_CARD_COST;
@@ -588,7 +607,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
             player.hand.push(this.createCardStateFromDeckCard(drawnCard));
         }
 
-        console.log(`📥 DRAW_CARD by ${client.sessionId}. Deck left: ${this.state.deckCount}`);
+        console.log(`ðŸ“¥ DRAW_CARD by ${client.sessionId}. Deck left: ${this.state.deckCount}`);
         client.send(ServerEvents.CARD_DRAWN, {
             card: drawnCard,
             remainingDeck: this.state.deckCount
@@ -597,9 +616,9 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         this.checkWinConditions();
     }
 
-    // ─────────────────────────────────────────────────────
-    //  PLAY_EMPLOYEE — Reaction Window trigger
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    //  PLAY_EMPLOYEE â€” Reaction Window trigger
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private handlePlayEmployee(client: Client, data: IPlayEmployeePayload): void {
         const { cardId } = data;
@@ -615,7 +634,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         const cardIdx = handArr.findIndex((c: any) => c.id === cardId);
 
         if (cardIdx === -1) {
-            client.send(ServerEvents.ERROR, { code: "CARD_NOT_IN_HAND", message: "La carta non è nella tua mano." });
+            client.send(ServerEvents.ERROR, { code: "CARD_NOT_IN_HAND", message: "La carta non Ã¨ nella tua mano." });
             return;
         }
 
@@ -655,7 +674,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         if (this.reactionTimeout) this.reactionTimeout.clear();
         this.reactionTimeout = this.clock.setTimeout(() => this.resolvePhase(), REACTION_WINDOW_MS);
 
-        console.log(`🃏 PLAY_EMPLOYEE by ${client.sessionId}: ${template?.name} (cost ${cost} PA). Window open.`);
+        console.log(`ðŸƒ PLAY_EMPLOYEE by ${client.sessionId}: ${template?.name} (cost ${cost} PA). Window open.`);
 
         // Broadcast START_REACTION_TIMER so Phaser shows animated countdown
         this.broadcast(ServerEvents.START_REACTION_TIMER, {
@@ -664,9 +683,9 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         } as IStartReactionTimerPayload);
     }
 
-    // ─────────────────────────────────────────────────────
-    //  SOLVE_CRISIS — Reaction Window trigger
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    //  SOLVE_CRISIS â€” Reaction Window trigger
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private handleSolveCrisis(client: Client, data: ISolveCrisisPayload): void {
         const { crisisId } = data;
@@ -705,7 +724,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         this.reactionTimeout = this.clock.setTimeout(() => this.resolvePhase(), REACTION_WINDOW_MS);
 
         const player = this.state.players.get(client.sessionId);
-        console.log(`💼 SOLVE_CRISIS by ${client.sessionId}: ${template?.name}. Window open.`);
+        console.log(`ðŸ’¼ SOLVE_CRISIS by ${client.sessionId}: ${template?.name}. Window open.`);
 
         this.broadcast(ServerEvents.START_REACTION_TIMER, {
             durationMs: REACTION_WINDOW_MS,
@@ -713,9 +732,9 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         } as IStartReactionTimerPayload);
     }
 
-    // ─────────────────────────────────────────────────────
-    //  PLAY_MAGIC — immediate (no Reaction Window)
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    //  PLAY_MAGIC â€” immediate (no Reaction Window)
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private handlePlayMagic(client: Client, data: IPlayMagicPayload): void {
         const { cardId, targetPlayerId, targetHeroCardId } = data;
@@ -739,7 +758,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         const handArr = player.hand as any[];
         const cardIdx = handArr.findIndex((c: any) => c.id === cardId);
         if (cardIdx === -1) {
-            client.send(ServerEvents.ERROR, { code: "CARD_NOT_IN_HAND", message: "La carta non è nella tua mano." });
+            client.send(ServerEvents.ERROR, { code: "CARD_NOT_IN_HAND", message: "La carta non Ã¨ nella tua mano." });
             return;
         }
 
@@ -776,7 +795,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
             });
             return;
         }
-        const cost = template?.cost ?? 1;
+        const baseCost = template?.cost ?? 1;
 
         // Validate targetPlayerId for targeted cards (magic/modifier)
         const effectAction = String(template?.effect?.action ?? "");
@@ -810,7 +829,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
             const equipTarget = resolveHeroEquipTarget({
                 player,
                 targetHeroCardId,
-                allowFallbackToPlayerLevel: true,
+                allowFallbackToPlayerLevel: false,
             });
             if (!equipTarget.ok) {
                 client.send(ServerEvents.ERROR, {
@@ -822,10 +841,16 @@ export class OfficeRoom extends Room<OfficeRoomState> {
             resolvedTargetHeroCardId = equipTarget.targetHero?.id;
         }
 
-        if (!this.checkPlayerTurnAction(client, cost)) return;
+        const discountPlan = this.peekMagicDiscount(player as PlayerState, isItemCard);
+        const effectiveCost = Math.max(0, baseCost - discountPlan.amount);
+
+        if (!this.checkPlayerTurnAction(client, effectiveCost)) return;
+        if (discountPlan.amount > 0) {
+            this.consumeMagicDiscount(player as PlayerState, discountPlan);
+        }
 
         // Deduct PA and remove from hand immediately
-        handArr.splice(cardIdx, 1);
+        const removedCard = handArr.splice(cardIdx, 1)[0] as ICardData;
 
         // Populate pendingAction 
         const pending = new PendingActionState();
@@ -836,6 +861,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         pending.targetPlayerId = needsTarget ? targetPlayerId : undefined;
         pending.targetHeroCardId = resolvedTargetHeroCardId;
         pending.timestamp = Date.now();
+        this.pendingRemovedCards.set(pending.id, this.cloneRuntimeCardData(removedCard));
 
         this.state.pendingAction = pending;
         this.state.phase = GamePhase.REACTION_WINDOW;
@@ -845,7 +871,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         if (this.reactionTimeout) this.reactionTimeout.clear();
         this.reactionTimeout = this.clock.setTimeout(() => this.resolvePhase(), REACTION_WINDOW_MS);
 
-        console.log(`✨ PLAY_MAGIC by ${client.sessionId}: ${template?.name}. Window open.`);
+        console.log(`[PLAY_MAGIC] ${client.sessionId}: ${template?.name}. Window open. Cost ${baseCost} -> ${effectiveCost}`);
 
         this.broadcast(ServerEvents.START_REACTION_TIMER, {
             durationMs: REACTION_WINDOW_MS,
@@ -853,9 +879,9 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         } as IStartReactionTimerPayload);
     }
 
-    // ─────────────────────────────────────────────────────
-    //  PLAY_REACTION — enqueue into action stack
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    //  PLAY_REACTION â€” enqueue into action stack
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private handlePlayReaction(client: Client, data: IPlayReactionPayload): void {
         if (this.state.phase !== GamePhase.REACTION_WINDOW) {
@@ -880,7 +906,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         const handArr = player.hand as any[];
         const cardIdx = handArr.findIndex((c: any) => c.id === cardId);
         if (cardIdx === -1) {
-            client.send(ServerEvents.ERROR, { code: "CARD_NOT_IN_HAND", message: "La carta non è nella tua mano." });
+            client.send(ServerEvents.ERROR, { code: "CARD_NOT_IN_HAND", message: "La carta non Ã¨ nella tua mano." });
             return;
         }
 
@@ -919,7 +945,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         // Push BEFORE original action so stack[0] = newest reaction (LIFO)
         this.state.actionStack.unshift(reactionPending);
 
-        console.log(`🗡️  PLAY_REACTION by ${client.sessionId}: ${template?.name} queued (stack depth: ${this.state.actionStack.length})`);
+        console.log(`ðŸ—¡ï¸  PLAY_REACTION by ${client.sessionId}: ${template?.name} queued (stack depth: ${this.state.actionStack.length})`);
 
         this.broadcast(ServerEvents.REACTION_TRIGGERED, {
             playerId: client.sessionId,
@@ -930,9 +956,9 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         });
     }
 
-    // ─────────────────────────────────────────────────────
-    //  resolvePhase — called by clock.setTimeout
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    //  resolvePhase â€” called by clock.setTimeout
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private resolvePhase(): void {
         this.state.phase = GamePhase.RESOLUTION;
@@ -942,6 +968,8 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         const originalAction = resolution.originalAction;
 
         let structuralSuccess = !originalAction?.isCancelled;
+        let magicResolution: IMagicResolutionResult | null = null;
+        let crisisSummary: ICrisisResolutionSummary | null = null;
         if (originalAction && !originalAction.isCancelled) {
             switch (originalAction.actionType) {
                 case ClientMessages.PLAY_EMPLOYEE:
@@ -949,10 +977,15 @@ export class OfficeRoom extends Room<OfficeRoomState> {
                     structuralSuccess = true;
                     break;
                 case ClientMessages.SOLVE_CRISIS:
-                    structuralSuccess = this.applyCrisisResolution(originalAction.playerId, originalAction.targetCrisisId!);
+                    crisisSummary = this.applyCrisisResolution(originalAction.playerId, originalAction.targetCrisisId!);
+                    structuralSuccess = crisisSummary.success;
                     break;
                 case ClientMessages.PLAY_MAGIC:
-                    structuralSuccess = this.applyMagicResolution(originalAction);
+                    magicResolution = this.applyMagicResolution(originalAction);
+                    structuralSuccess = magicResolution.success;
+                    if (!magicResolution.success && magicResolution.restoreCardToHand) {
+                        this.restorePendingCardToHand(originalAction.id, originalAction.playerId);
+                    }
                     break;
                 default:
                     structuralSuccess = true;
@@ -978,8 +1011,15 @@ export class OfficeRoom extends Room<OfficeRoomState> {
                 ? "Imprevisto risolto con successo."
                 : "Tentativo di risoluzione Imprevisto fallito.");
         }
+        if (originalAction && originalAction.actionType === ClientMessages.PLAY_MAGIC && magicResolution?.message) {
+            log.push(magicResolution.message);
+        }
 
         this.broadcast(ServerEvents.ACTION_RESOLVED, { success, log });
+
+        if (originalAction?.id) {
+            this.pendingRemovedCards.delete(originalAction.id);
+        }
 
         this.state.pendingAction = null as any;
         this.state.actionStack = [];
@@ -1009,7 +1049,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         companyCard.description = template.description;
         player.company.push(companyCard);
 
-        console.log(`   👔 ${player.username} hired ${template.name}. Company size: ${(player.company as any[]).length}`);
+        console.log(`   ðŸ‘” ${player.username} hired ${template.name}. Company size: ${(player.company as any[]).length}`);
     }
 
     /**
@@ -1019,47 +1059,66 @@ export class OfficeRoom extends Room<OfficeRoomState> {
      * - On success: reward + remove crisis
      * - On fail: apply crisis penalty
      */
-    private applyMagicResolution(action: IPendingAction): boolean {
+    private applyMagicResolution(action: IPendingAction): IMagicResolutionResult {
         const player = this.state.players.get(action.playerId);
-        if (!player) return false;
-        if (!action.targetCardId) return true;
+        if (!player) return { success: false, restoreCardToHand: false, message: "Azione annullata: giocatore non trovato." };
+        if (!action.targetCardId) return { success: true, restoreCardToHand: false };
 
         const template = this.getTemplate(action.targetCardId);
-        if (!template) return false;
+        if (!template) {
+            return {
+                success: false,
+                restoreCardToHand: true,
+                message: "Carta non risolta: template non trovato. Carta restituita in mano.",
+            };
+        }
 
         const typeValue = String(template.type ?? "").trim().toLowerCase();
         if (typeValue !== "item" && typeValue !== "oggetto") {
-            return true;
+            return { success: true, restoreCardToHand: false };
         }
 
         const equipTarget = resolveHeroEquipTarget({
             player,
             targetHeroCardId: action.targetHeroCardId,
-            allowFallbackToPlayerLevel: true,
+            allowFallbackToPlayerLevel: false,
         });
-        if (!equipTarget.ok) return false;
-        if (!equipTarget.targetHero) {
-            // Temporary compatibility fallback: no explicit hero target, skip structural equip.
-            return true;
+        if (!equipTarget.ok || !equipTarget.targetHero) {
+            return {
+                success: false,
+                restoreCardToHand: true,
+                message: "Item annullato: Hero bersaglio non valido. Carta restituita in mano.",
+            };
         }
 
         const itemCard = createItemCardForEquip(template, () => this.generateId());
-        return equipItemOnHero(equipTarget.targetHero, itemCard);
+        const equipped = equipItemOnHero(equipTarget.targetHero, itemCard);
+        if (!equipped) {
+            return {
+                success: false,
+                restoreCardToHand: true,
+                message: "Item annullato: equip fallito. Carta restituita in mano.",
+            };
+        }
+
+        return { success: true, restoreCardToHand: false };
     }
 
-    private applyCrisisResolution(playerId: string, crisisId: string): boolean {
+    private applyCrisisResolution(playerId: string, crisisId: string): ICrisisResolutionSummary {
         const player = this.state.players.get(playerId);
-        if (!player) return false;
+        if (!player) return { success: false };
 
         const crisisArr = this.state.centralCrises as any[];
         const idx = crisisArr.findIndex((c: any) => c.id === crisisId);
-        if (idx === -1) return false;
+        if (idx === -1) return { success: false };
 
         const crisis = crisisArr[idx];
         const template = this.getTemplate(crisis.templateId);
         const targetRoll = typeof crisis.targetRoll === "number"
             ? crisis.targetRoll
             : (typeof template?.targetRoll === "number" ? template.targetRoll : 7);
+        const rewardCode = typeof template?.effect?.reward === "string" ? template.effect.reward : undefined;
+        const penaltyCode = typeof template?.effect?.penalty === "string" ? template.effect.penalty : undefined;
 
         const modifier = this.getCrisisRollModifier(playerId) + (typeof crisis.modifier === "number" ? crisis.modifier : 0);
         const roll = rollCrisisAttempt(targetRoll, modifier);
@@ -1069,8 +1128,12 @@ export class OfficeRoom extends Room<OfficeRoomState> {
             cardId: crisis.id,
             roll1: roll.roll1,
             roll2: roll.roll2,
+            modifier,
+            targetRoll,
             total: roll.total,
             success: roll.success,
+            rewardCode: roll.success ? rewardCode : undefined,
+            penaltyCode: roll.success ? undefined : penaltyCode,
         });
 
         if (roll.success) {
@@ -1084,11 +1147,11 @@ export class OfficeRoom extends Room<OfficeRoomState> {
             crisisArr.splice(idx, 1);
             this.refillCentralCrisesToThree();
             console.log(`   Crisis ${crisis.templateId} removed from central table.`);
-            return true;
+            return { success: true, rewardCode };
         }
 
         this.applyCrisisPenalty(template?.effect?.penalty, playerId);
-        return false;
+        return { success: false, penaltyCode };
     }
 
     private getCrisisRollModifier(playerId: string): number {
@@ -1168,9 +1231,9 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         }
     }
 
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //  Win Condition Check
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private checkWinConditions(): void {
         if (this.state.phase === GamePhase.GAME_OVER) return;
@@ -1192,9 +1255,9 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         }
     }
 
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //  Triple Validation Helper
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private checkPlayerTurnAction(client: Client, requiredPA: number): boolean {
         const player = this.state.players.get(client.sessionId);
@@ -1217,13 +1280,165 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         return true;
     }
 
-    // ─────────────────────────────────────────────────────
+    private peekMagicDiscount(player: PlayerState, isItemCard: boolean): IDiscountPlan {
+        if (isItemCard) return { amount: 0, sourceTag: null };
+
+        const effects = player.activeEffects as string[];
+        let bestAmount = 0;
+        let bestTag: string | null = null;
+
+        for (const tag of effects) {
+            if (typeof tag !== "string") continue;
+            if (!tag.startsWith("discount_magic_") && !tag.startsWith("discount_trick_")) continue;
+            const raw = tag.startsWith("discount_magic_")
+                ? tag.replace("discount_magic_", "")
+                : tag.replace("discount_trick_", "");
+            const parsed = parseInt(raw, 10);
+            if (!Number.isFinite(parsed) || parsed <= 0) continue;
+            if (parsed > bestAmount) {
+                bestAmount = parsed;
+                bestTag = tag;
+            }
+        }
+
+        return { amount: bestAmount, sourceTag: bestTag };
+    }
+
+    private consumeMagicDiscount(player: PlayerState, plan: IDiscountPlan): void {
+        if (!plan.sourceTag || plan.amount <= 0) return;
+        const effects = player.activeEffects as string[];
+
+        const tagIndex = effects.indexOf(plan.sourceTag);
+        if (tagIndex !== -1) {
+            effects.splice(tagIndex, 1);
+        }
+
+        const pairTag = plan.sourceTag.startsWith("discount_magic_")
+            ? `discount_trick_${plan.amount}`
+            : `discount_magic_${plan.amount}`;
+        const pairIndex = effects.indexOf(pairTag);
+        if (pairIndex !== -1) {
+            effects.splice(pairIndex, 1);
+        }
+    }
+
+    private cloneRuntimeCardData(card: ICardData): ICardData {
+        return {
+            id: String(card.id),
+            templateId: String(card.templateId),
+            type: card.type,
+            costPA: card.costPA,
+            isFaceUp: card.isFaceUp,
+            name: card.name,
+            shortDesc: card.shortDesc,
+            description: card.description,
+            targetRoll: card.targetRoll,
+            modifier: card.modifier,
+            subtype: card.subtype,
+        };
+    }
+
+    private restorePendingCardToHand(pendingId: string, playerId: string): boolean {
+        const player = this.state.players.get(playerId) as PlayerState | undefined;
+        if (!player) return false;
+
+        const hand = player.hand as ICardData[];
+        const cached = this.pendingRemovedCards.get(pendingId);
+        const fallbackTemplateId = (this.state.pendingAction as IPendingAction | null)?.targetCardId;
+        const templateId = cached?.templateId ?? fallbackTemplateId;
+        if (!templateId) return false;
+
+        const runtimeId = cached?.id ?? this.generateId();
+        if (hand.some((card) => String(card.id) === String(runtimeId))) {
+            return false;
+        }
+
+        const restored = this.createCardStateFromDeckCard({
+            id: runtimeId,
+            templateId,
+            type: cached?.type ?? CardType.MAGIC,
+            costPA: cached?.costPA,
+            isFaceUp: false,
+            targetRoll: cached?.targetRoll,
+            modifier: cached?.modifier,
+            subtype: cached?.subtype,
+            shortDesc: cached?.shortDesc,
+        });
+
+        hand.push(restored);
+        this.pendingRemovedCards.delete(pendingId);
+        return true;
+    }
+
+    private removePlayerPermanently(sessionId: string): void {
+        this.cleanupPendingForRemovedPlayer(sessionId);
+
+        this.state.players.delete(sessionId);
+        const orderIndex = this.state.playerOrder.indexOf(sessionId);
+        if (orderIndex !== -1) this.state.playerOrder.splice(orderIndex, 1);
+        if (this.state.hostSessionId === sessionId) {
+            this.assignNextHost();
+        }
+
+        if (this.state.currentTurnPlayerId === sessionId) {
+            if (this.state.playerOrder.length > 0 && this.state.phase === GamePhase.PLAYER_TURN) {
+                this.advanceTurn();
+            } else if (this.state.playerOrder.length === 0) {
+                this.state.currentTurnPlayerId = "";
+                this.state.turnIndex = 0;
+                this.state.phase = GamePhase.WAITING_FOR_PLAYERS;
+            } else {
+                this.state.currentTurnPlayerId = this.state.playerOrder[this.state.turnIndex] ?? "";
+            }
+        }
+    }
+
+    private cleanupPendingForRemovedPlayer(sessionId: string): void {
+        const pending = this.state.pendingAction as IPendingAction | null;
+        const inReactionFlow = this.state.phase === GamePhase.REACTION_WINDOW || this.state.phase === GamePhase.RESOLUTION;
+
+        if (pending?.targetPlayerId === sessionId) {
+            pending.targetPlayerId = undefined;
+        }
+
+        this.state.actionStack = this.state.actionStack
+            .filter((action) => action.playerId !== sessionId)
+            .map((action) => ({
+                ...action,
+                targetPlayerId: action.targetPlayerId === sessionId ? undefined : action.targetPlayerId,
+            }));
+
+        if (pending?.playerId !== sessionId) {
+            return;
+        }
+
+        if (this.reactionTimeout) {
+            this.reactionTimeout.clear();
+            this.reactionTimeout = null;
+        }
+        if (pending.id) {
+            this.pendingRemovedCards.delete(pending.id);
+        }
+        this.state.pendingAction = null as any;
+        this.state.actionStack = [];
+        this.state.reactionEndTime = 0;
+
+        if (inReactionFlow) {
+            this.state.phase = GamePhase.PLAYER_TURN;
+            this.broadcast(ServerEvents.ACTION_RESOLVED, {
+                success: false,
+                log: ["Azione annullata: giocatore disconnesso."],
+            });
+        }
+    }
+
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //  Misc
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private handleEmote(client: Client, data: IEmotePayload): void {
-        console.log(`💬 Emote from ${client.sessionId}: ${data?.emoteId}`);
-        this.broadcast("EMOTE", { playerId: client.sessionId, emoteId: data?.emoteId });
+        console.log(`ðŸ’¬ Emote from ${client.sessionId}: ${data?.emoteId}`);
+        this.broadcast(ServerEvents.EMOTE, { playerId: client.sessionId, emoteId: data?.emoteId });
     }
 
     private generateId(): string {
@@ -1273,6 +1488,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         return null;
     }
 }
+
 
 
 

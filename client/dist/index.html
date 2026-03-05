@@ -56,8 +56,20 @@
       display: flex;
       justify-content: center;
       align-items: center;
-      padding: clamp(6px, 1vw, 16px);
+      padding: 12px;
       position: relative;
+    }
+
+    @media (max-height: 430px) and (min-width: 720px) {
+      #app {
+        padding: 8px 10px;
+      }
+    }
+
+    @media (min-width: 431px) and (min-height: 431px) {
+      #app {
+        padding: 16px;
+      }
     }
 
     canvas {
@@ -105,11 +117,13 @@
       transition: background-color 9999s ease-in-out 0s;
     }
   </style>
-  <script type="module" crossorigin src="/assets/index-BLCTIQJP.js"></script>
+  <script type="module" crossorigin src="/assets/index-BXvN6ryu.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-CJfUUG2j.css">
 </head>
 
 <body>
-  <div id="app"></div>
+  <div id="app"></div>
+  <div id="ui-root" aria-hidden="true"></div>
 </body>
 
 </html>

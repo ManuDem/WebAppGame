@@ -15,17 +15,17 @@ const turnFlow_1 = require("../game/turnFlow");
 const winConditions_1 = require("../game/winConditions");
 const reactionResolution_1 = require("../game/reactionResolution");
 const itemEquip_1 = require("../game/itemEquip");
-// ─────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //  Constants
-// ─────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const MAX_PLAYERS = 10;
 const STARTING_HAND_SIZE = 3;
 /** Win conditions */
 const WIN_EMPLOYEES = 4; // Here-to-Slay Lite: 4 Hero in company
 const WIN_CRISES = 2; // Here-to-Slay Lite: 2 Monster risolti (VP score)
-// ═════════════════════════════════════════════════════════
-//  OfficeRoom — the authoritative game room
-// ═════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+//  OfficeRoom â€” the authoritative game room
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 class OfficeRoom extends colyseus_1.Room {
     constructor() {
         super(...arguments);
@@ -34,16 +34,17 @@ class OfficeRoom extends colyseus_1.Room {
         this.reactionTimeout = null;
         /** Server-side deck (not synchronized to state) */
         this.serverDeck = [];
-        /** Card template lookup map (templateId → ICardTemplate) built from cards_db.json */
+        /** Card template lookup map (templateId â†’ ICardTemplate) built from cards_db.json */
         this.cardTemplates = new Map();
         this.monsterTemplateIds = [];
         this.monsterBag = [];
+        this.pendingRemovedCards = new Map();
     }
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //  Lifecycle
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     onCreate(_options) {
-        console.log("🏢 OfficeRoom created!");
+        console.log("ðŸ¢ OfficeRoom created!");
         console.log("[ROOM] OfficeRoom.onCreate called with options:", _options);
         this.setState(new State_1.OfficeRoomState());
         this.state.pendingAction = null;
@@ -85,22 +86,22 @@ class OfficeRoom extends colyseus_1.Room {
         }
         if (!/^[a-zA-Z0-9]+$/.test(ceoName)) {
             console.warn("[AUTH] Rejected: ceoName invalid characters", ceoName);
-            throw new colyseus_1.ServerError(400, "Il nome CEO può contenere solo caratteri alfanumerici (niente spazi o simboli).");
+            throw new colyseus_1.ServerError(400, "Il nome CEO puÃ² contenere solo caratteri alfanumerici (niente spazi o simboli).");
         }
         const existing = this.findPlayerByName(ceoName);
         if (existing && existing.player.isConnected) {
             console.warn("[AUTH] Rejected: ceoName already connected", ceoName);
-            throw new colyseus_1.ServerError(409, "Nome CEO già in uso in questa stanza.");
+            throw new colyseus_1.ServerError(409, "Nome CEO giÃ  in uso in questa stanza.");
         }
         if (this.state.phase !== SharedTypes_1.GamePhase.WAITING_FOR_PLAYERS && this.state.phase !== SharedTypes_1.GamePhase.PRE_LOBBY && !existing) {
             console.warn("[AUTH] Rejected: match already started and no reconnect slot for", ceoName);
-            throw new colyseus_1.ServerError(403, "Partita già in corso. Puoi rientrare solo con un nome già presente.");
+            throw new colyseus_1.ServerError(403, "Partita giÃ  in corso. Puoi rientrare solo con un nome giÃ  presente.");
         }
         console.log("[AUTH] Accepted client", client.sessionId, "ceoName:", ceoName, "rejoinFrom:", existing?.sessionId ?? null);
         return { ceoName, rejoinFromSessionId: existing?.sessionId ?? null };
     }
     onJoin(client, options, auth) {
-        console.log(`👤 Player connected: ${client.sessionId}`);
+        console.log(`ðŸ‘¤ Player connected: ${client.sessionId}`);
         const rejoinFrom = auth?.rejoinFromSessionId ?? null;
         if (rejoinFrom && this.state.players.has(rejoinFrom)) {
             const player = this.state.players.get(rejoinFrom);
@@ -150,79 +151,56 @@ class OfficeRoom extends colyseus_1.Room {
     async onLeave(client, consented) {
         console.log("[LEAVE] onLeave for session", client.sessionId, "consented:", consented);
         const player = this.state.players.get(client.sessionId);
-        const wasCurrentTurn = this.state.currentTurnPlayerId === client.sessionId;
         if (player) {
             player.isConnected = false;
         }
-        console.log(`👋 Player left: ${client.sessionId} (consented: ${consented})`);
+        console.log(`ðŸ‘‹ Player left: ${client.sessionId} (consented: ${consented})`);
         // Check if it's their turn. If so, start a 5s fallback to automatically skip
         // their turn so the game isn't completely paralyzed
         let skipTimeout = null;
         if (!consented && this.state.currentTurnPlayerId === client.sessionId && this.state.phase === SharedTypes_1.GamePhase.PLAYER_TURN) {
-            console.log(`   ⏱️  Active player disconnected. Waiting 5s before advancing turn...`);
+            console.log(`   â±ï¸  Active player disconnected. Waiting 5s before advancing turn...`);
             skipTimeout = this.clock.setTimeout(() => {
                 const p = this.state.players.get(client.sessionId);
                 if (p && !p.isConnected && this.state.currentTurnPlayerId === client.sessionId && this.state.phase === SharedTypes_1.GamePhase.PLAYER_TURN) {
-                    console.log(`   ⏭️  5s passed. Auto-skipping turn for disconnected player.`);
+                    console.log(`   â­ï¸  5s passed. Auto-skipping turn for disconnected player.`);
                     this.advanceTurn();
                 }
             }, 5000);
         }
         if (consented) {
-            this.state.players.delete(client.sessionId);
-            const orderIndex = this.state.playerOrder.indexOf(client.sessionId);
-            if (orderIndex !== -1)
-                this.state.playerOrder.splice(orderIndex, 1);
-            if (this.state.hostSessionId === client.sessionId) {
-                this.assignNextHost();
-            }
+            this.removePlayerPermanently(client.sessionId);
             if (skipTimeout) {
                 skipTimeout.clear();
-            }
-            if (wasCurrentTurn && this.state.phase === SharedTypes_1.GamePhase.PLAYER_TURN) {
-                if (this.state.playerOrder.length > 0) {
-                    this.advanceTurn();
-                }
-                else {
-                    this.state.currentTurnPlayerId = "";
-                    this.state.turnIndex = 0;
-                    this.state.phase = SharedTypes_1.GamePhase.PRE_LOBBY;
-                }
             }
             return;
         }
         if (!consented) {
             try {
-                // Se è un refresh accidentale/resize brutale aspetta 30 secondi
-                console.log(`   ⏳ Waiting for ${client.sessionId} to reconnect...`);
+                // Se Ã¨ un refresh accidentale/resize brutale aspetta 30 secondi
+                console.log(`   â³ Waiting for ${client.sessionId} to reconnect...`);
                 const newClient = await this.allowReconnection(client, 30);
-                // Se si riconnette, il framework mappa in automatico il nuovo client alla stessa entità
+                // Se si riconnette, il framework mappa in automatico il nuovo client alla stessa entitÃ 
                 if (player) {
                     player.isConnected = true;
-                    console.log(`   ✅ ${newClient.sessionId} (formerly ${client.sessionId}) reconnected!`);
+                    console.log(`   âœ… ${newClient.sessionId} (formerly ${client.sessionId}) reconnected!`);
                 }
                 // If they reconnected before the 5s skip, cancel the skip
                 if (skipTimeout) {
                     skipTimeout.clear();
-                    console.log(`   👍 Timely reconnection. Turn skip cancelled.`);
+                    console.log(`   ðŸ‘ Timely reconnection. Turn skip cancelled.`);
                 }
             }
             catch (e) {
                 // Timeout di 30s scaduto, cancellare il giocatore definitivamente dallo State
-                console.log(`   ❌ Timeout expired. Deleting player ${client.sessionId}.`);
-                this.state.players.delete(client.sessionId);
-                const orderIndex = this.state.playerOrder.indexOf(client.sessionId);
-                if (orderIndex !== -1)
-                    this.state.playerOrder.splice(orderIndex, 1);
-                if (this.state.hostSessionId === client.sessionId) {
-                    this.assignNextHost();
-                }
+                console.log(`   âŒ Timeout expired. Deleting player ${client.sessionId}.`);
+                this.removePlayerPermanently(client.sessionId);
             }
         }
     }
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //  Card Template Lookup
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     buildCardTemplateLookup() {
         if (!Array.isArray(cards_db_json_1.default) || cards_db_json_1.default.length === 0) {
             console.error("[ROOM] FATAL: cards_db.json is missing, invalid or empty. Card templates will not be available.");
@@ -239,18 +217,18 @@ class OfficeRoom extends colyseus_1.Room {
             console.error("[ROOM] FATAL: No valid card templates loaded from cards_db.json.");
         }
         else {
-            console.log(`📚 Loaded ${this.cardTemplates.size} card templates from cards_db.json`);
+            console.log(`ðŸ“š Loaded ${this.cardTemplates.size} card templates from cards_db.json`);
         }
     }
     getTemplate(templateId) {
         return this.cardTemplates.get(templateId);
     }
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //  Game Start
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     handleJoinGame(client, _data) {
         if (this.state.phase !== SharedTypes_1.GamePhase.WAITING_FOR_PLAYERS && this.state.phase !== SharedTypes_1.GamePhase.PRE_LOBBY) {
-            client.send(SharedTypes_1.ServerEvents.ERROR, { code: "GAME_ALREADY_STARTED", message: "Il gioco è già iniziato." });
+            client.send(SharedTypes_1.ServerEvents.ERROR, { code: "GAME_ALREADY_STARTED", message: "Il gioco Ã¨ giÃ  iniziato." });
             return;
         }
         const player = this.state.players.get(client.sessionId);
@@ -308,9 +286,30 @@ class OfficeRoom extends colyseus_1.Room {
         while (this.state.playerOrder.length > 0)
             this.state.playerOrder.pop();
         players.forEach((p) => this.state.playerOrder.push(p));
+        players.forEach((sessionId) => {
+            const participant = this.state.players.get(sessionId);
+            if (!participant)
+                return;
+            while (participant.hand.length > 0)
+                participant.hand.pop();
+            while (participant.company.length > 0)
+                participant.company.pop();
+            while (participant.activeEffects.length > 0)
+                participant.activeEffects.pop();
+            participant.score = 0;
+            participant.actionPoints = 0;
+        });
         this.state.turnIndex = 0;
         this.state.currentTurnPlayerId = this.state.playerOrder.at(0) ?? "";
         this.state.turnNumber = 1;
+        this.state.winnerId = undefined;
+        this.state.pendingAction = null;
+        this.state.actionStack = [];
+        this.state.reactionEndTime = 0;
+        if (this.reactionTimeout) {
+            this.reactionTimeout.clear();
+            this.reactionTimeout = null;
+        }
         // Build real deck via DeckManager
         try {
             this.serverDeck = DeckManager_1.DeckManager.createDeck();
@@ -334,7 +333,7 @@ class OfficeRoom extends colyseus_1.Room {
             return;
         }
         this.state.deckCount = this.serverDeck.length;
-        console.log(`🃏 Deck ready: ${this.state.deckCount} cards`);
+        console.log(`ðŸƒ Deck ready: ${this.state.deckCount} cards`);
         // Assign a Party Leader to each participant (setup-only cards, outside main deck).
         this.assignPartyLeaders(players);
         this.monsterTemplateIds = (0, monsterBoard_1.collectMonsterTemplateIds)(this.cardTemplates.values());
@@ -347,7 +346,7 @@ class OfficeRoom extends colyseus_1.Room {
         const activePlayer = this.state.players.get(this.state.currentTurnPlayerId);
         if (activePlayer)
             activePlayer.actionPoints = SharedTypes_1.MAX_ACTION_POINTS;
-        console.log(`🎮 Game started! First turn: ${this.state.currentTurnPlayerId} | starting hand: ${STARTING_HAND_SIZE}`);
+        console.log(`ðŸŽ® Game started! First turn: ${this.state.currentTurnPlayerId} | starting hand: ${STARTING_HAND_SIZE}`);
         this.broadcast(SharedTypes_1.ServerEvents.TURN_STARTED, {
             playerId: this.state.currentTurnPlayerId,
             turnNumber: this.state.turnNumber,
@@ -450,12 +449,12 @@ class OfficeRoom extends colyseus_1.Room {
         }
         return card;
     }
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //  Turn Management
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     handleEndTurn(client) {
         if (client.sessionId !== this.state.currentTurnPlayerId) {
-            client.send(SharedTypes_1.ServerEvents.ERROR, { code: "NOT_YOUR_TURN", message: "Non è il tuo turno." });
+            client.send(SharedTypes_1.ServerEvents.ERROR, { code: "NOT_YOUR_TURN", message: "Non Ã¨ il tuo turno." });
             return;
         }
         if (this.state.phase !== SharedTypes_1.GamePhase.PLAYER_TURN) {
@@ -466,8 +465,12 @@ class OfficeRoom extends colyseus_1.Room {
     }
     advanceTurn() {
         const next = (0, turnFlow_1.computeNextConnectedTurn)(this.state.playerOrder, this.state.turnIndex, (playerId) => Boolean(this.state.players.get(playerId)?.isConnected));
-        if (!next)
+        if (!next) {
+            this.state.currentTurnPlayerId = "";
+            this.state.turnIndex = 0;
+            this.state.phase = SharedTypes_1.GamePhase.WAITING_FOR_PLAYERS;
             return;
+        }
         this.state.turnIndex = next.nextIndex;
         this.state.currentTurnPlayerId = next.nextPlayerId;
         this.state.phase = SharedTypes_1.GamePhase.PLAYER_TURN;
@@ -482,7 +485,7 @@ class OfficeRoom extends colyseus_1.Room {
             if (idx !== -1)
                 effects.splice(idx, 1);
         });
-        console.log(`➡️  Turn ${this.state.turnNumber}: ${this.state.currentTurnPlayerId}`);
+        console.log(`âž¡ï¸  Turn ${this.state.turnNumber}: ${this.state.currentTurnPlayerId}`);
         this.broadcast(SharedTypes_1.ServerEvents.TURN_STARTED, {
             playerId: this.state.currentTurnPlayerId,
             turnNumber: this.state.turnNumber,
@@ -490,15 +493,15 @@ class OfficeRoom extends colyseus_1.Room {
         });
         this.checkWinConditions();
     }
-    // ─────────────────────────────────────────────────────
-    //  DRAW_CARD — uses DeckManager.drawCard
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    //  DRAW_CARD â€” uses DeckManager.drawCard
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     handleDrawCard(client) {
         if (!this.checkPlayerTurnAction(client, SharedTypes_1.DRAW_CARD_COST))
             return;
         const drawnCard = DeckManager_1.DeckManager.drawCard(this.serverDeck);
         if (!drawnCard) {
-            client.send(SharedTypes_1.ServerEvents.ERROR, { code: "DECK_EMPTY", message: "Il mazzo è vuoto." });
+            client.send(SharedTypes_1.ServerEvents.ERROR, { code: "DECK_EMPTY", message: "Il mazzo Ã¨ vuoto." });
             // Refund PA
             const player = this.state.players.get(client.sessionId);
             if (player)
@@ -510,16 +513,16 @@ class OfficeRoom extends colyseus_1.Room {
         if (player) {
             player.hand.push(this.createCardStateFromDeckCard(drawnCard));
         }
-        console.log(`📥 DRAW_CARD by ${client.sessionId}. Deck left: ${this.state.deckCount}`);
+        console.log(`ðŸ“¥ DRAW_CARD by ${client.sessionId}. Deck left: ${this.state.deckCount}`);
         client.send(SharedTypes_1.ServerEvents.CARD_DRAWN, {
             card: drawnCard,
             remainingDeck: this.state.deckCount
         });
         this.checkWinConditions();
     }
-    // ─────────────────────────────────────────────────────
-    //  PLAY_EMPLOYEE — Reaction Window trigger
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    //  PLAY_EMPLOYEE â€” Reaction Window trigger
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     handlePlayEmployee(client, data) {
         const { cardId } = data;
         if (!cardId) {
@@ -532,7 +535,7 @@ class OfficeRoom extends colyseus_1.Room {
         const handArr = player.hand;
         const cardIdx = handArr.findIndex((c) => c.id === cardId);
         if (cardIdx === -1) {
-            client.send(SharedTypes_1.ServerEvents.ERROR, { code: "CARD_NOT_IN_HAND", message: "La carta non è nella tua mano." });
+            client.send(SharedTypes_1.ServerEvents.ERROR, { code: "CARD_NOT_IN_HAND", message: "La carta non Ã¨ nella tua mano." });
             return;
         }
         const cardInHand = handArr[cardIdx];
@@ -566,16 +569,16 @@ class OfficeRoom extends colyseus_1.Room {
         if (this.reactionTimeout)
             this.reactionTimeout.clear();
         this.reactionTimeout = this.clock.setTimeout(() => this.resolvePhase(), SharedTypes_1.REACTION_WINDOW_MS);
-        console.log(`🃏 PLAY_EMPLOYEE by ${client.sessionId}: ${template?.name} (cost ${cost} PA). Window open.`);
+        console.log(`ðŸƒ PLAY_EMPLOYEE by ${client.sessionId}: ${template?.name} (cost ${cost} PA). Window open.`);
         // Broadcast START_REACTION_TIMER so Phaser shows animated countdown
         this.broadcast(SharedTypes_1.ServerEvents.START_REACTION_TIMER, {
             durationMs: SharedTypes_1.REACTION_WINDOW_MS,
             actionTypeLabel: `Assunzione di "${template?.name ?? cardInHand.templateId}" in corso!`
         });
     }
-    // ─────────────────────────────────────────────────────
-    //  SOLVE_CRISIS — Reaction Window trigger
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    //  SOLVE_CRISIS â€” Reaction Window trigger
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     handleSolveCrisis(client, data) {
         const { crisisId } = data;
         if (!crisisId) {
@@ -608,15 +611,15 @@ class OfficeRoom extends colyseus_1.Room {
             this.reactionTimeout.clear();
         this.reactionTimeout = this.clock.setTimeout(() => this.resolvePhase(), SharedTypes_1.REACTION_WINDOW_MS);
         const player = this.state.players.get(client.sessionId);
-        console.log(`💼 SOLVE_CRISIS by ${client.sessionId}: ${template?.name}. Window open.`);
+        console.log(`ðŸ’¼ SOLVE_CRISIS by ${client.sessionId}: ${template?.name}. Window open.`);
         this.broadcast(SharedTypes_1.ServerEvents.START_REACTION_TIMER, {
             durationMs: SharedTypes_1.REACTION_WINDOW_MS,
             actionTypeLabel: `Risoluzione crisi "${template?.name ?? crisis.templateId}" in corso!`
         });
     }
-    // ─────────────────────────────────────────────────────
-    //  PLAY_MAGIC — immediate (no Reaction Window)
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    //  PLAY_MAGIC â€” immediate (no Reaction Window)
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     handlePlayMagic(client, data) {
         const { cardId, targetPlayerId, targetHeroCardId } = data;
         if (!cardId) {
@@ -637,7 +640,7 @@ class OfficeRoom extends colyseus_1.Room {
         const handArr = player.hand;
         const cardIdx = handArr.findIndex((c) => c.id === cardId);
         if (cardIdx === -1) {
-            client.send(SharedTypes_1.ServerEvents.ERROR, { code: "CARD_NOT_IN_HAND", message: "La carta non è nella tua mano." });
+            client.send(SharedTypes_1.ServerEvents.ERROR, { code: "CARD_NOT_IN_HAND", message: "La carta non Ã¨ nella tua mano." });
             return;
         }
         const cardInHand = handArr[cardIdx];
@@ -670,7 +673,7 @@ class OfficeRoom extends colyseus_1.Room {
             });
             return;
         }
-        const cost = template?.cost ?? 1;
+        const baseCost = template?.cost ?? 1;
         // Validate targetPlayerId for targeted cards (magic/modifier)
         const effectAction = String(template?.effect?.action ?? "");
         const effectTarget = String(template?.effect?.target ?? "").toLowerCase();
@@ -700,7 +703,7 @@ class OfficeRoom extends colyseus_1.Room {
             const equipTarget = (0, itemEquip_1.resolveHeroEquipTarget)({
                 player,
                 targetHeroCardId,
-                allowFallbackToPlayerLevel: true,
+                allowFallbackToPlayerLevel: false,
             });
             if (!equipTarget.ok) {
                 client.send(SharedTypes_1.ServerEvents.ERROR, {
@@ -711,10 +714,15 @@ class OfficeRoom extends colyseus_1.Room {
             }
             resolvedTargetHeroCardId = equipTarget.targetHero?.id;
         }
-        if (!this.checkPlayerTurnAction(client, cost))
+        const discountPlan = this.peekMagicDiscount(player, isItemCard);
+        const effectiveCost = Math.max(0, baseCost - discountPlan.amount);
+        if (!this.checkPlayerTurnAction(client, effectiveCost))
             return;
+        if (discountPlan.amount > 0) {
+            this.consumeMagicDiscount(player, discountPlan);
+        }
         // Deduct PA and remove from hand immediately
-        handArr.splice(cardIdx, 1);
+        const removedCard = handArr.splice(cardIdx, 1)[0];
         // Populate pendingAction 
         const pending = new State_1.PendingActionState();
         pending.id = this.generateId();
@@ -724,6 +732,7 @@ class OfficeRoom extends colyseus_1.Room {
         pending.targetPlayerId = needsTarget ? targetPlayerId : undefined;
         pending.targetHeroCardId = resolvedTargetHeroCardId;
         pending.timestamp = Date.now();
+        this.pendingRemovedCards.set(pending.id, this.cloneRuntimeCardData(removedCard));
         this.state.pendingAction = pending;
         this.state.phase = SharedTypes_1.GamePhase.REACTION_WINDOW;
         this.state.reactionEndTime = Date.now() + SharedTypes_1.REACTION_WINDOW_MS;
@@ -731,15 +740,15 @@ class OfficeRoom extends colyseus_1.Room {
         if (this.reactionTimeout)
             this.reactionTimeout.clear();
         this.reactionTimeout = this.clock.setTimeout(() => this.resolvePhase(), SharedTypes_1.REACTION_WINDOW_MS);
-        console.log(`✨ PLAY_MAGIC by ${client.sessionId}: ${template?.name}. Window open.`);
+        console.log(`[PLAY_MAGIC] ${client.sessionId}: ${template?.name}. Window open. Cost ${baseCost} -> ${effectiveCost}`);
         this.broadcast(SharedTypes_1.ServerEvents.START_REACTION_TIMER, {
             durationMs: SharedTypes_1.REACTION_WINDOW_MS,
             actionTypeLabel: `Magheggio "${template?.name ?? cardInHand.templateId}" in corso!`
         });
     }
-    // ─────────────────────────────────────────────────────
-    //  PLAY_REACTION — enqueue into action stack
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    //  PLAY_REACTION â€” enqueue into action stack
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     handlePlayReaction(client, data) {
         if (this.state.phase !== SharedTypes_1.GamePhase.REACTION_WINDOW) {
             client.send(SharedTypes_1.ServerEvents.ERROR, { code: "NO_REACTION_WINDOW", message: "Nessuna finestra di reazione attiva." });
@@ -760,7 +769,7 @@ class OfficeRoom extends colyseus_1.Room {
         const handArr = player.hand;
         const cardIdx = handArr.findIndex((c) => c.id === cardId);
         if (cardIdx === -1) {
-            client.send(SharedTypes_1.ServerEvents.ERROR, { code: "CARD_NOT_IN_HAND", message: "La carta non è nella tua mano." });
+            client.send(SharedTypes_1.ServerEvents.ERROR, { code: "CARD_NOT_IN_HAND", message: "La carta non Ã¨ nella tua mano." });
             return;
         }
         const cardInHand = handArr[cardIdx];
@@ -793,7 +802,7 @@ class OfficeRoom extends colyseus_1.Room {
         };
         // Push BEFORE original action so stack[0] = newest reaction (LIFO)
         this.state.actionStack.unshift(reactionPending);
-        console.log(`🗡️  PLAY_REACTION by ${client.sessionId}: ${template?.name} queued (stack depth: ${this.state.actionStack.length})`);
+        console.log(`ðŸ—¡ï¸  PLAY_REACTION by ${client.sessionId}: ${template?.name} queued (stack depth: ${this.state.actionStack.length})`);
         this.broadcast(SharedTypes_1.ServerEvents.REACTION_TRIGGERED, {
             playerId: client.sessionId,
             playerName: player.username,
@@ -802,15 +811,17 @@ class OfficeRoom extends colyseus_1.Room {
             cardName: template?.name ?? cardId
         });
     }
-    // ─────────────────────────────────────────────────────
-    //  resolvePhase — called by clock.setTimeout
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    //  resolvePhase â€” called by clock.setTimeout
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     resolvePhase() {
         this.state.phase = SharedTypes_1.GamePhase.RESOLUTION;
         console.log(`Reaction Window closed. Resolving stack of ${this.state.actionStack.length} action(s)...`);
         const resolution = (0, reactionResolution_1.resolveReactionQueue)(this.state);
         const originalAction = resolution.originalAction;
         let structuralSuccess = !originalAction?.isCancelled;
+        let magicResolution = null;
+        let crisisSummary = null;
         if (originalAction && !originalAction.isCancelled) {
             switch (originalAction.actionType) {
                 case SharedTypes_1.ClientMessages.PLAY_EMPLOYEE:
@@ -818,10 +829,15 @@ class OfficeRoom extends colyseus_1.Room {
                     structuralSuccess = true;
                     break;
                 case SharedTypes_1.ClientMessages.SOLVE_CRISIS:
-                    structuralSuccess = this.applyCrisisResolution(originalAction.playerId, originalAction.targetCrisisId);
+                    crisisSummary = this.applyCrisisResolution(originalAction.playerId, originalAction.targetCrisisId);
+                    structuralSuccess = crisisSummary.success;
                     break;
                 case SharedTypes_1.ClientMessages.PLAY_MAGIC:
-                    structuralSuccess = this.applyMagicResolution(originalAction);
+                    magicResolution = this.applyMagicResolution(originalAction);
+                    structuralSuccess = magicResolution.success;
+                    if (!magicResolution.success && magicResolution.restoreCardToHand) {
+                        this.restorePendingCardToHand(originalAction.id, originalAction.playerId);
+                    }
                     break;
                 default:
                     structuralSuccess = true;
@@ -841,7 +857,13 @@ class OfficeRoom extends colyseus_1.Room {
                 ? "Imprevisto risolto con successo."
                 : "Tentativo di risoluzione Imprevisto fallito.");
         }
+        if (originalAction && originalAction.actionType === SharedTypes_1.ClientMessages.PLAY_MAGIC && magicResolution?.message) {
+            log.push(magicResolution.message);
+        }
         this.broadcast(SharedTypes_1.ServerEvents.ACTION_RESOLVED, { success, log });
+        if (originalAction?.id) {
+            this.pendingRemovedCards.delete(originalAction.id);
+        }
         this.state.pendingAction = null;
         this.state.actionStack = [];
         this.state.reactionEndTime = 0;
@@ -867,7 +889,7 @@ class OfficeRoom extends colyseus_1.Room {
         companyCard.shortDesc = template.shortDesc;
         companyCard.description = template.description;
         player.company.push(companyCard);
-        console.log(`   👔 ${player.username} hired ${template.name}. Company size: ${player.company.length}`);
+        console.log(`   ðŸ‘” ${player.username} hired ${template.name}. Company size: ${player.company.length}`);
     }
     /**
      * Server-authoritative crisis resolution:
@@ -879,43 +901,59 @@ class OfficeRoom extends colyseus_1.Room {
     applyMagicResolution(action) {
         const player = this.state.players.get(action.playerId);
         if (!player)
-            return false;
+            return { success: false, restoreCardToHand: false, message: "Azione annullata: giocatore non trovato." };
         if (!action.targetCardId)
-            return true;
+            return { success: true, restoreCardToHand: false };
         const template = this.getTemplate(action.targetCardId);
-        if (!template)
-            return false;
+        if (!template) {
+            return {
+                success: false,
+                restoreCardToHand: true,
+                message: "Carta non risolta: template non trovato. Carta restituita in mano.",
+            };
+        }
         const typeValue = String(template.type ?? "").trim().toLowerCase();
         if (typeValue !== "item" && typeValue !== "oggetto") {
-            return true;
+            return { success: true, restoreCardToHand: false };
         }
         const equipTarget = (0, itemEquip_1.resolveHeroEquipTarget)({
             player,
             targetHeroCardId: action.targetHeroCardId,
-            allowFallbackToPlayerLevel: true,
+            allowFallbackToPlayerLevel: false,
         });
-        if (!equipTarget.ok)
-            return false;
-        if (!equipTarget.targetHero) {
-            // Temporary compatibility fallback: no explicit hero target, skip structural equip.
-            return true;
+        if (!equipTarget.ok || !equipTarget.targetHero) {
+            return {
+                success: false,
+                restoreCardToHand: true,
+                message: "Item annullato: Hero bersaglio non valido. Carta restituita in mano.",
+            };
         }
         const itemCard = (0, itemEquip_1.createItemCardForEquip)(template, () => this.generateId());
-        return (0, itemEquip_1.equipItemOnHero)(equipTarget.targetHero, itemCard);
+        const equipped = (0, itemEquip_1.equipItemOnHero)(equipTarget.targetHero, itemCard);
+        if (!equipped) {
+            return {
+                success: false,
+                restoreCardToHand: true,
+                message: "Item annullato: equip fallito. Carta restituita in mano.",
+            };
+        }
+        return { success: true, restoreCardToHand: false };
     }
     applyCrisisResolution(playerId, crisisId) {
         const player = this.state.players.get(playerId);
         if (!player)
-            return false;
+            return { success: false };
         const crisisArr = this.state.centralCrises;
         const idx = crisisArr.findIndex((c) => c.id === crisisId);
         if (idx === -1)
-            return false;
+            return { success: false };
         const crisis = crisisArr[idx];
         const template = this.getTemplate(crisis.templateId);
         const targetRoll = typeof crisis.targetRoll === "number"
             ? crisis.targetRoll
             : (typeof template?.targetRoll === "number" ? template.targetRoll : 7);
+        const rewardCode = typeof template?.effect?.reward === "string" ? template.effect.reward : undefined;
+        const penaltyCode = typeof template?.effect?.penalty === "string" ? template.effect.penalty : undefined;
         const modifier = this.getCrisisRollModifier(playerId) + (typeof crisis.modifier === "number" ? crisis.modifier : 0);
         const roll = (0, monsterBoard_1.rollCrisisAttempt)(targetRoll, modifier);
         this.broadcast(SharedTypes_1.ServerEvents.DICE_ROLLED, {
@@ -923,8 +961,12 @@ class OfficeRoom extends colyseus_1.Room {
             cardId: crisis.id,
             roll1: roll.roll1,
             roll2: roll.roll2,
+            modifier,
+            targetRoll,
             total: roll.total,
             success: roll.success,
+            rewardCode: roll.success ? rewardCode : undefined,
+            penaltyCode: roll.success ? undefined : penaltyCode,
         });
         if (roll.success) {
             const reward = template?.effect?.reward;
@@ -938,10 +980,10 @@ class OfficeRoom extends colyseus_1.Room {
             crisisArr.splice(idx, 1);
             this.refillCentralCrisesToThree();
             console.log(`   Crisis ${crisis.templateId} removed from central table.`);
-            return true;
+            return { success: true, rewardCode };
         }
         this.applyCrisisPenalty(template?.effect?.penalty, playerId);
-        return false;
+        return { success: false, penaltyCode };
     }
     getCrisisRollModifier(playerId) {
         const player = this.state.players.get(playerId);
@@ -1015,9 +1057,9 @@ class OfficeRoom extends colyseus_1.Room {
             }
         }
     }
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //  Win Condition Check
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     checkWinConditions() {
         if (this.state.phase === SharedTypes_1.GamePhase.GAME_OVER)
             return;
@@ -1036,9 +1078,9 @@ class OfficeRoom extends colyseus_1.Room {
             return;
         }
     }
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //  Triple Validation Helper
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     checkPlayerTurnAction(client, requiredPA) {
         const player = this.state.players.get(client.sessionId);
         const validation = (0, turnFlow_1.validateAndSpendTurnAction)({
@@ -1057,12 +1099,152 @@ class OfficeRoom extends colyseus_1.Room {
         }
         return true;
     }
-    // ─────────────────────────────────────────────────────
+    peekMagicDiscount(player, isItemCard) {
+        if (isItemCard)
+            return { amount: 0, sourceTag: null };
+        const effects = player.activeEffects;
+        let bestAmount = 0;
+        let bestTag = null;
+        for (const tag of effects) {
+            if (typeof tag !== "string")
+                continue;
+            if (!tag.startsWith("discount_magic_") && !tag.startsWith("discount_trick_"))
+                continue;
+            const raw = tag.startsWith("discount_magic_")
+                ? tag.replace("discount_magic_", "")
+                : tag.replace("discount_trick_", "");
+            const parsed = parseInt(raw, 10);
+            if (!Number.isFinite(parsed) || parsed <= 0)
+                continue;
+            if (parsed > bestAmount) {
+                bestAmount = parsed;
+                bestTag = tag;
+            }
+        }
+        return { amount: bestAmount, sourceTag: bestTag };
+    }
+    consumeMagicDiscount(player, plan) {
+        if (!plan.sourceTag || plan.amount <= 0)
+            return;
+        const effects = player.activeEffects;
+        const tagIndex = effects.indexOf(plan.sourceTag);
+        if (tagIndex !== -1) {
+            effects.splice(tagIndex, 1);
+        }
+        const pairTag = plan.sourceTag.startsWith("discount_magic_")
+            ? `discount_trick_${plan.amount}`
+            : `discount_magic_${plan.amount}`;
+        const pairIndex = effects.indexOf(pairTag);
+        if (pairIndex !== -1) {
+            effects.splice(pairIndex, 1);
+        }
+    }
+    cloneRuntimeCardData(card) {
+        return {
+            id: String(card.id),
+            templateId: String(card.templateId),
+            type: card.type,
+            costPA: card.costPA,
+            isFaceUp: card.isFaceUp,
+            name: card.name,
+            shortDesc: card.shortDesc,
+            description: card.description,
+            targetRoll: card.targetRoll,
+            modifier: card.modifier,
+            subtype: card.subtype,
+        };
+    }
+    restorePendingCardToHand(pendingId, playerId) {
+        const player = this.state.players.get(playerId);
+        if (!player)
+            return false;
+        const hand = player.hand;
+        const cached = this.pendingRemovedCards.get(pendingId);
+        const fallbackTemplateId = this.state.pendingAction?.targetCardId;
+        const templateId = cached?.templateId ?? fallbackTemplateId;
+        if (!templateId)
+            return false;
+        const runtimeId = cached?.id ?? this.generateId();
+        if (hand.some((card) => String(card.id) === String(runtimeId))) {
+            return false;
+        }
+        const restored = this.createCardStateFromDeckCard({
+            id: runtimeId,
+            templateId,
+            type: cached?.type ?? SharedTypes_1.CardType.MAGIC,
+            costPA: cached?.costPA,
+            isFaceUp: false,
+            targetRoll: cached?.targetRoll,
+            modifier: cached?.modifier,
+            subtype: cached?.subtype,
+            shortDesc: cached?.shortDesc,
+        });
+        hand.push(restored);
+        this.pendingRemovedCards.delete(pendingId);
+        return true;
+    }
+    removePlayerPermanently(sessionId) {
+        this.cleanupPendingForRemovedPlayer(sessionId);
+        this.state.players.delete(sessionId);
+        const orderIndex = this.state.playerOrder.indexOf(sessionId);
+        if (orderIndex !== -1)
+            this.state.playerOrder.splice(orderIndex, 1);
+        if (this.state.hostSessionId === sessionId) {
+            this.assignNextHost();
+        }
+        if (this.state.currentTurnPlayerId === sessionId) {
+            if (this.state.playerOrder.length > 0 && this.state.phase === SharedTypes_1.GamePhase.PLAYER_TURN) {
+                this.advanceTurn();
+            }
+            else if (this.state.playerOrder.length === 0) {
+                this.state.currentTurnPlayerId = "";
+                this.state.turnIndex = 0;
+                this.state.phase = SharedTypes_1.GamePhase.WAITING_FOR_PLAYERS;
+            }
+            else {
+                this.state.currentTurnPlayerId = this.state.playerOrder[this.state.turnIndex] ?? "";
+            }
+        }
+    }
+    cleanupPendingForRemovedPlayer(sessionId) {
+        const pending = this.state.pendingAction;
+        const inReactionFlow = this.state.phase === SharedTypes_1.GamePhase.REACTION_WINDOW || this.state.phase === SharedTypes_1.GamePhase.RESOLUTION;
+        if (pending?.targetPlayerId === sessionId) {
+            pending.targetPlayerId = undefined;
+        }
+        this.state.actionStack = this.state.actionStack
+            .filter((action) => action.playerId !== sessionId)
+            .map((action) => ({
+            ...action,
+            targetPlayerId: action.targetPlayerId === sessionId ? undefined : action.targetPlayerId,
+        }));
+        if (pending?.playerId !== sessionId) {
+            return;
+        }
+        if (this.reactionTimeout) {
+            this.reactionTimeout.clear();
+            this.reactionTimeout = null;
+        }
+        if (pending.id) {
+            this.pendingRemovedCards.delete(pending.id);
+        }
+        this.state.pendingAction = null;
+        this.state.actionStack = [];
+        this.state.reactionEndTime = 0;
+        if (inReactionFlow) {
+            this.state.phase = SharedTypes_1.GamePhase.PLAYER_TURN;
+            this.broadcast(SharedTypes_1.ServerEvents.ACTION_RESOLVED, {
+                success: false,
+                log: ["Azione annullata: giocatore disconnesso."],
+            });
+        }
+    }
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //  Misc
-    // ─────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     handleEmote(client, data) {
-        console.log(`💬 Emote from ${client.sessionId}: ${data?.emoteId}`);
-        this.broadcast("EMOTE", { playerId: client.sessionId, emoteId: data?.emoteId });
+        console.log(`ðŸ’¬ Emote from ${client.sessionId}: ${data?.emoteId}`);
+        this.broadcast(SharedTypes_1.ServerEvents.EMOTE, { playerId: client.sessionId, emoteId: data?.emoteId });
     }
     generateId() {
         return "xxxx-xxxx-4xxx-yxxx".replace(/[xy]/g, (c) => {

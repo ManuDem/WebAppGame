@@ -13,7 +13,8 @@ export type ActionBlockReasonKey =
     | 'game_reason_deck_empty'
     | 'game_reason_no_monsters'
     | 'game_reason_game_over'
-    | 'game_reason_waiting_players';
+    | 'game_reason_waiting_players'
+    | 'game_reason_action_pending';
 
 export interface MatchActionState {
     isMyTurn: boolean;

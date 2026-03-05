@@ -1,0 +1,802 @@
+[
+  {
+    "screen": "boot-it",
+    "viewport": "360x640-portrait",
+    "ok": true,
+    "filePath": "qa/output/boot-it-360x640-portrait.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 12,
+      "right": 12,
+      "bottom": 12,
+      "left": 12,
+      "tier": "A"
+    },
+    "consoleErrors": [],
+    "pageErrors": []
+  },
+  {
+    "screen": "boot-it",
+    "viewport": "390x844-portrait",
+    "ok": true,
+    "filePath": "qa/output/boot-it-390x844-portrait.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 12,
+      "right": 12,
+      "bottom": 12,
+      "left": 12,
+      "tier": "A"
+    },
+    "consoleErrors": [],
+    "pageErrors": []
+  },
+  {
+    "screen": "boot-it",
+    "viewport": "414x896-portrait",
+    "ok": true,
+    "filePath": "qa/output/boot-it-414x896-portrait.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 12,
+      "right": 12,
+      "bottom": 12,
+      "left": 12,
+      "tier": "B"
+    },
+    "consoleErrors": [],
+    "pageErrors": []
+  },
+  {
+    "screen": "boot-it",
+    "viewport": "768x1024-portrait",
+    "ok": true,
+    "filePath": "qa/output/boot-it-768x1024-portrait.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 16,
+      "right": 16,
+      "bottom": 16,
+      "left": 16,
+      "tier": "D"
+    },
+    "consoleErrors": [],
+    "pageErrors": []
+  },
+  {
+    "screen": "boot-it",
+    "viewport": "844x390-landscape",
+    "ok": true,
+    "filePath": "qa/output/boot-it-844x390-landscape.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 8,
+      "right": 10,
+      "bottom": 8,
+      "left": 10,
+      "tier": "C"
+    },
+    "consoleErrors": [],
+    "pageErrors": []
+  },
+  {
+    "screen": "boot-it",
+    "viewport": "896x414-landscape",
+    "ok": true,
+    "filePath": "qa/output/boot-it-896x414-landscape.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 8,
+      "right": 10,
+      "bottom": 8,
+      "left": 10,
+      "tier": "C"
+    },
+    "consoleErrors": [],
+    "pageErrors": []
+  },
+  {
+    "screen": "boot-it",
+    "viewport": "1024x768-landscape",
+    "ok": true,
+    "filePath": "qa/output/boot-it-1024x768-landscape.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 16,
+      "right": 16,
+      "bottom": 16,
+      "left": 16,
+      "tier": "E"
+    },
+    "consoleErrors": [],
+    "pageErrors": []
+  },
+  {
+    "screen": "boot-it",
+    "viewport": "1366x768-landscape",
+    "ok": true,
+    "filePath": "qa/output/boot-it-1366x768-landscape.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 16,
+      "right": 16,
+      "bottom": 16,
+      "left": 16,
+      "tier": "E"
+    },
+    "consoleErrors": [],
+    "pageErrors": []
+  },
+  {
+    "screen": "login-it",
+    "viewport": "360x640-portrait",
+    "ok": true,
+    "filePath": "qa/output/login-it-360x640-portrait.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 12,
+      "right": 12,
+      "bottom": 12,
+      "left": 12,
+      "tier": "A"
+    },
+    "consoleErrors": [
+      "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    ],
+    "pageErrors": []
+  },
+  {
+    "screen": "login-it",
+    "viewport": "390x844-portrait",
+    "ok": true,
+    "filePath": "qa/output/login-it-390x844-portrait.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 12,
+      "right": 12,
+      "bottom": 12,
+      "left": 12,
+      "tier": "A"
+    },
+    "consoleErrors": [
+      "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    ],
+    "pageErrors": []
+  },
+  {
+    "screen": "login-it",
+    "viewport": "414x896-portrait",
+    "ok": true,
+    "filePath": "qa/output/login-it-414x896-portrait.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 12,
+      "right": 12,
+      "bottom": 12,
+      "left": 12,
+      "tier": "B"
+    },
+    "consoleErrors": [
+      "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    ],
+    "pageErrors": []
+  },
+  {
+    "screen": "login-it",
+    "viewport": "768x1024-portrait",
+    "ok": true,
+    "filePath": "qa/output/login-it-768x1024-portrait.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 16,
+      "right": 16,
+      "bottom": 16,
+      "left": 16,
+      "tier": "D"
+    },
+    "consoleErrors": [
+      "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    ],
+    "pageErrors": []
+  },
+  {
+    "screen": "login-it",
+    "viewport": "844x390-landscape",
+    "ok": true,
+    "filePath": "qa/output/login-it-844x390-landscape.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 8,
+      "right": 10,
+      "bottom": 8,
+      "left": 10,
+      "tier": "C"
+    },
+    "consoleErrors": [
+      "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    ],
+    "pageErrors": []
+  },
+  {
+    "screen": "login-it",
+    "viewport": "896x414-landscape",
+    "ok": true,
+    "filePath": "qa/output/login-it-896x414-landscape.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 8,
+      "right": 10,
+      "bottom": 8,
+      "left": 10,
+      "tier": "C"
+    },
+    "consoleErrors": [
+      "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    ],
+    "pageErrors": []
+  },
+  {
+    "screen": "login-it",
+    "viewport": "1024x768-landscape",
+    "ok": true,
+    "filePath": "qa/output/login-it-1024x768-landscape.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 16,
+      "right": 16,
+      "bottom": 16,
+      "left": 16,
+      "tier": "E"
+    },
+    "consoleErrors": [
+      "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    ],
+    "pageErrors": []
+  },
+  {
+    "screen": "login-it",
+    "viewport": "1366x768-landscape",
+    "ok": true,
+    "filePath": "qa/output/login-it-1366x768-landscape.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 16,
+      "right": 16,
+      "bottom": 16,
+      "left": 16,
+      "tier": "E"
+    },
+    "consoleErrors": [
+      "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    ],
+    "pageErrors": []
+  },
+  {
+    "screen": "prelobby-it",
+    "viewport": "360x640-portrait",
+    "ok": true,
+    "filePath": "qa/output/prelobby-it-360x640-portrait.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 12,
+      "right": 12,
+      "bottom": 12,
+      "left": 12,
+      "tier": "A"
+    },
+    "consoleErrors": [],
+    "pageErrors": []
+  },
+  {
+    "screen": "prelobby-it",
+    "viewport": "390x844-portrait",
+    "ok": true,
+    "filePath": "qa/output/prelobby-it-390x844-portrait.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 12,
+      "right": 12,
+      "bottom": 12,
+      "left": 12,
+      "tier": "A"
+    },
+    "consoleErrors": [],
+    "pageErrors": []
+  },
+  {
+    "screen": "prelobby-it",
+    "viewport": "414x896-portrait",
+    "ok": true,
+    "filePath": "qa/output/prelobby-it-414x896-portrait.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 12,
+      "right": 12,
+      "bottom": 12,
+      "left": 12,
+      "tier": "B"
+    },
+    "consoleErrors": [],
+    "pageErrors": []
+  },
+  {
+    "screen": "prelobby-it",
+    "viewport": "768x1024-portrait",
+    "ok": true,
+    "filePath": "qa/output/prelobby-it-768x1024-portrait.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 16,
+      "right": 16,
+      "bottom": 16,
+      "left": 16,
+      "tier": "D"
+    },
+    "consoleErrors": [],
+    "pageErrors": []
+  },
+  {
+    "screen": "prelobby-it",
+    "viewport": "844x390-landscape",
+    "ok": true,
+    "filePath": "qa/output/prelobby-it-844x390-landscape.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 8,
+      "right": 10,
+      "bottom": 8,
+      "left": 10,
+      "tier": "C"
+    },
+    "consoleErrors": [],
+    "pageErrors": []
+  },
+  {
+    "screen": "prelobby-it",
+    "viewport": "896x414-landscape",
+    "ok": true,
+    "filePath": "qa/output/prelobby-it-896x414-landscape.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 8,
+      "right": 10,
+      "bottom": 8,
+      "left": 10,
+      "tier": "C"
+    },
+    "consoleErrors": [],
+    "pageErrors": []
+  },
+  {
+    "screen": "prelobby-it",
+    "viewport": "1024x768-landscape",
+    "ok": true,
+    "filePath": "qa/output/prelobby-it-1024x768-landscape.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 16,
+      "right": 16,
+      "bottom": 16,
+      "left": 16,
+      "tier": "E"
+    },
+    "consoleErrors": [],
+    "pageErrors": []
+  },
+  {
+    "screen": "prelobby-it",
+    "viewport": "1366x768-landscape",
+    "ok": true,
+    "filePath": "qa/output/prelobby-it-1366x768-landscape.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 16,
+      "right": 16,
+      "bottom": 16,
+      "left": 16,
+      "tier": "E"
+    },
+    "consoleErrors": [],
+    "pageErrors": []
+  },
+  {
+    "screen": "boot-en",
+    "viewport": "360x640-portrait",
+    "ok": true,
+    "filePath": "qa/output/boot-en-360x640-portrait.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 12,
+      "right": 12,
+      "bottom": 12,
+      "left": 12,
+      "tier": "A"
+    },
+    "consoleErrors": [],
+    "pageErrors": []
+  },
+  {
+    "screen": "boot-en",
+    "viewport": "390x844-portrait",
+    "ok": true,
+    "filePath": "qa/output/boot-en-390x844-portrait.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 12,
+      "right": 12,
+      "bottom": 12,
+      "left": 12,
+      "tier": "A"
+    },
+    "consoleErrors": [],
+    "pageErrors": []
+  },
+  {
+    "screen": "boot-en",
+    "viewport": "414x896-portrait",
+    "ok": true,
+    "filePath": "qa/output/boot-en-414x896-portrait.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 12,
+      "right": 12,
+      "bottom": 12,
+      "left": 12,
+      "tier": "B"
+    },
+    "consoleErrors": [],
+    "pageErrors": []
+  },
+  {
+    "screen": "boot-en",
+    "viewport": "768x1024-portrait",
+    "ok": true,
+    "filePath": "qa/output/boot-en-768x1024-portrait.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 16,
+      "right": 16,
+      "bottom": 16,
+      "left": 16,
+      "tier": "D"
+    },
+    "consoleErrors": [],
+    "pageErrors": []
+  },
+  {
+    "screen": "boot-en",
+    "viewport": "844x390-landscape",
+    "ok": true,
+    "filePath": "qa/output/boot-en-844x390-landscape.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 8,
+      "right": 10,
+      "bottom": 8,
+      "left": 10,
+      "tier": "C"
+    },
+    "consoleErrors": [],
+    "pageErrors": []
+  },
+  {
+    "screen": "boot-en",
+    "viewport": "896x414-landscape",
+    "ok": true,
+    "filePath": "qa/output/boot-en-896x414-landscape.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 8,
+      "right": 10,
+      "bottom": 8,
+      "left": 10,
+      "tier": "C"
+    },
+    "consoleErrors": [],
+    "pageErrors": []
+  },
+  {
+    "screen": "boot-en",
+    "viewport": "1024x768-landscape",
+    "ok": true,
+    "filePath": "qa/output/boot-en-1024x768-landscape.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 16,
+      "right": 16,
+      "bottom": 16,
+      "left": 16,
+      "tier": "E"
+    },
+    "consoleErrors": [],
+    "pageErrors": []
+  },
+  {
+    "screen": "boot-en",
+    "viewport": "1366x768-landscape",
+    "ok": true,
+    "filePath": "qa/output/boot-en-1366x768-landscape.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 16,
+      "right": 16,
+      "bottom": 16,
+      "left": 16,
+      "tier": "E"
+    },
+    "consoleErrors": [],
+    "pageErrors": []
+  },
+  {
+    "screen": "login-en",
+    "viewport": "360x640-portrait",
+    "ok": true,
+    "filePath": "qa/output/login-en-360x640-portrait.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 12,
+      "right": 12,
+      "bottom": 12,
+      "left": 12,
+      "tier": "A"
+    },
+    "consoleErrors": [
+      "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    ],
+    "pageErrors": []
+  },
+  {
+    "screen": "login-en",
+    "viewport": "390x844-portrait",
+    "ok": true,
+    "filePath": "qa/output/login-en-390x844-portrait.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 12,
+      "right": 12,
+      "bottom": 12,
+      "left": 12,
+      "tier": "A"
+    },
+    "consoleErrors": [
+      "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    ],
+    "pageErrors": []
+  },
+  {
+    "screen": "login-en",
+    "viewport": "414x896-portrait",
+    "ok": true,
+    "filePath": "qa/output/login-en-414x896-portrait.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 12,
+      "right": 12,
+      "bottom": 12,
+      "left": 12,
+      "tier": "B"
+    },
+    "consoleErrors": [
+      "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    ],
+    "pageErrors": []
+  },
+  {
+    "screen": "login-en",
+    "viewport": "768x1024-portrait",
+    "ok": true,
+    "filePath": "qa/output/login-en-768x1024-portrait.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 16,
+      "right": 16,
+      "bottom": 16,
+      "left": 16,
+      "tier": "D"
+    },
+    "consoleErrors": [
+      "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    ],
+    "pageErrors": []
+  },
+  {
+    "screen": "login-en",
+    "viewport": "844x390-landscape",
+    "ok": true,
+    "filePath": "qa/output/login-en-844x390-landscape.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 8,
+      "right": 10,
+      "bottom": 8,
+      "left": 10,
+      "tier": "C"
+    },
+    "consoleErrors": [
+      "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    ],
+    "pageErrors": []
+  },
+  {
+    "screen": "login-en",
+    "viewport": "896x414-landscape",
+    "ok": true,
+    "filePath": "qa/output/login-en-896x414-landscape.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 8,
+      "right": 10,
+      "bottom": 8,
+      "left": 10,
+      "tier": "C"
+    },
+    "consoleErrors": [
+      "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    ],
+    "pageErrors": []
+  },
+  {
+    "screen": "login-en",
+    "viewport": "1024x768-landscape",
+    "ok": true,
+    "filePath": "qa/output/login-en-1024x768-landscape.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 16,
+      "right": 16,
+      "bottom": 16,
+      "left": 16,
+      "tier": "E"
+    },
+    "consoleErrors": [
+      "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    ],
+    "pageErrors": []
+  },
+  {
+    "screen": "login-en",
+    "viewport": "1366x768-landscape",
+    "ok": true,
+    "filePath": "qa/output/login-en-1366x768-landscape.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 16,
+      "right": 16,
+      "bottom": 16,
+      "left": 16,
+      "tier": "E"
+    },
+    "consoleErrors": [
+      "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    ],
+    "pageErrors": []
+  },
+  {
+    "screen": "prelobby-en",
+    "viewport": "360x640-portrait",
+    "ok": true,
+    "filePath": "qa/output/prelobby-en-360x640-portrait.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 12,
+      "right": 12,
+      "bottom": 12,
+      "left": 12,
+      "tier": "A"
+    },
+    "consoleErrors": [],
+    "pageErrors": []
+  },
+  {
+    "screen": "prelobby-en",
+    "viewport": "390x844-portrait",
+    "ok": true,
+    "filePath": "qa/output/prelobby-en-390x844-portrait.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 12,
+      "right": 12,
+      "bottom": 12,
+      "left": 12,
+      "tier": "A"
+    },
+    "consoleErrors": [],
+    "pageErrors": []
+  },
+  {
+    "screen": "prelobby-en",
+    "viewport": "414x896-portrait",
+    "ok": true,
+    "filePath": "qa/output/prelobby-en-414x896-portrait.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 12,
+      "right": 12,
+      "bottom": 12,
+      "left": 12,
+      "tier": "B"
+    },
+    "consoleErrors": [],
+    "pageErrors": []
+  },
+  {
+    "screen": "prelobby-en",
+    "viewport": "768x1024-portrait",
+    "ok": true,
+    "filePath": "qa/output/prelobby-en-768x1024-portrait.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 16,
+      "right": 16,
+      "bottom": 16,
+      "left": 16,
+      "tier": "D"
+    },
+    "consoleErrors": [],
+    "pageErrors": []
+  },
+  {
+    "screen": "prelobby-en",
+    "viewport": "844x390-landscape",
+    "ok": true,
+    "filePath": "qa/output/prelobby-en-844x390-landscape.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 8,
+      "right": 10,
+      "bottom": 8,
+      "left": 10,
+      "tier": "C"
+    },
+    "consoleErrors": [],
+    "pageErrors": []
+  },
+  {
+    "screen": "prelobby-en",
+    "viewport": "896x414-landscape",
+    "ok": true,
+    "filePath": "qa/output/prelobby-en-896x414-landscape.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 8,
+      "right": 10,
+      "bottom": 8,
+      "left": 10,
+      "tier": "C"
+    },
+    "consoleErrors": [],
+    "pageErrors": []
+  },
+  {
+    "screen": "prelobby-en",
+    "viewport": "1024x768-landscape",
+    "ok": true,
+    "filePath": "qa/output/prelobby-en-1024x768-landscape.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 16,
+      "right": 16,
+      "bottom": 16,
+      "left": 16,
+      "tier": "E"
+    },
+    "consoleErrors": [],
+    "pageErrors": []
+  },
+  {
+    "screen": "prelobby-en",
+    "viewport": "1366x768-landscape",
+    "ok": true,
+    "filePath": "qa/output/prelobby-en-1366x768-landscape.png",
+    "layoutIssues": [],
+    "safeArea": {
+      "top": 16,
+      "right": 16,
+      "bottom": 16,
+      "left": 16,
+      "tier": "E"
+    },
+    "consoleErrors": [],
+    "pageErrors": []
+  }
+]

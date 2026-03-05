@@ -26,6 +26,12 @@ describe('i18n coverage (IT/EN)', () => {
             'card_mini_item_default',
             'game_vp_short',
             'game_heroes_short',
+            'game_attack_cta_compact',
+            'game_attack_cta_locked_compact',
+            'qa_mock_local_name',
+            'qa_mock_opp_north',
+            'qa_mock_opp_south',
+            'qa_mock_wrong_phase_draw',
         ];
 
         required.forEach((key) => {

@@ -15,9 +15,16 @@ Indice principale documentazione.
 - [PLAN](./PLAN.md)
 - [GDD](./GDD.md)
 - [QA](./QA.md)
+- [QA_FLOW](./QA_FLOW.md)
+- [GAMEPLAY_AUDIT](./GAMEPLAY_AUDIT.md)
+- [GAMEPLAY_BUGFIX_AUDIT](./GAMEPLAY_BUGFIX_AUDIT.md)
+- [I18N_AUDIT](./I18N_AUDIT.md)
+- [ARTWORK_MAPPING](./ARTWORK_MAPPING.md)
+- [UX_GUIDE](./UX_GUIDE.md)
 
 ## Design
 
+- [LAYOUT_SPEC](./ui/LAYOUT_SPEC.md)
 - [MATCH_UI_SPEC](./ui/MATCH_UI_SPEC.md)
 - [CARD_UI_SPEC](./ui/CARD_UI_SPEC.md)
 - [Feature_01_Lobby](./design/Feature_01_Lobby.md)

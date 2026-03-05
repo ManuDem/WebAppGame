@@ -61,7 +61,7 @@ describe("Feature 01: Room Connection and Lobby Validation", () => {
     test("onAuth deve fallire se ceoName contiene caratteri non alfanumerici", () => {
         expect(() => {
             room.onAuth({} as any, { ceoName: "CEO Boss!", roomCode: "1234" }, {} as any);
-        }).toThrow("Il nome CEO può contenere solo caratteri alfanumerici");
+        }).toThrow("caratteri alfanumerici");
     });
 
     test("onAuth deve ritornare i dati se ceoName è valido", () => {

@@ -1,0 +1,290 @@
+{
+  "emp_01": {
+    "it": {
+      "name": "Lo Stagista Sfruttato",
+      "shortDesc": "+1 PA gratis. Grazie, poverino.",
+      "description": "Lavora 24/7 ma non sa cosa fa. Ti fornisce 1 PA bonus il prossimo turno."
+    },
+    "en": {
+      "name": "Overworked Intern",
+      "shortDesc": "Free +1 AP. Thanks, kid.",
+      "description": "Works around the clock and still has no clue. Grants you +1 AP next turn."
+    }
+  },
+  "emp_02": {
+    "it": {
+      "name": "Il PR Fuffarolo",
+      "shortDesc": "Scudo PR: un tuo dipendente e intoccabile.",
+      "description": "Vende ghiaccio agli eschimesi. Protegge un tuo dipendente dal prossimo attacco."
+    },
+    "en": {
+      "name": "PR Spin Master",
+      "shortDesc": "PR shield: one Hero cannot be touched.",
+      "description": "Can sell ice to anyone. Protects one of your Heroes from the next attack."
+    }
+  },
+  "emp_03": {
+    "it": {
+      "name": "Il C-Level Assente",
+      "shortDesc": "Vale doppio per il Monopolio. Chi e?",
+      "description": "Nessuno sa cosa faccia realmente in azienda. Conta doppio per l'obiettivo di Monopolio Umano."
+    },
+    "en": {
+      "name": "Absent C-Level",
+      "shortDesc": "Counts double for Hero monopoly. Who is this?",
+      "description": "Nobody knows what this executive actually does. Counts double for the Human Monopoly goal."
+    }
+  },
+  "emp_04": {
+    "it": {
+      "name": "Manager Micro-Gestore",
+      "shortDesc": "Eventi -1 PA. Anche al bagno.",
+      "description": "Controlla anche la pausa bagno. Rende il tuo prossimo Evento piu economico di 1 PA."
+    },
+    "en": {
+      "name": "Micromanager",
+      "shortDesc": "Events cost -1 AP. Even in the bathroom.",
+      "description": "Tracks every tiny detail. Your next Event costs 1 less AP."
+    }
+  },
+  "emp_05": {
+    "it": {
+      "name": "Tecnico IT Esausto",
+      "shortDesc": "Pesca 2 carte. Il Wi-Fi funziona, stavolta.",
+      "description": "Ha riparato il Wi-Fi per la millesima volta. Pesca 2 carte extra quando viene assunto."
+    },
+    "en": {
+      "name": "Burned-Out IT Tech",
+      "shortDesc": "Draw 2 cards. Wi-Fi works this time.",
+      "description": "Fixed the network for the thousandth time. Draw 2 extra cards when hired."
+    }
+  },
+  "trk_01": {
+    "it": {
+      "name": "Falso in Bilancio",
+      "shortDesc": "Ruba 2 PA a un avversario. Classico.",
+      "description": "Ruba 2 PA a un avversario per il suo prossimo turno."
+    },
+    "en": {
+      "name": "Creative Accounting",
+      "shortDesc": "Steal 2 AP from an opponent. Classic.",
+      "description": "Steal 2 AP from an opponent for their next turn."
+    }
+  },
+  "trk_02": {
+    "it": {
+      "name": "Rubare l'Idea",
+      "shortDesc": "Pesca 1 carta dalla mano avversaria.",
+      "description": "Pesca 1 carta a caso dalla mano di un avversario."
+    },
+    "en": {
+      "name": "Steal the Idea",
+      "shortDesc": "Take 1 card from an opponent hand.",
+      "description": "Draw 1 random card from an opponent hand."
+    }
+  },
+  "trk_03": {
+    "it": {
+      "name": "Taglio del Budget",
+      "shortDesc": "Un avversario scarta 2 carte. Efficienza!",
+      "description": "Costringe un avversario a scartare 2 carte."
+    },
+    "en": {
+      "name": "Budget Cut",
+      "shortDesc": "An opponent discards 2 cards.",
+      "description": "Force an opponent to discard 2 cards."
+    }
+  },
+  "trk_04": {
+    "it": {
+      "name": "Riunione Fiume Inutile",
+      "shortDesc": "Tu peschi 1, lui scarta 1. Sinergia!",
+      "description": "Un avversario scarta 1 carta a caso, tu ne peschi 1."
+    },
+    "en": {
+      "name": "Useless Long Meeting",
+      "shortDesc": "You draw 1, they discard 1.",
+      "description": "An opponent discards 1 random card, then you draw 1."
+    }
+  },
+  "crs_01": {
+    "it": {
+      "name": "Ispezione della Finanza",
+      "shortDesc": "Risolvi o tutti perdono 2 carte. Paura?",
+      "description": "Pena se non risolta: tutti perdono 2 carte. Premio: +1 VP."
+    },
+    "en": {
+      "name": "Tax Office Raid",
+      "shortDesc": "Solve it or everyone loses 2 cards.",
+      "description": "Penalty if unresolved: everyone loses 2 cards. Reward: +1 VP."
+    }
+  },
+  "crs_02": {
+    "it": {
+      "name": "Server In Fiamme",
+      "shortDesc": "IT in cenere. Risolvi o perdi un Hero.",
+      "description": "Pena se non risolta: tutti perdono il loro IT Manager. Premio: +1 VP."
+    },
+    "en": {
+      "name": "Server on Fire",
+      "shortDesc": "IT is burning. Solve or lose a Hero.",
+      "description": "Penalty if unresolved: everyone loses their IT Manager. Reward: +1 VP."
+    }
+  },
+  "crs_03": {
+    "it": {
+      "name": "Crollo in Borsa",
+      "shortDesc": "Risolvi o niente Eventi per un turno.",
+      "description": "Pena se non risolta: nessuno puo giocare Eventi nel prossimo turno. Premio: +1 VP."
+    },
+    "en": {
+      "name": "Market Crash",
+      "shortDesc": "Solve or no Events for one turn.",
+      "description": "Penalty if unresolved: nobody can play Events on the next turn. Reward: +1 VP."
+    }
+  },
+  "rea_01": {
+    "it": {
+      "name": "Scaricabarile",
+      "shortDesc": "Reindirizza l'effetto a un altro bersaglio.",
+      "description": "Quando sei bersagliato da un Evento, scegli un altro bersaglio valido invece di te."
+    },
+    "en": {
+      "name": "Pass the Blame",
+      "shortDesc": "Redirect the effect to another target.",
+      "description": "When targeted by an Event, choose another valid target instead of you."
+    }
+  },
+  "rea_02": {
+    "it": {
+      "name": "NDA Esclusivo",
+      "shortDesc": "Soffia il Hero mentre lo assumono.",
+      "description": "Annulla l'assunzione di un Hero avversario e metti quella carta nella tua mano."
+    },
+    "en": {
+      "name": "Exclusive NDA",
+      "shortDesc": "Steal a Hero during hiring.",
+      "description": "Cancel an opponent Hero hire and move that card to your hand."
+    }
+  },
+  "rea_03": {
+    "it": {
+      "name": "Non e di mia competenza",
+      "shortDesc": "Annulla una carta giocata. Punto.",
+      "description": "Annulla l'effetto di una singola carta giocata (Evento o Reazione)."
+    },
+    "en": {
+      "name": "Not My Department",
+      "shortDesc": "Cancel a played card. Period.",
+      "description": "Cancel the effect of one played card (Event or Reaction)."
+    }
+  },
+  "emp_06": {
+    "it": {
+      "name": "Agile Coach",
+      "shortDesc": "Post-It ovunque. Eventi -2 PA.",
+      "description": "Riempie la lavagna di Post-It. Sconta di 2 PA il tuo prossimo Evento."
+    },
+    "en": {
+      "name": "Agile Coach",
+      "shortDesc": "Sticky notes everywhere. Events -2 AP.",
+      "description": "Floods the board with sticky notes. Your next Event costs 2 less AP."
+    }
+  },
+  "trk_05": {
+    "it": {
+      "name": "Spionaggio Industriale",
+      "shortDesc": "Ruba 2 carte dalla mano avversaria.",
+      "description": "Estremamente subdolo. Ruba 2 carte dalla mano di un avversario."
+    },
+    "en": {
+      "name": "Industrial Espionage",
+      "shortDesc": "Steal 2 cards from an opponent hand.",
+      "description": "Extremely sneaky. Steal 2 cards from an opponent hand."
+    }
+  },
+  "emp_07": {
+    "it": {
+      "name": "Il Nipote del Boss",
+      "shortDesc": "Vale triplo per il Monopolio. Raccomandato.",
+      "description": "Intoccabile e strapagato. Conta triplo per l'obiettivo di Monopolio Umano."
+    },
+    "en": {
+      "name": "The Boss Nephew",
+      "shortDesc": "Counts triple for Hero monopoly.",
+      "description": "Untouchable and overpaid. Counts triple for the Human Monopoly goal."
+    }
+  },
+  "itm_01": {
+    "it": {
+      "name": "Badge Motivazionale",
+      "shortDesc": "+1 al tiro contro gli Imprevisti.",
+      "description": "Assegna a un tuo Hero: ottiene +1 ai tiri contro gli Imprevisti."
+    },
+    "en": {
+      "name": "Motivation Badge",
+      "shortDesc": "+1 roll against Monsters.",
+      "description": "Equip to one of your Heroes: gains +1 on Monster rolls."
+    }
+  },
+  "itm_02": {
+    "it": {
+      "name": "Toolbox Tattica",
+      "shortDesc": "Sconto di 1 PA sul prossimo Evento.",
+      "description": "Assegna a un tuo Hero: il prossimo Evento che giochi costa 1 PA in meno."
+    },
+    "en": {
+      "name": "Tactical Toolbox",
+      "shortDesc": "Your next Event costs 1 less AP.",
+      "description": "Equip to one of your Heroes: the next Event you play costs 1 less AP."
+    }
+  },
+  "mod_01": {
+    "it": {
+      "name": "Spinta Adrenalinica",
+      "shortDesc": "+2 al prossimo tiro.",
+      "description": "Gioca durante la reaction window: il prossimo tiro del bersaglio riceve +2."
+    },
+    "en": {
+      "name": "Adrenaline Rush",
+      "shortDesc": "+2 to the next roll.",
+      "description": "Play during the reaction window: the target next roll gets +2."
+    }
+  },
+  "mod_02": {
+    "it": {
+      "name": "Audit a Sorpresa",
+      "shortDesc": "-2 al tiro avversario.",
+      "description": "Gioca durante la reaction window: il prossimo tiro del bersaglio riceve -2."
+    },
+    "en": {
+      "name": "Surprise Audit",
+      "shortDesc": "-2 to an opponent roll.",
+      "description": "Play during the reaction window: the target next roll gets -2."
+    }
+  },
+  "ldr_01": {
+    "it": {
+      "name": "Capitano dei KPI",
+      "shortDesc": "Il tuo team parte sempre carico.",
+      "description": "Leader: ottieni un bonus passivo al tuo piano di vittoria."
+    },
+    "en": {
+      "name": "KPI Captain",
+      "shortDesc": "Your team starts fully charged.",
+      "description": "Leader: grants a passive bonus to your win plan."
+    }
+  },
+  "ldr_02": {
+    "it": {
+      "name": "Regina del Budget",
+      "shortDesc": "Ottimizza ogni azione.",
+      "description": "Leader: riduci il costo della tua prossima magia di 1 PA."
+    },
+    "en": {
+      "name": "Budget Queen",
+      "shortDesc": "Optimizes every action.",
+      "description": "Leader: reduce the cost of your next magic by 1 AP."
+    }
+  }
+}

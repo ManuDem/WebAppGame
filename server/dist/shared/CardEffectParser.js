@@ -197,6 +197,9 @@ class CardEffectParser {
     static resolveStealPA(effect, sourcePlayer, targetPlayer) {
         if (!targetPlayer || !effect.amount)
             return false;
+        if (this.consumeProtectionTag(sourcePlayer, targetPlayer, "steal_pa")) {
+            return true;
+        }
         // Clamp to available PA — cannot go negative
         const stolen = Math.min(targetPlayer.actionPoints, effect.amount);
         targetPlayer.actionPoints -= stolen;
@@ -208,6 +211,9 @@ class CardEffectParser {
         // Guard: empty hand is a valid no-op, not an error
         if (!targetPlayer || targetPlayer.hand.length === 0 || !effect.amount)
             return false;
+        if (this.consumeProtectionTag(sourcePlayer, targetPlayer, "steal_card")) {
+            return true;
+        }
         for (let i = 0; i < effect.amount; i++) {
             if (targetPlayer.hand.length === 0)
                 break;
@@ -233,6 +239,9 @@ class CardEffectParser {
     static resolveDiscard(effect, targetPlayer) {
         if (!targetPlayer || !effect.amount)
             return false;
+        if (this.consumeProtectionTag(null, targetPlayer, "discard")) {
+            return true;
+        }
         for (let i = 0; i < effect.amount; i++) {
             if (targetPlayer.hand.length === 0)
                 break;
@@ -359,6 +368,9 @@ class CardEffectParser {
     static resolveTradeRandom(sourcePlayer, targetPlayer) {
         if (!targetPlayer)
             return false;
+        if (this.consumeProtectionTag(sourcePlayer, targetPlayer, "trade_random")) {
+            return true;
+        }
         // Se entrambi hanno carte, facciamo uno swap atomico (puro)
         let fromTarget = null;
         let fromSource = null;
@@ -398,14 +410,58 @@ class CardEffectParser {
         if (!target || !target.targetCardId)
             return false;
         target.isCancelled = true;
-        // Creiamo una struct ICardData fittizia o recuperiamo i dati dal template per aggiungerla in mano
+        const template = cards_db_json_1.default.find((entry) => entry?.id === target.targetCardId);
+        const runtimeType = this.resolveRuntimeCardType(template?.type, target);
         sourcePlayer.hand.push({
             id: `stolen_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
             templateId: target.targetCardId,
-            type: SharedTypes_1.CardType.CHALLENGE // Semplificazione: il server la sovrascrivera se necessario
+            type: runtimeType,
+            costPA: typeof template?.cost === "number" ? template.cost : undefined,
+            name: template?.name,
+            shortDesc: template?.shortDesc,
+            description: template?.description,
+            targetRoll: typeof template?.targetRoll === "number" ? template.targetRoll : undefined,
+            modifier: typeof template?.modifier === "number" ? template.modifier : undefined,
+            subtype: template?.subtype ?? "none",
         });
         console.log(`[CardEffectParser] steal_played_card: action ${target.id} cancelled; card added to ${sourcePlayer.username}'s hand`);
         return true;
+    }
+    static consumeProtectionTag(sourcePlayer, targetPlayer, context) {
+        if (sourcePlayer && sourcePlayer.sessionId === targetPlayer.sessionId)
+            return false;
+        if (!targetPlayer.activeEffects)
+            return false;
+        const index = targetPlayer.activeEffects.indexOf("protected");
+        if (index === -1)
+            return false;
+        targetPlayer.activeEffects.splice(index, 1);
+        console.log(`[CardEffectParser] ${context}: blocked by protection on ${targetPlayer.username}`);
+        return true;
+    }
+    static resolveRuntimeCardType(templateType, pendingAction) {
+        const normalizedType = String(templateType ?? "").trim().toLowerCase();
+        if (normalizedType === "hero" || normalizedType === "employee")
+            return SharedTypes_1.CardType.HERO;
+        if (normalizedType === "monster" || normalizedType === "crisis" || normalizedType === "imprevisto")
+            return SharedTypes_1.CardType.MONSTER;
+        if (normalizedType === "item" || normalizedType === "oggetto")
+            return SharedTypes_1.CardType.ITEM;
+        if (normalizedType === "modifier")
+            return SharedTypes_1.CardType.MODIFIER;
+        if (normalizedType === "challenge" || normalizedType === "reaction")
+            return SharedTypes_1.CardType.CHALLENGE;
+        if (normalizedType === "party_leader" || normalizedType === "partyleader" || normalizedType === "leader")
+            return SharedTypes_1.CardType.PARTY_LEADER;
+        if (normalizedType === "magic" || normalizedType === "event" || normalizedType === "trick" || normalizedType === "evento")
+            return SharedTypes_1.CardType.MAGIC;
+        if (pendingAction.actionType === SharedTypes_1.ClientMessages.PLAY_EMPLOYEE)
+            return SharedTypes_1.CardType.HERO;
+        if (pendingAction.actionType === SharedTypes_1.ClientMessages.SOLVE_CRISIS)
+            return SharedTypes_1.CardType.MONSTER;
+        if (pendingAction.actionType === SharedTypes_1.ClientMessages.PLAY_REACTION)
+            return SharedTypes_1.CardType.CHALLENGE;
+        return SharedTypes_1.CardType.MAGIC;
     }
 }
 exports.CardEffectParser = CardEffectParser;

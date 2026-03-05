@@ -24,6 +24,9 @@ export function validateAndSpendTurnAction(input: ITurnActionValidationInput): I
     if (input.phase !== GamePhase.PLAYER_TURN) {
         return { ok: false, code: "WRONG_PHASE", message: "Fase non corretta." };
     }
+    if (!input.player?.isConnected) {
+        return { ok: false, code: "ACTION_DENIED", message: "Giocatore non connesso." };
+    }
     if (!input.player || input.player.actionPoints < input.requiredPA) {
         return { ok: false, code: "NO_PA", message: "Punti Azione insufficienti." };
     }
