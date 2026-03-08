@@ -1,0 +1,108 @@
+{
+  "roomCode": "2484",
+  "hostName": "HostRefactor",
+  "guestName": "GuestRefactor",
+  "steps": [
+    "host_login",
+    "guest_login",
+    "both_ready",
+    "match_started",
+    "info_overlay",
+    "first_end_turn",
+    "second_draw",
+    "second_end_turn",
+    "responsive_captures"
+  ],
+  "errors": [],
+  "hostTurn": {
+    "myId": "hveNjCUaO",
+    "currentTurnPlayerId": "hveNjCUaO",
+    "phase": "PLAYER_TURN",
+    "hand": [
+      {
+        "id": "67367826-17d9-4b4a-85c4-f9c1f0a5e1ec",
+        "type": "challenge",
+        "name": "Scaricabarile"
+      },
+      {
+        "id": "dd0f4cac-6772-401d-95c8-d0ea97bf8e93",
+        "type": "item",
+        "name": "Toolbox Tattica"
+      },
+      {
+        "id": "4ff22317-bbe5-417f-83d6-44fe14cd5cae",
+        "type": "magic",
+        "name": "Taglio del Budget"
+      }
+    ],
+    "company": [],
+    "crises": [
+      {
+        "id": "4626-147d-420a-a664",
+        "type": "monster",
+        "name": "Crollo in Borsa",
+        "costPA": 2
+      },
+      {
+        "id": "dc41-0198-470d-a14c",
+        "type": "monster",
+        "name": "Ispezione della Finanza",
+        "costPA": 2
+      },
+      {
+        "id": "adc4-93d1-40a6-aec5",
+        "type": "monster",
+        "name": "Server In Fiamme",
+        "costPA": 2
+      }
+    ]
+  },
+  "guestTurn": {
+    "myId": "Kd9CvnDgx",
+    "currentTurnPlayerId": "hveNjCUaO",
+    "phase": "PLAYER_TURN",
+    "hand": [
+      {
+        "id": "e2df7699-84a9-42c8-aac4-5d1bdc802c87",
+        "type": "hero",
+        "name": "Il C-Level Assente"
+      },
+      {
+        "id": "321dd8a6-ff40-47bd-8e63-2a94297ac89a",
+        "type": "magic",
+        "name": "Riunione Fiume Inutile"
+      },
+      {
+        "id": "196e3b88-8a4c-4f4a-9191-dc30422f2337",
+        "type": "challenge",
+        "name": "Scaricabarile"
+      },
+      {
+        "id": "f19308e2-6857-4992-ac22-fd250e9a5793",
+        "type": "hero",
+        "name": "Agile Coach"
+      }
+    ],
+    "company": [],
+    "crises": [
+      {
+        "id": "4626-147d-420a-a664",
+        "type": "monster",
+        "name": "Crollo in Borsa",
+        "costPA": 2
+      },
+      {
+        "id": "dc41-0198-470d-a14c",
+        "type": "monster",
+        "name": "Ispezione della Finanza",
+        "costPA": 2
+      },
+      {
+        "id": "adc4-93d1-40a6-aec5",
+        "type": "monster",
+        "name": "Server In Fiamme",
+        "costPA": 2
+      }
+    ]
+  }
+}

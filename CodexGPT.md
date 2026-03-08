@@ -64,17 +64,17 @@ Obiettivo: sapere subito cosa e fatto, cosa manca e dove intervenire.
   - server: OK (`cd server && npm run build`)
   - client: OK (`cd client && npm run build`)
 - Test mirati (stabili): OK
-  - comando: `npm test -- --runInBand --forceExit tests/DeckManager.test.ts tests/CardEffectParser.test.ts server/tests/win_conditions.test.ts server/tests/reaction_stress.test.ts`
+  - comando: `npm test -- --runInBand --forceExit tests/unit/shared/DeckManager.test.ts tests/unit/shared/CardEffectParser.test.ts tests/integration/server/win_conditions.test.ts tests/integration/server/reaction_stress.test.ts`
   - esito: 31/31 passed
 - Test root completi: FAIL parziale (suite legacy)
   - comando: `npm test -- --runInBand --forceExit`
   - fail attuali:
-    - `tests/room_connection.test.ts`
-    - `tests/core_loop.test.ts`
-    - `tests/reaction_race_condition.test.ts`
+    - `tests/integration/server/room_connection.test.ts`
+    - `tests/integration/server/core_loop.test.ts`
+    - `tests/integration/server/reaction_race_condition.test.ts`
   - cause note:
     - suite root basate su harness Colyseus legacy non allineato alla room corrente
-    - import errato in `tests/reaction_race_condition.test.ts` (`../src/arena.config`)
+    - import errato in `tests/integration/server/reaction_race_condition.test.ts` (`../src/arena.config`)
 
 ## 6) Criticita aperte prioritarie
 1. Eseguire QA visuale guidata su mobile reale (portrait + landscape) per validare zero overlap in partita.
@@ -143,7 +143,7 @@ npm test -- --runInBand
     - blocco carte reaction fuori `REACTION_WINDOW`
     - blocco carte non-reaction in `PLAY_REACTION`
   - test allineati:
-    - aggiornati `tests/CardEffectParser.test.ts`, `server/tests/win_conditions.test.ts`, `server/tests/reaction_stress.test.ts`
+    - aggiornati `tests/unit/shared/CardEffectParser.test.ts`, `tests/integration/server/win_conditions.test.ts`, `tests/integration/server/reaction_stress.test.ts`
     - pass su suite mirata (28/28)
 - 2026-03-04 (sessione bugfix giocabilita + roadmap Here-to-Slay Lite):
   - client gameplay:
@@ -195,7 +195,7 @@ npm test -- --runInBand
     - client build OK
     - server build OK
 - 2026-03-04 (sessione consolidamento UI/gameplay finale):
-  - carte mini/full allineate al riferimento `HTS card mockup.webp` (header piu pulito, artwork dominante, info strip sintetica)
+  - carte mini/full allineate al riferimento `artworks/references/hts-card-mockup.webp` (header piu pulito, artwork dominante, info strip sintetica)
   - animazioni bottoni stabilizzate in `SimpleButtonFx`:
     - gestione touch/mouse piu robusta
     - reset sicuro su `pointerupoutside`/`gameout`
@@ -250,9 +250,9 @@ npm test -- --runInBand
     - aggiunta `docs/ui/CARD_UI_SPEC.md`
     - aggiornati `docs/QA.md`, `docs/PLAN.md`, `docs/index.md`
   - test nuovi:
-    - `tests/PendingPlayModel.test.ts`
-    - `tests/TextFitModel.test.ts`
-    - `tests/I18nCoverage.test.ts`
+    - `tests/unit/client/PendingPlayModel.test.ts`
+    - `tests/unit/client/TextFitModel.test.ts`
+    - `tests/unit/client/I18nCoverage.test.ts`
   - verifica:
     - `client build` OK
     - `server build` OK
@@ -262,7 +262,7 @@ npm test -- --runInBand
   - modularizzazione stato azioni:
     - nuovo modulo `client/src/ui/match/MatchActionState.ts`
     - ragioni blocco centralizzate (turno/fase/AP/mazzo/monster/game over)
-    - test dedicati `tests/MatchActionState.test.ts`
+    - test dedicati `tests/unit/client/MatchActionState.test.ts`
   - `GameScene`:
     - pannello azioni persistente con messaggi chiari su:
       - turno corrente
@@ -285,8 +285,6 @@ npm test -- --runInBand
       - `emp_07 -> hero_marco.png`
     - PNG copiati in `client/public/cards/` con fallback invariato
   - QA:
-    - aggiunto script screenshot responsive `client/qa/capture-responsive.mjs`
-    - script npm: `qa:capture:responsive`
     - aggiornati `docs/PLAN.md`, `docs/QA.md`, `docs/ui/MATCH_UI_SPEC.md`
   - verifica:
     - `client build` OK

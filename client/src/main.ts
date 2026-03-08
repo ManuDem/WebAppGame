@@ -8,7 +8,7 @@ import { sanitizeLanguage } from './i18n';
 import './app.css';
 import { ensureUiRoot, setUiRootLanguage, syncUiRootViewport } from './ui/dom/UiRoot';
 
-const deviceResolution = Math.max(1, Math.min((window.devicePixelRatio || 1) * 1.1, 3));
+const deviceResolution = Math.max(2.5, Math.min((window.devicePixelRatio || 1) * 2, 4));
 const qaMatchMode = isQaMatchModeEnabled(window.location.search);
 const params = new URLSearchParams(window.location.search);
 const qaScreen = String(params.get('qaScreen') ?? '').toLowerCase();
@@ -30,7 +30,7 @@ const config = {
     type: Phaser.AUTO,
     parent: 'app',
     resolution: deviceResolution,
-    autoRound: false,
+    autoRound: true,
     width: 1280,
     height: 720,
     backgroundColor: '#0b1220',

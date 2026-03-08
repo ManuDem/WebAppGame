@@ -7,20 +7,20 @@ export const BRAND_TITLE_TEXT = 'LUCrAre: SEMPRE';
 
 export const BRAND_TITLE_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
     fontFamily: APP_FONT_FAMILY,
-    color: '#102e44',
-    stroke: '#f6f7f2',
-    strokeThickness: 4,
+    color: '#0f3048',
+    stroke: '#eff8ff',
+    strokeThickness: 4.5,
     fontStyle: '700',
-    letterSpacing: 1.2,
+    letterSpacing: 1.15,
 };
 
 export const BRAND_SUBTITLE_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
     fontFamily: APP_FONT_FAMILY,
-    color: '#123650',
-    stroke: '#f0f8ff',
+    color: '#214e6e',
+    stroke: '#ebf7ff',
     strokeThickness: 2,
     fontStyle: '700',
-    letterSpacing: 0.8,
+    letterSpacing: 0.75,
 };
 
 export interface BrandHeaderLayout {
@@ -46,14 +46,14 @@ export function applyBrandTypography(
 
     let titleSize = Math.round(layout.titleFontSize);
     title.setFontSize(`${titleSize}px`);
-    while (title.width > maxTitleWidth && titleSize > 32) {
+    while (title.width > maxTitleWidth && titleSize > 26) {
         titleSize -= 1;
         title.setFontSize(`${titleSize}px`);
     }
 
     let subtitleSize = Math.round(layout.subtitleFontSize);
     subtitle.setFontSize(`${subtitleSize}px`);
-    while (subtitle.width > maxSubtitleWidth && subtitleSize > 12) {
+    while (subtitle.width > maxSubtitleWidth && subtitleSize > 11) {
         subtitleSize -= 1;
         subtitle.setFontSize(`${subtitleSize}px`);
     }

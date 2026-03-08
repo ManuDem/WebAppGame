@@ -13,10 +13,7 @@ export declare class OfficeRoom extends Room<OfficeRoomState> {
     private monsterBag;
     private pendingRemovedCards;
     onCreate(_options: any): void;
-    onAuth(client: Client, options: JoinOptions, _request: any): {
-        ceoName: string;
-        rejoinFromSessionId: string | null;
-    };
+    onAuth(client: Client, options: JoinOptions, _request: any): import("./officeRoomIdentity").JoinRequestContext;
     onJoin(client: Client, options: JoinOptions, auth?: {
         ceoName: string;
         rejoinFromSessionId?: string | null;
@@ -49,6 +46,8 @@ export declare class OfficeRoom extends Room<OfficeRoomState> {
      * - On fail: apply crisis penalty
      */
     private applyMagicResolution;
+    private isHeroRuntimeCard;
+    private validateSelectedAttackHero;
     private applyCrisisResolution;
     private getCrisisRollModifier;
     private applyCrisisPenalty;
@@ -57,9 +56,9 @@ export declare class OfficeRoom extends Room<OfficeRoomState> {
     private peekMagicDiscount;
     private consumeMagicDiscount;
     private cloneRuntimeCardData;
-    private restorePendingCardToHand;
     private removePlayerPermanently;
     private cleanupPendingForRemovedPlayer;
+    private shouldPreserveDisconnectedSlot;
     private handleEmote;
     private generateId;
     private getConnectedPlayerEntries;

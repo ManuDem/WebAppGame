@@ -1,5 +1,6 @@
-﻿import Phaser from 'phaser';
+import Phaser from 'phaser';
 import { ServerManager } from '../network/ServerManager';
+import { readFreshReconnectContext } from '../network/ReconnectPolicy';
 import { DEFAULT_LANGUAGE, sanitizeLanguage, SupportedLanguage, t } from '../i18n';
 import { createSimpleButtonFx, SimpleButtonController } from '../ui/SimpleButtonFx';
 import { drawPokemonBackdrop, ensurePokemonTextures } from '../ui/PokemonVisuals';
@@ -12,8 +13,8 @@ import {
 } from '../ui/Branding';
 import { paintRetroButton } from '../ui/RetroButtonPainter';
 import { APP_FONT_FAMILY } from '../ui/Typography';
-import { fitTextToBox } from '../ui/text/FitText';
 import { computeInitialScreenLayout } from '../ui/layout/InitialScreenLayout';
+import { getMenuTypographyByTier } from '../ui/layout/LayoutTokens';
 import { setUiRootLanguage, setUiRootScreen, syncUiRootViewport } from '../ui/dom/UiRoot';
 
 const FONT_UI = APP_FONT_FAMILY;
@@ -35,6 +36,15 @@ type MenuDot = {
 };
 
 type EntryMode = 'host' | 'join';
+
+type LoginSceneInitData = {
+    serverManager: ServerManager;
+    reconnectMessage?: string;
+    reconnectPrefill?: {
+        ceoName?: string;
+        roomCode?: string;
+    };
+};
 
 export class LoginScene extends Phaser.Scene {
     private serverManager!: ServerManager;
@@ -85,22 +95,45 @@ export class LoginScene extends Phaser.Scene {
     private modeConfirmed = false;
     private activeRoomCode = '0000';
     private initialFeedbackMessage = '';
-    private readonly textResolution = Math.max(2, Math.min((window.devicePixelRatio || 1) * 1.5, 4));
+    private reconnectPrefillName = '';
+    private reconnectPrefillRoomCode = '';
+    private readonly textResolution = 4;
 
     constructor() {
         super({ key: 'LoginScene' });
     }
 
-    init(data: { serverManager: ServerManager; reconnectMessage?: string }) {
+    init(data?: LoginSceneInitData) {
         const params = new URLSearchParams(window.location.search);
         const queryLang = params.get('lang');
         this.serverManager = data?.serverManager ?? new ServerManager();
         this.lang = sanitizeLanguage(queryLang ?? localStorage.getItem('lucrare_lang'));
         if (queryLang) localStorage.setItem('lucrare_lang', this.lang);
+        this.mode = 'host';
         this.modeConfirmed = false;
         this.nameExample = this.generateExampleName();
         this.activeRoomCode = `${Math.floor(1000 + Math.random() * 9000)}`;
         this.initialFeedbackMessage = typeof data?.reconnectMessage === 'string' ? data.reconnectMessage : '';
+        this.reconnectPrefillName = '';
+        this.reconnectPrefillRoomCode = '';
+
+        const explicitPrefill = this.normalizeReconnectPrefill(
+            data?.reconnectPrefill?.ceoName,
+            data?.reconnectPrefill?.roomCode,
+        );
+        const shouldLoadStoredReconnectPrefill = Boolean(this.initialFeedbackMessage) || Boolean(data?.reconnectPrefill);
+        const storedPrefill = shouldLoadStoredReconnectPrefill ? this.loadStoredReconnectPrefill() : null;
+        const reconnectPrefill = explicitPrefill ?? storedPrefill;
+        if (reconnectPrefill) {
+            this.mode = 'join';
+            this.modeConfirmed = true;
+            this.reconnectPrefillName = reconnectPrefill.ceoName;
+            this.reconnectPrefillRoomCode = reconnectPrefill.roomCode;
+            this.activeRoomCode = reconnectPrefill.roomCode;
+        } else if (this.initialFeedbackMessage) {
+            this.mode = 'join';
+            this.modeConfirmed = true;
+        }
     }
 
     create() {
@@ -129,7 +162,7 @@ export class LoginScene extends Phaser.Scene {
         this.inputLabel = this.add.text(0, 0, '', {
             fontFamily: FONT_UI,
             fontSize: '13px',
-            color: '#f7f0d8',
+            color: '#d8edff',
             fontStyle: '700',
             letterSpacing: 1,
         }).setOrigin(0.5);
@@ -137,14 +170,14 @@ export class LoginScene extends Phaser.Scene {
         this.hint = this.add.text(0, 0, '', {
             fontFamily: FONT_UI,
             fontSize: '12px',
-            color: '#e6f2ff',
+            color: '#c6dff3',
             fontStyle: '500',
         }).setOrigin(0.5);
 
         this.feedback = this.add.text(0, 0, '', {
             fontFamily: FONT_UI,
             fontSize: '13px',
-            color: '#ff5e75',
+            color: '#ff8297',
             align: 'center',
         }).setOrigin(0.5);
 
@@ -173,11 +206,14 @@ export class LoginScene extends Phaser.Scene {
         this.createLanguageControls();
         this.createModeControls();
         this.createInput();
+        this.applyReconnectPrefill();
         this.refreshLocalizedText();
         if (this.initialFeedbackMessage) {
             this.feedback.setText(this.initialFeedbackMessage).setColor('#ffcb80');
         }
-        void this.refreshHostRoomCode();
+        if (this.mode === 'host') {
+            void this.refreshHostRoomCode();
+        }
 
         this.boostText(
             this.title,
@@ -273,9 +309,9 @@ export class LoginScene extends Phaser.Scene {
         this.roomCodeValue = this.add.text(0, 0, this.activeRoomCode, {
             fontFamily: FONT_UI,
             fontSize: '22px',
-            color: '#f7f0d8',
+            color: '#d9f1ff',
             fontStyle: '700',
-            stroke: '#102a3d',
+            stroke: '#123954',
             strokeThickness: 2,
             letterSpacing: 2.1,
         }).setOrigin(0.5).setDepth(41);
@@ -326,9 +362,9 @@ export class LoginScene extends Phaser.Scene {
             button.bg,
             { width: w, height: h, radius: 8, borderWidth: 1.1 },
             {
-                base: active ? 0x3b5f99 : 0x3c6655,
-                border: active ? 0xf6f0cf : 0xc8efcf,
-                glossAlpha: active ? 0.24 : 0.1,
+                base: active ? 0x336a9f : 0x2f5c6c,
+                border: active ? 0xe2f2ff : 0xb9d9e6,
+                glossAlpha: active ? 0.2 : 0.1,
             },
         );
         button.label.setText(active ? `${button.code}*` : button.code);
@@ -343,9 +379,9 @@ export class LoginScene extends Phaser.Scene {
             button.bg,
             { width: w, height: h, radius: 9, borderWidth: 1.1 },
             {
-                base: active ? 0x8a5a2d : 0x37566f,
-                border: active ? 0xffd7a1 : 0xb7d4ea,
-                glossAlpha: active ? 0.18 : 0.1,
+                base: active ? 0x4a7f66 : 0x355e78,
+                border: active ? 0xcdf3d8 : 0xb9d8ef,
+                glossAlpha: active ? 0.16 : 0.09,
             },
         );
         button.label.setColor('#ffffff');
@@ -356,8 +392,8 @@ export class LoginScene extends Phaser.Scene {
             this.backButtonGfx,
             { width: buttonW, height: buttonH, radius: 10, borderWidth: 1.1 },
             {
-                base: 0x3f5872,
-                border: 0xcde2f7,
+                base: 0x385c79,
+                border: 0xc8e6fb,
                 glossAlpha: 0.14,
             },
         );
@@ -476,13 +512,13 @@ export class LoginScene extends Phaser.Scene {
         const inputStyle: Partial<CSSStyleDeclaration> = {
             width: '320px',
             maxWidth: '78vw',
-            minHeight: '46px',
+            minHeight: '48px',
             margin: '0',
             padding: '12px 14px',
-            borderRadius: '10px',
-            border: '1.6px solid #7a92ad',
-            background: 'rgba(251, 254, 255, 0.98)',
-            color: '#102a3d',
+            borderRadius: '12px',
+            border: '1.6px solid #7da5c4',
+            background: 'linear-gradient(180deg, rgba(247, 252, 255, 0.99), rgba(236, 246, 255, 0.99))',
+            color: '#0f2e44',
             fontFamily: FONT_UI,
             fontSize: '16px',
             fontWeight: '600',
@@ -496,26 +532,26 @@ export class LoginScene extends Phaser.Scene {
             touchAction: 'manipulation',
             userSelect: 'text',
             display: 'block',
-            caretColor: '#102a3d',
-            boxShadow: '0 4px 10px rgba(7, 22, 36, 0.16)',
+            caretColor: '#0f2e44',
+            boxShadow: '0 6px 14px rgba(7, 22, 36, 0.17)',
             opacity: '1',
         };
         Object.assign(this.nameInput.style, inputStyle);
         this.nameInput.style.setProperty('-webkit-user-select', 'text');
-        this.nameInput.style.setProperty('-webkit-text-fill-color', '#102a3d');
+        this.nameInput.style.setProperty('-webkit-text-fill-color', '#0f2e44');
         this.nameInput.style.setProperty('position', 'relative');
         this.nameInput.style.setProperty('z-index', '2');
         this.nameInput.style.setProperty('appearance', 'none');
         this.nameInput.style.setProperty('-webkit-appearance', 'none');
 
         this.nameInput.addEventListener('focus', () => {
-            this.nameInput.style.borderColor = '#4f7ea2';
-            this.nameInput.style.boxShadow = '0 0 0 3px rgba(79, 126, 162, 0.24), 0 4px 12px rgba(7, 22, 36, 0.18)';
+            this.nameInput.style.borderColor = '#4f95c4';
+            this.nameInput.style.boxShadow = '0 0 0 3px rgba(79, 149, 196, 0.24), 0 6px 14px rgba(7, 22, 36, 0.2)';
         });
 
         this.nameInput.addEventListener('blur', () => {
-            this.nameInput.style.borderColor = '#7a92ad';
-            this.nameInput.style.boxShadow = '0 4px 10px rgba(7, 22, 36, 0.16)';
+            this.nameInput.style.borderColor = '#7da5c4';
+            this.nameInput.style.boxShadow = '0 6px 14px rgba(7, 22, 36, 0.17)';
         });
 
         this.inputDom = this.add.dom(0, 0, this.nameInput).setDepth(26);
@@ -552,13 +588,13 @@ export class LoginScene extends Phaser.Scene {
         const codeStyle: Partial<CSSStyleDeclaration> = {
             width: '168px',
             maxWidth: '56vw',
-            minHeight: '42px',
+            minHeight: '44px',
             margin: '0',
             padding: '10px 12px',
-            borderRadius: '10px',
-            border: '1.6px solid #7a92ad',
-            background: 'rgba(251, 254, 255, 0.98)',
-            color: '#102a3d',
+            borderRadius: '12px',
+            border: '1.6px solid #7da5c4',
+            background: 'linear-gradient(180deg, rgba(247, 252, 255, 0.99), rgba(236, 246, 255, 0.99))',
+            color: '#0f2e44',
             fontFamily: FONT_UI,
             fontSize: '19px',
             fontWeight: '700',
@@ -572,13 +608,13 @@ export class LoginScene extends Phaser.Scene {
             touchAction: 'manipulation',
             userSelect: 'text',
             display: 'block',
-            caretColor: '#102a3d',
-            boxShadow: '0 4px 10px rgba(7, 22, 36, 0.16)',
+            caretColor: '#0f2e44',
+            boxShadow: '0 6px 14px rgba(7, 22, 36, 0.17)',
             opacity: '1',
         };
         Object.assign(this.roomCodeInput.style, codeStyle);
         this.roomCodeInput.style.setProperty('-webkit-user-select', 'text');
-        this.roomCodeInput.style.setProperty('-webkit-text-fill-color', '#102a3d');
+        this.roomCodeInput.style.setProperty('-webkit-text-fill-color', '#0f2e44');
         this.roomCodeInput.style.setProperty('position', 'relative');
         this.roomCodeInput.style.setProperty('z-index', '2');
         this.roomCodeInput.style.setProperty('appearance', 'none');
@@ -588,12 +624,12 @@ export class LoginScene extends Phaser.Scene {
             this.roomCodeInput.value = this.roomCodeInput.value.replace(/\D/g, '').slice(0, 4);
         });
         this.roomCodeInput.addEventListener('focus', () => {
-            this.roomCodeInput.style.borderColor = '#4f7ea2';
-            this.roomCodeInput.style.boxShadow = '0 0 0 3px rgba(79, 126, 162, 0.24), 0 4px 12px rgba(7, 22, 36, 0.18)';
+            this.roomCodeInput.style.borderColor = '#4f95c4';
+            this.roomCodeInput.style.boxShadow = '0 0 0 3px rgba(79, 149, 196, 0.24), 0 6px 14px rgba(7, 22, 36, 0.2)';
         });
         this.roomCodeInput.addEventListener('blur', () => {
-            this.roomCodeInput.style.borderColor = '#7a92ad';
-            this.roomCodeInput.style.boxShadow = '0 4px 10px rgba(7, 22, 36, 0.16)';
+            this.roomCodeInput.style.borderColor = '#7da5c4';
+            this.roomCodeInput.style.boxShadow = '0 6px 14px rgba(7, 22, 36, 0.17)';
         });
 
         this.roomCodeDom = this.add.dom(0, 0, this.roomCodeInput).setDepth(26);
@@ -619,6 +655,33 @@ export class LoginScene extends Phaser.Scene {
         this.inputPlaced = false;
     }
 
+    private normalizeReconnectPrefill(ceoNameRaw: unknown, roomCodeRaw: unknown): { ceoName: string; roomCode: string } | null {
+        const ceoName = String(ceoNameRaw ?? '').trim();
+        const roomCode = String(roomCodeRaw ?? '').replace(/\D/g, '').slice(0, 4);
+        if (!/^[a-zA-Z0-9]{3,15}$/.test(ceoName)) return null;
+        if (!/^\d{4}$/.test(roomCode)) return null;
+        return { ceoName, roomCode };
+    }
+
+    private loadStoredReconnectPrefill(): { ceoName: string; roomCode: string } | null {
+        try {
+            const storage = typeof window !== 'undefined' ? window.localStorage : null;
+            const snapshot = readFreshReconnectContext(storage);
+            if (!snapshot) return null;
+            return this.normalizeReconnectPrefill(snapshot.ceoName, snapshot.roomCode);
+        } catch {
+            return null;
+        }
+    }
+
+    private applyReconnectPrefill() {
+        if (!this.modeConfirmed || this.mode !== 'join') return;
+        if (!this.reconnectPrefillName || !this.reconnectPrefillRoomCode) return;
+        this.nameInput.value = this.reconnectPrefillName;
+        this.roomCodeInput.value = this.reconnectPrefillRoomCode;
+        this.activeRoomCode = this.reconnectPrefillRoomCode;
+    }
+
     update() {
         this.cloudLayer.tilePositionX += 0.08;
         this.cloudLayer.tilePositionY += 0.01;
@@ -638,7 +701,6 @@ export class LoginScene extends Phaser.Scene {
     private handleResize(gameSize: Phaser.Structs.Size) {
         const w = gameSize.width;
         const h = gameSize.height;
-        const minSide = Math.min(w, h);
         const centerX = Math.round(w * 0.5);
         const showForm = this.modeConfirmed;
         this.refreshLocalizedText();
@@ -649,6 +711,7 @@ export class LoginScene extends Phaser.Scene {
         const initialLayout = computeInitialScreenLayout(w, h, { showForm });
         const { tier, header, panel, loginTokens } = initialLayout;
         const compactTier = tier === 'C';
+        const menuType = getMenuTypographyByTier(tier);
 
         applyBrandTypography(this.title, this.subtitle, {
             titleFontSize: header.titleFontSize,
@@ -674,35 +737,41 @@ export class LoginScene extends Phaser.Scene {
         const contentW = Math.max(220, contentRight - contentLeft);
         const sectionGap = compactTier ? Math.max(8, loginTokens.sectionGap - 3) : loginTokens.sectionGap;
         const rowGap = compactTier ? Math.max(6, loginTokens.rowGap - 2) : loginTokens.rowGap;
-        const labelH = Phaser.Math.Clamp(minSide * 0.017, 12, 16);
+        const labelH = menuType.caption + 4;
         const modeLabelH = showForm
-            ? Phaser.Math.Clamp(minSide * 0.018, 13, 18)
-            : Phaser.Math.Clamp(minSide * 0.024, 16, 22);
+            ? menuType.body + 5
+            : menuType.label + 7;
         const segmentedH = Math.max(44, loginTokens.segmentedButtonHeight);
         const primaryH = Math.max(44, loginTokens.primaryButtonHeight);
+        const langButtonBaseW = tier === 'A' ? 68 : tier === 'B' ? 70 : tier === 'C' ? 68 : 72;
+        const modeChoiceBaseW = tier === 'A' ? 290 : tier === 'B' ? 304 : tier === 'C' ? 340 : 360;
+        const modeFormBaseW = tier === 'A' ? 178 : tier === 'B' ? 192 : tier === 'C' ? 208 : 224;
+        const backBaseW = tier === 'A' ? 96 : tier === 'B' ? 102 : tier === 'C' ? 104 : 112;
+        const roomCodeInputBaseW = tier === 'A' ? 184 : tier === 'B' ? 196 : tier === 'C' ? 188 : 220;
+        const nameInputBaseW = tier === 'A' ? 268 : tier === 'B' ? 286 : tier === 'C' ? 300 : 340;
+        const joinButtonBaseW = tier === 'A' ? 268 : tier === 'B' ? 286 : tier === 'C' ? 300 : 340;
         let cursorY = panel.y + loginTokens.panelPaddingY;
         const maxContentBottom = panel.y + panel.h - loginTokens.panelPaddingY;
 
         this.langLabel
             .setPosition(centerX, cursorY + labelH * 0.5)
             .setWordWrapWidth(contentW * 0.75, true)
-            .setFontSize(`${Phaser.Math.Clamp(minSide * 0.015, 12, 14)}px`);
-        fitTextToBox(this.langLabel, this.langLabel.text, contentW * 0.75, labelH + 4, { maxLines: 1, ellipsis: true });
+            .setFontSize(`${menuType.caption}px`);
         cursorY += labelH + rowGap;
 
-        const langButtonW = Phaser.Math.Clamp((contentW - rowGap) * 0.5, 54, 78);
+        const langButtonW = Math.max(54, Math.min(langButtonBaseW, (contentW - rowGap) * 0.5));
         const langButtonH = segmentedH;
         const itX = centerX - (langButtonW * 0.5 + rowGap * 0.5);
         const enX = centerX + (langButtonW * 0.5 + rowGap * 0.5);
         if (this.langButtons.it) {
             this.langButtons.it.hit.setPosition(itX, cursorY + langButtonH * 0.5).setSize(langButtonW, langButtonH);
             this.langButtons.it.bg.setPosition(itX, cursorY + langButtonH * 0.5);
-            this.langButtons.it.label.setPosition(itX, cursorY + langButtonH * 0.5).setFontSize(`${Phaser.Math.Clamp(minSide * 0.016, 12, 14)}px`);
+            this.langButtons.it.label.setPosition(itX, cursorY + langButtonH * 0.5).setFontSize(`${menuType.caption}px`);
         }
         if (this.langButtons.en) {
             this.langButtons.en.hit.setPosition(enX, cursorY + langButtonH * 0.5).setSize(langButtonW, langButtonH);
             this.langButtons.en.bg.setPosition(enX, cursorY + langButtonH * 0.5);
-            this.langButtons.en.label.setPosition(enX, cursorY + langButtonH * 0.5).setFontSize(`${Phaser.Math.Clamp(minSide * 0.016, 12, 14)}px`);
+            this.langButtons.en.label.setPosition(enX, cursorY + langButtonH * 0.5).setFontSize(`${menuType.caption}px`);
         }
         cursorY += langButtonH + sectionGap;
 
@@ -710,17 +779,16 @@ export class LoginScene extends Phaser.Scene {
             .setPosition(centerX, cursorY + modeLabelH * 0.5)
             .setWordWrapWidth(contentW * 0.92, true)
             .setFontSize(`${modeLabelH}px`);
-        fitTextToBox(this.modeLabel, this.modeLabel.text, contentW * 0.92, modeLabelH + 6, { maxLines: 2, ellipsis: true });
         cursorY += modeLabelH + rowGap;
 
         const modeButtonW = showForm
-            ? Phaser.Math.Clamp(contentW * 0.52, 140, 230)
-            : Phaser.Math.Clamp(contentW, 240, 470);
+            ? Math.max(140, Math.min(modeFormBaseW, contentW * 0.72))
+            : Math.max(240, Math.min(modeChoiceBaseW, contentW));
         const modeHostY = cursorY + segmentedH * 0.5;
         const modeJoinY = modeHostY + segmentedH + rowGap;
         const modeFontSize = showForm
-            ? Phaser.Math.Clamp(minSide * 0.016, 12, 14)
-            : Phaser.Math.Clamp(minSide * 0.024, 15, 19);
+            ? menuType.caption
+            : menuType.label;
 
         if (this.modeButtons.host) {
             this.modeButtons.host.hit.setPosition(centerX, modeHostY).setSize(modeButtonW, segmentedH);
@@ -733,7 +801,7 @@ export class LoginScene extends Phaser.Scene {
             this.modeButtons.join.label.setPosition(centerX, modeJoinY).setFontSize(`${modeFontSize}px`);
         }
 
-        const backW = Phaser.Math.Clamp(contentW * 0.28, 94, 136);
+        const backW = Math.max(94, Math.min(backBaseW, contentW * 0.35));
         const backH = segmentedH;
         const backX = contentLeft + backW * 0.5;
         const backY = panel.y + loginTokens.panelPaddingY + backH * 0.5;
@@ -741,44 +809,43 @@ export class LoginScene extends Phaser.Scene {
         this.backButtonGfx.setPosition(backX, backY);
         this.backButtonText
             .setPosition(backX, backY)
-            .setFontSize(`${Phaser.Math.Clamp(minSide * 0.016, 12, 15)}px`);
+            .setFontSize(`${menuType.caption}px`);
         this.redrawBackButton(backW, backH);
 
         if (showForm) {
             cursorY = Math.max(cursorY, backY + backH * 0.5 + sectionGap);
 
-            const roomLabelH = Phaser.Math.Clamp(minSide * 0.016, 12, 14);
+            const roomLabelH = menuType.caption + 2;
             this.roomCodeLabel
                 .setPosition(centerX, cursorY + roomLabelH * 0.5)
                 .setWordWrapWidth(contentW * 0.92, true)
                 .setFontSize(`${roomLabelH}px`);
-            fitTextToBox(this.roomCodeLabel, this.roomCodeLabel.text, contentW * 0.92, roomLabelH + 4, { maxLines: 1, ellipsis: true });
             cursorY += roomLabelH + rowGap;
 
-            const roomCodeH = Phaser.Math.Clamp(minSide * 0.046, 22, 34);
+            const roomCodeH = menuType.roomCode;
             this.roomCodeValue
                 .setPosition(centerX, cursorY + roomCodeH * 0.55)
                 .setFontSize(`${roomCodeH}px`);
-            this.roomCodeInput.style.width = `${Math.round(Phaser.Math.Clamp(contentW * 0.62, 170, 260))}px`;
-            this.roomCodeInput.style.fontSize = `${Math.round(Phaser.Math.Clamp(minSide * 0.028, 18, 24))}px`;
+            const roomCodeInputW = Math.max(170, Math.min(roomCodeInputBaseW, contentW * 0.74));
+            this.roomCodeInput.style.width = `${Math.round(roomCodeInputW)}px`;
+            this.roomCodeInput.style.fontSize = `${menuType.input}px`;
             this.roomCodeInput.style.minHeight = `${Math.round(Math.max(42, loginTokens.inputHeight))}px`;
             this.roomCodeDom.updateSize();
             this.roomCodeDom.setPosition(centerX, cursorY + roomCodeH * 0.55);
             cursorY += roomCodeH + sectionGap;
 
-            const inputLabelH = Phaser.Math.Clamp(minSide * 0.018, 12, 15);
+            const inputLabelH = menuType.caption + 3;
             this.inputLabel
                 .setPosition(centerX, cursorY + inputLabelH * 0.5)
                 .setWordWrapWidth(contentW * 0.92, true)
                 .setFontSize(`${inputLabelH}px`);
-            fitTextToBox(this.inputLabel, this.inputLabel.text, contentW * 0.92, inputLabelH + 6, { maxLines: 1, ellipsis: true });
             cursorY += inputLabelH + rowGap;
 
-            const inputW = Phaser.Math.Clamp(contentW * 0.88, 250, 390);
+            const inputW = Math.max(250, Math.min(nameInputBaseW, contentW * 0.92));
             this.nameInput.style.width = `${Math.round(inputW)}px`;
             this.nameInput.style.maxWidth = `${Math.round(Math.min(w * 0.8, inputW))}px`;
-            this.nameInput.style.padding = `${Math.round(Phaser.Math.Clamp(minSide * 0.013, 11, 14))}px 14px`;
-            this.nameInput.style.fontSize = `${Math.round(Phaser.Math.Clamp(minSide * 0.021, 15, 19))}px`;
+            this.nameInput.style.padding = `${compactTier ? 11 : 12}px 14px`;
+            this.nameInput.style.fontSize = `${menuType.input}px`;
             this.nameInput.style.minHeight = `${Math.round(Math.max(44, loginTokens.inputHeight))}px`;
             this.inputDom.updateSize();
             this.inputFrame.clear();
@@ -790,37 +857,35 @@ export class LoginScene extends Phaser.Scene {
             }
             cursorY += loginTokens.inputHeight + sectionGap;
 
-            const hintMaxLines = compactTier ? 1 : 2;
             const hintH = compactTier ? 16 : 24;
             this.hint
                 .setPosition(centerX, cursorY + hintH * 0.5)
                 .setWordWrapWidth(contentW * 0.92, true)
-                .setFontSize(`${Phaser.Math.Clamp(minSide * 0.016, 11, 14)}px`);
-            fitTextToBox(this.hint, this.hint.text, contentW * 0.92, hintH + 4, { maxLines: hintMaxLines, ellipsis: true });
+                .setFontSize(`${menuType.caption}px`);
             cursorY += hintH + rowGap;
 
             const buttonY = Math.min(cursorY + primaryH * 0.5, maxContentBottom - (primaryH * 0.5) - 22);
-            const buttonW = Phaser.Math.Clamp(contentW * 0.88, 220, 380);
+            const buttonW = Math.max(220, Math.min(joinButtonBaseW, contentW * 0.92));
             this.joinButtonHit.setPosition(centerX, buttonY).setSize(buttonW, primaryH);
             this.redrawJoinButton(buttonW, primaryH);
             this.joinButtonGfx.setPosition(centerX, buttonY);
             this.joinButtonText
                 .setPosition(centerX, buttonY)
-                .setFontSize(`${Phaser.Math.Clamp(minSide * 0.023, 13, 18)}px`);
+                .setFontSize(`${menuType.button}px`);
             cursorY = buttonY + primaryH * 0.5 + rowGap;
 
             const feedbackY = Math.min(cursorY + 10, maxContentBottom - 8);
             this.feedback
                 .setPosition(centerX, feedbackY)
                 .setWordWrapWidth(contentW * 0.94, true)
-                .setFontSize(`${Phaser.Math.Clamp(minSide * 0.016, 12, 15)}px`);
-            fitTextToBox(this.feedback, this.feedback.text, contentW * 0.94, 24, { maxLines: 2, ellipsis: true });
+                .setFontSize(`${menuType.caption}px`);
         } else {
             const hiddenInputY = panel.y + panel.h - 28;
             this.inputDom.setPosition(centerX, hiddenInputY);
             this.roomCodeDom.setPosition(centerX, hiddenInputY);
 
-            this.joinButtonHit.setPosition(centerX, panel.y + panel.h - primaryH).setSize(220, primaryH);
+            const modeButtonIdleW = Math.max(220, Math.min(300, contentW));
+            this.joinButtonHit.setPosition(centerX, panel.y + panel.h - primaryH).setSize(modeButtonIdleW, primaryH);
             this.joinButtonGfx.setPosition(centerX, panel.y + panel.h - primaryH);
             this.joinButtonText.setPosition(centerX, panel.y + panel.h - primaryH);
             this.hint.setPosition(centerX, panel.y + panel.h - 26);
@@ -849,18 +914,20 @@ export class LoginScene extends Phaser.Scene {
     }
 
     private redrawBackground(w: number, h: number) {
-        drawPokemonBackdrop(this.bg, w, h, 0.64);
+        drawPokemonBackdrop(this.bg, w, h, 0.61);
     }
 
     private redrawPanel(x: number, y: number, w: number, h: number) {
         this.panelGfx.clear();
-        this.panelGfx.fillStyle(0x2d4a60, 0.92);
+        this.panelGfx.fillStyle(0x22435f, 0.93);
         this.panelGfx.fillRoundedRect(x, y, w, h, 20);
+        this.panelGfx.fillStyle(0x8fd8ff, 0.07);
+        this.panelGfx.fillRoundedRect(x + 4, y + 4, w - 8, Math.max(24, h * 0.22), { tl: 16, tr: 16, bl: 0, br: 0 });
 
-        this.panelGfx.lineStyle(1.4, 0xf3deb3, 0.95);
+        this.panelGfx.lineStyle(1.4, 0xbfe3ff, 0.94);
         this.panelGfx.strokeRoundedRect(x, y, w, h, 20);
 
-        this.panelGfx.lineStyle(1, 0xffffff, 0.08);
+        this.panelGfx.lineStyle(1, 0xffffff, 0.1);
         this.panelGfx.strokeRoundedRect(x + 4, y + 4, w - 8, h - 8, 16);
 
         this.panelShimmer.clear();
@@ -868,8 +935,8 @@ export class LoginScene extends Phaser.Scene {
     }
 
     private redrawJoinButton(buttonW: number, buttonH: number) {
-        const fill = this.busy ? 0x5f7f53 : 0x4f7d6a;
-        const edge = this.busy ? 0xa4c496 : 0xd0f6c9;
+        const fill = this.busy ? 0x4f7b8a : 0x3d8f6c;
+        const edge = this.busy ? 0xbfdceb : 0xcff6dd;
         paintRetroButton(
             this.joinButtonGfx,
             { width: buttonW, height: buttonH, radius: 12, borderWidth: 1.2 },

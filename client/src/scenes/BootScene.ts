@@ -13,6 +13,7 @@ import {
 import { APP_FONT_FAMILY } from '../ui/Typography';
 import { preloadCardArtworkManifest } from '../ui/CardArtworkResolver';
 import { setUiRootLanguage, setUiRootScreen, syncUiRootViewport } from '../ui/dom/UiRoot';
+import { getMenuTypographyByTier, resolveLayoutTier } from '../ui/layout/LayoutTokens';
 
 const FONT_UI = APP_FONT_FAMILY;
 
@@ -33,7 +34,7 @@ export class BootScene extends Phaser.Scene {
 
     private progressValue = 0;
     private lang: SupportedLanguage = DEFAULT_LANGUAGE;
-    private readonly textResolution = Math.max(2, Math.min((window.devicePixelRatio || 1) * 1.5, 4));
+    private readonly textResolution = 4;
 
     constructor() {
         super({ key: 'BootScene' });
@@ -83,8 +84,8 @@ export class BootScene extends Phaser.Scene {
         this.status = this.add.text(0, 0, t(this.lang, 'boot_loading'), {
             fontFamily: FONT_UI,
             fontSize: '14px',
-            color: '#163b57',
-            stroke: '#eff6ff',
+            color: '#15415f',
+            stroke: '#e8f5ff',
             strokeThickness: 1,
             fontStyle: '600',
             letterSpacing: 0.5,
@@ -96,8 +97,8 @@ export class BootScene extends Phaser.Scene {
         this.progressLabel = this.add.text(0, 0, '0%', {
             fontFamily: FONT_UI,
             fontSize: '13px',
-            color: '#143955',
-            stroke: '#eef6ff',
+            color: '#143f5b',
+            stroke: '#e7f3ff',
             strokeThickness: 1,
             fontStyle: '700',
         }).setOrigin(0.5);
@@ -159,9 +160,10 @@ export class BootScene extends Phaser.Scene {
     private handleResize(gameSize: Phaser.Structs.Size) {
         const w = gameSize.width;
         const h = gameSize.height;
-        const minSide = Math.min(w, h);
         const cx = w * 0.5;
         const cy = h * 0.5;
+        const tier = resolveLayoutTier(w, h);
+        const menuType = getMenuTypographyByTier(tier);
 
         this.redrawBackground(w, h);
         this.cloudLayer.setSize(w, h);
@@ -174,17 +176,17 @@ export class BootScene extends Phaser.Scene {
 
         this.status
             .setPosition(cx, cy * 1.11)
-            .setFontSize(`${Phaser.Math.Clamp(minSide * 0.019, 12, 16)}px`);
+            .setFontSize(`${menuType.body}px`);
 
         this.progressLabel
             .setPosition(cx, cy * 1.16)
-            .setFontSize(`${Phaser.Math.Clamp(minSide * 0.018, 11, 15)}px`);
+            .setFontSize(`${menuType.caption}px`);
 
         this.redrawProgress();
     }
 
     private redrawBackground(w: number, h: number) {
-        drawPokemonBackdrop(this.bg, w, h, 0.62);
+        drawPokemonBackdrop(this.bg, w, h, 0.61);
     }
 
     private redrawProgress() {
@@ -198,13 +200,13 @@ export class BootScene extends Phaser.Scene {
         const y = h * 0.64 + minSide * 0.22;
 
         this.progressTrack.clear();
-        this.progressTrack.fillStyle(0x2a3243, 0.9);
+        this.progressTrack.fillStyle(0x21384d, 0.92);
         this.progressTrack.fillRoundedRect(x, y, barW, barH, barH * 0.5);
-        this.progressTrack.lineStyle(1, 0x96836a, 0.8);
+        this.progressTrack.lineStyle(1, 0xd7be8d, 0.88);
         this.progressTrack.strokeRoundedRect(x, y, barW, barH, barH * 0.5);
 
         this.progressFill.clear();
-        this.progressFill.fillStyle(0xe2b980, 0.95);
+        this.progressFill.fillStyle(0x86d0a2, 0.95);
         this.progressFill.fillRoundedRect(x + 2, y + 2, Math.max(0, (barW - 4) * this.progressValue), barH - 4, (barH - 4) * 0.5);
 
         this.progressLabel.setText(`${Math.round(this.progressValue * 100)}%`);

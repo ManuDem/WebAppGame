@@ -32,20 +32,35 @@ npm run build
 
 ## Test
 
-1. Smoke suite stabile (attualmente green):
+1. Suite completa (tutti i progetti Jest):
 ```bash
-npm test -- --runInBand --forceExit tests/DeckManager.test.ts tests/CardEffectParser.test.ts server/tests/core_loop.test.ts server/tests/reaction_stress.test.ts server/tests/win_conditions.test.ts
+npm test
 ```
 
-2. Full suite (stato attuale: fallisce su 3 test legacy):
+2. Unit test rapidi (client + shared):
 ```bash
-npm test -- --runInBand --forceExit
+npm run test:unit
 ```
 
-Fail noti full suite:
-- `tests/room_connection.test.ts`
-- `tests/core_loop.test.ts`
-- `tests/reaction_race_condition.test.ts`
+3. UI contracts (environment-safe, anti-overlap):
+```bash
+npm run test:ui
+```
+
+4. Integration test server (seriali):
+```bash
+npm run test:integration
+```
+
+5. CI/debug open handles:
+```bash
+npm run test:ci
+```
+
+Struttura test canonica:
+- `tests/unit/client/*`
+- `tests/unit/shared/*`
+- `tests/integration/server/*`
 
 ## Convenzioni operative
 

@@ -20,39 +20,39 @@ type BrandValues = {
 
 const BRAND_BY_TIER: Record<LayoutTier, BrandValues> = {
     A: {
-        titleFontSize: 52,
-        subtitleFontSize: 17,
-        titleY: 72,
-        subtitleY: 112,
-        headerBottomY: 142,
+        titleFontSize: 46,
+        subtitleFontSize: 16,
+        titleY: 64,
+        subtitleY: 98,
+        headerBottomY: 128,
     },
     B: {
-        titleFontSize: 56,
-        subtitleFontSize: 18,
-        titleY: 76,
-        subtitleY: 118,
-        headerBottomY: 148,
+        titleFontSize: 50,
+        subtitleFontSize: 17,
+        titleY: 68,
+        subtitleY: 104,
+        headerBottomY: 134,
     },
     C: {
-        titleFontSize: 40,
-        subtitleFontSize: 14,
-        titleY: 56,
-        subtitleY: 84,
-        headerBottomY: 108,
+        titleFontSize: 36,
+        subtitleFontSize: 13,
+        titleY: 48,
+        subtitleY: 72,
+        headerBottomY: 96,
     },
     D: {
-        titleFontSize: 66,
-        subtitleFontSize: 20,
-        titleY: 82,
-        subtitleY: 124,
-        headerBottomY: 156,
+        titleFontSize: 58,
+        subtitleFontSize: 19,
+        titleY: 74,
+        subtitleY: 110,
+        headerBottomY: 142,
     },
     E: {
-        titleFontSize: 74,
-        subtitleFontSize: 21,
-        titleY: 80,
-        subtitleY: 122,
-        headerBottomY: 156,
+        titleFontSize: 64,
+        subtitleFontSize: 20,
+        titleY: 76,
+        subtitleY: 114,
+        headerBottomY: 146,
     },
 };
 
@@ -78,9 +78,10 @@ export interface InitialScreenLayout {
 }
 
 type LoginTokenBase = {
-    widthVw: number;
+    panelWidth: number;
     maxWidth: number;
-    maxHeight?: number;
+    panelHeightForm: number;
+    panelHeightMode: number;
     panelPaddingX: number;
     panelPaddingY: number;
     sectionGap: number;
@@ -90,17 +91,21 @@ type LoginTokenBase = {
 
 const LOGIN_BASE_BY_TIER: Record<LayoutTier, LoginTokenBase> = {
     A: {
-        widthVw: 0.92,
-        maxWidth: 500,
+        panelWidth: 336,
+        maxWidth: 420,
+        panelHeightForm: 442,
+        panelHeightMode: 316,
         panelPaddingX: 18,
         panelPaddingY: 16,
         sectionGap: 14,
         rowGap: 10,
-        inputHeight: 46,
+        inputHeight: 48,
     },
     B: {
-        widthVw: 0.9,
-        maxWidth: 520,
+        panelWidth: 356,
+        maxWidth: 460,
+        panelHeightForm: 480,
+        panelHeightMode: 330,
         panelPaddingX: 20,
         panelPaddingY: 18,
         sectionGap: 16,
@@ -108,18 +113,21 @@ const LOGIN_BASE_BY_TIER: Record<LayoutTier, LoginTokenBase> = {
         inputHeight: 48,
     },
     C: {
-        widthVw: 0.58,
-        maxWidth: 620,
-        maxHeight: 300,
-        panelPaddingX: 18,
+        panelWidth: 560,
+        maxWidth: 640,
+        panelHeightForm: 300,
+        panelHeightMode: 244,
+        panelPaddingX: 20,
         panelPaddingY: 14,
         sectionGap: 12,
         rowGap: 10,
-        inputHeight: 40,
+        inputHeight: 42,
     },
     D: {
-        widthVw: 0.62,
-        maxWidth: 620,
+        panelWidth: 560,
+        maxWidth: 640,
+        panelHeightForm: 520,
+        panelHeightMode: 352,
         panelPaddingX: 22,
         panelPaddingY: 18,
         sectionGap: 16,
@@ -127,8 +135,10 @@ const LOGIN_BASE_BY_TIER: Record<LayoutTier, LoginTokenBase> = {
         inputHeight: 46,
     },
     E: {
-        widthVw: 0.62,
-        maxWidth: 620,
+        panelWidth: 600,
+        maxWidth: 700,
+        panelHeightForm: 552,
+        panelHeightMode: 368,
         panelPaddingX: 22,
         panelPaddingY: 18,
         sectionGap: 16,
@@ -162,31 +172,17 @@ export function computeInitialScreenLayout(
     const buttonContract = getButtonContractByTier(tier);
     const base = LOGIN_BASE_BY_TIER[tier];
 
-    const panelWidthPx = Math.min(base.maxWidth, Math.round(screenW * base.widthVw));
+    const maxPanelWidth = Math.max(220, screenW - safe.left - safe.right - 8);
+    const panelWidthPx = Math.max(220, Math.min(base.maxWidth, maxPanelWidth, base.panelWidth));
     const contentWidth = Math.max(220, panelWidthPx - (base.panelPaddingX * 2));
 
-    const estimatedHeaderRows = options.showForm ? 9 : 6;
-    const estimatedPanelHeight = (
-        base.panelPaddingY * 2
-        + (estimatedHeaderRows * 18)
-        + (base.sectionGap * (options.showForm ? 5 : 4))
-        + (base.rowGap * (options.showForm ? 6 : 4))
-        + (base.inputHeight * (options.showForm ? 2 : 0))
-        + (buttonContract.primaryHeight * (options.showForm ? 1 : 0))
-        + (buttonContract.secondaryHeight * (options.showForm ? 2 : 2))
-    );
-
-    const panelTop = Math.max(safe.top + 8, header.headerBottomY + 10);
+    const panelTop = Math.max(safe.top + 8, header.headerBottomY + 12);
     const maxPanelHeight = Math.max(180, screenH - panelTop - safe.bottom);
-    const panelHeightFromTier = base.maxHeight ? Math.min(base.maxHeight, estimatedPanelHeight) : estimatedPanelHeight;
-    const panelHeight = Math.max(
-        Math.min(panelHeightFromTier, maxPanelHeight),
-        Math.min(maxPanelHeight, options.showForm ? 260 : 220),
-    );
-
+    const requestedHeight = options.showForm ? base.panelHeightForm : base.panelHeightMode;
+    const panelHeight = Math.max(Math.min(requestedHeight, maxPanelHeight), Math.min(maxPanelHeight, 220));
     const panelBottomLimit = Math.max(panelTop, screenH - safe.bottom - panelHeight);
-    const verticalRoom = Math.max(0, panelBottomLimit - panelTop);
-    const targetY = panelTop + Math.floor(verticalRoom * (tier === 'C' ? 0.18 : 0.28));
+    const rigidOffset = tier === 'C' ? 6 : 10;
+    const targetY = panelTop + Math.min(rigidOffset, Math.max(0, panelBottomLimit - panelTop));
 
     const panel = {
         x: Math.round((screenW - panelWidthPx) * 0.5),
@@ -202,7 +198,7 @@ export function computeInitialScreenLayout(
         panel,
         loginTokens: {
             panelWidthPx,
-            panelMaxHeightPx: base.maxHeight,
+            panelMaxHeightPx: options.showForm ? base.panelHeightForm : base.panelHeightMode,
             panelPaddingX: base.panelPaddingX,
             panelPaddingY: base.panelPaddingY,
             sectionGap: base.sectionGap,

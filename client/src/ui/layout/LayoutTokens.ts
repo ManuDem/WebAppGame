@@ -21,10 +21,21 @@ export interface TypographyContract {
     ctaMax: number;
 }
 
+export interface MenuTypographyContract {
+    caption: number;
+    body: number;
+    label: number;
+    button: number;
+    sectionTitle: number;
+    roomCode: number;
+    input: number;
+}
+
 export function resolveLayoutTier(width: number, height: number): LayoutTier {
     const portrait = height > width;
+    const aspect = portrait ? (height / Math.max(1, width)) : (width / Math.max(1, height));
     if (portrait && width <= 390) return 'A';
-    if (portrait && width >= 391 && width <= 430) return 'B';
+    if (portrait && width >= 391 && width <= 600 && aspect >= 1.35) return 'B';
     if (height <= 430 && width >= 720) return 'C';
     if (width >= 431 && width <= 900 && height >= width) return 'D';
     return 'E';
@@ -42,12 +53,12 @@ export function getSafeAreaByTier(tier: LayoutTier): SafeArea {
 
 export function getButtonContractByTier(tier: LayoutTier): ButtonContract {
     if (tier === 'A' || tier === 'B') {
-        return { primaryHeight: 48, secondaryHeight: 40, minHitTarget: 44 };
+        return { primaryHeight: 50, secondaryHeight: 42, minHitTarget: 44 };
     }
     if (tier === 'C') {
-        return { primaryHeight: 42, secondaryHeight: 36, minHitTarget: 44 };
+        return { primaryHeight: 44, secondaryHeight: 40, minHitTarget: 44 };
     }
-    return { primaryHeight: 46, secondaryHeight: 38, minHitTarget: 44 };
+    return { primaryHeight: 48, secondaryHeight: 40, minHitTarget: 44 };
 }
 
 export function getTypographyContractByTier(tier: LayoutTier): TypographyContract {
@@ -78,6 +89,40 @@ export function getTypographyContractByTier(tier: LayoutTier): TypographyContrac
     };
 }
 
+export function getMenuTypographyByTier(tier: LayoutTier): MenuTypographyContract {
+    if (tier === 'C') {
+        return {
+            caption: 12,
+            body: 13,
+            label: 13,
+            button: 15,
+            sectionTitle: 15,
+            roomCode: 23,
+            input: 16,
+        };
+    }
+    if (tier === 'A' || tier === 'B') {
+        return {
+            caption: 12,
+            body: 13,
+            label: 14,
+            button: 16,
+            sectionTitle: 16,
+            roomCode: 26,
+            input: 17,
+        };
+    }
+    return {
+        caption: 13,
+        body: 14,
+        label: 15,
+        button: 16,
+        sectionTitle: 17,
+        roomCode: 28,
+        input: 18,
+    };
+}
+
 export function clampToSafeArea(
     value: { x: number; y: number; w: number; h: number },
     screenW: number,
@@ -95,4 +140,3 @@ export function clampToSafeArea(
         h: Math.max(0, Math.min(value.h, maxH)),
     };
 }
-

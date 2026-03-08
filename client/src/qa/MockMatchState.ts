@@ -14,6 +14,9 @@ import { getCardLocalizedText } from '../../../shared/CardTextCatalog';
 import { sanitizeLanguage, SupportedLanguage, t } from '../i18n';
 
 export type MockMatchPreset = 'my_turn' | 'other_turn' | 'reaction_window';
+export interface MockMatchOptions {
+    longNames?: boolean;
+}
 
 const LOCAL_ID = 'qa_local';
 const OPP_1_ID = 'qa_opp_1';
@@ -164,6 +167,27 @@ function parseLang(search: string, fallback: SupportedLanguage): SupportedLangua
     return sanitizeLanguage(fromQuery ?? fallback);
 }
 
+function parseBooleanQueryFlag(value: string | null): boolean {
+    const normalized = String(value ?? '').trim().toLowerCase();
+    return normalized === '1' || normalized === 'true' || normalized === 'yes';
+}
+
+export function isQaLongNamesEnabled(search: string = window.location.search): boolean {
+    const params = new URLSearchParams(search);
+    return parseBooleanQueryFlag(params.get('qaLongNames'));
+}
+
+function buildQaPlayerName(baseName: string, role: 'local' | 'north' | 'south', longNames: boolean): string {
+    if (!longNames) return baseName;
+
+    const suffixByRole = {
+        local: 'DirezioneOperativaUltraMegaTeamPhoenix',
+        north: 'ConsorzioSettentrionaleDelleAcquisizioniGlobali',
+        south: 'FederazioneMeridionaleDiInnovazioneStrategica',
+    } as const;
+    return `${baseName} ${suffixByRole[role]}`.trim();
+}
+
 export function isQaMatchModeEnabled(search: string = window.location.search): boolean {
     const params = new URLSearchParams(search);
     return params.get('qaMatch') === '1' || params.get('mockMatch') === '1';
@@ -186,14 +210,16 @@ export interface MockMatchBundle {
 export function createMockMatchBundle(
     preset: MockMatchPreset = 'my_turn',
     lang: SupportedLanguage = 'it',
+    options: MockMatchOptions = {},
 ): MockMatchBundle {
     const language = sanitizeLanguage(lang);
+    const longNames = options.longNames === true;
     const cards = buildMockCards(language);
     const tr = (key: string, vars?: Record<string, string | number>) => t(language, key, vars);
 
     const localPlayer = createPlayer(
         LOCAL_ID,
-        tr('qa_mock_local_name'),
+        buildQaPlayerName(tr('qa_mock_local_name'), 'local', longNames),
         preset === 'other_turn' ? 1 : 3,
         1,
         cards.localHand,
@@ -202,7 +228,7 @@ export function createMockMatchBundle(
 
     const opp1 = createPlayer(
         OPP_1_ID,
-        tr('qa_mock_opp_north'),
+        buildQaPlayerName(tr('qa_mock_opp_north'), 'north', longNames),
         2,
         1,
         [buildMockCard('trk_04', language)],
@@ -211,7 +237,7 @@ export function createMockMatchBundle(
 
     const opp2 = createPlayer(
         OPP_2_ID,
-        tr('qa_mock_opp_south'),
+        buildQaPlayerName(tr('qa_mock_opp_south'), 'south', longNames),
         3,
         0,
         [buildMockCard('rea_02', language)],
@@ -381,7 +407,7 @@ export class MockServerManager {
         this.emitState();
     }
 
-    public solveCrisis(crisisId: string) {
+    public solveCrisis(crisisId: string, heroCardId?: string) {
         if (!this.room) return;
         const state = this.room.state;
         const me = this.getLocalPlayer();
@@ -395,7 +421,8 @@ export class MockServerManager {
             this.emitError('NOT_YOUR_TURN', this.tr('qa_mock_not_your_turn'));
             return;
         }
-        if (me.actionPoints < 2) {
+        const attackCost = Math.max(1, Number(state.centralCrises.find((crisis) => crisis.id === crisisId)?.costPA ?? 2));
+        if (me.actionPoints < attackCost) {
             this.emitError('NO_PA', this.tr('qa_mock_no_pa_monster'));
             return;
         }
@@ -406,15 +433,43 @@ export class MockServerManager {
             return;
         }
 
+        const heroes = ((me.company ?? []) as ICardData[]).filter((entry) => {
+            const typeValue = String(entry?.type ?? '').trim().toLowerCase();
+            return typeValue === 'hero' || typeValue === 'employee';
+        });
+        if (heroes.length === 0) {
+            this.emitError('NO_HERO_FOR_ATTACK', this.tr('game_error_no_hero_for_attack'));
+            return;
+        }
+        if (!heroCardId) {
+            this.emitError('MISSING_ATTACK_HERO', this.tr('game_error_missing_attack_hero'));
+            return;
+        }
+
+        const selectedHero = heroes.find((hero) => String(hero.id) === String(heroCardId));
+        if (!selectedHero) {
+            this.emitError('INVALID_ATTACK_HERO', this.tr('game_error_invalid_attack_hero'));
+            return;
+        }
+
         const crisis = state.centralCrises[idx];
         const roll1 = 3 + ((state.turnNumber + idx) % 3);
         const roll2 = 2 + ((state.turnNumber + idx + 1) % 4);
-        const modifier = Number(crisis?.modifier ?? 0);
+        let modifier = Number(crisis?.modifier ?? 0);
+        if (Number.isFinite(Number((selectedHero as any)?.modifier))) {
+            modifier += Number((selectedHero as any)?.modifier);
+        }
+        const equippedItems = ((selectedHero as any)?.equippedItems ?? []) as ICardData[];
+        equippedItems.forEach((item) => {
+            if (Number.isFinite(Number((item as any)?.modifier))) {
+                modifier += Number((item as any).modifier);
+            }
+        });
         const targetRoll = Number.isFinite(Number(crisis?.targetRoll)) ? Number(crisis.targetRoll) : 8;
         const total = roll1 + roll2 + modifier;
         const success = total >= targetRoll;
 
-        me.actionPoints = Math.max(0, me.actionPoints - 2);
+        me.actionPoints = Math.max(0, me.actionPoints - attackCost);
         this.emitMessage(ServerEvents.DICE_ROLLED, {
             playerId: me.sessionId,
             cardId: crisis.id,
@@ -487,6 +542,8 @@ export function createMockServerManager(
         ? localStorage.getItem('lucrare_lang')
         : null;
     const selectedLang = parseLang(search, sanitizeLanguage(lang ?? persistedLang));
-    const bundle = createMockMatchBundle(preset, selectedLang);
+    const bundle = createMockMatchBundle(preset, selectedLang, {
+        longNames: isQaLongNamesEnabled(search),
+    });
     return new MockServerManager(bundle);
 }

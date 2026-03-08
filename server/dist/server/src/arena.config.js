@@ -1,22 +1,15 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-const monitor_1 = require("@colyseus/monitor");
-const OfficeRoom_1 = require("./rooms/OfficeRoom");
+const configureServer_1 = require("./bootstrap/configureServer");
 exports.default = {
     initializeGameServer: (gameServer) => {
-        gameServer.define("office_room", OfficeRoom_1.OfficeRoom);
+        (0, configureServer_1.configureGameServer)(gameServer);
     },
     initializeExpress: (app) => {
-        app.get("/health", (req, res) => {
-            res.json({ status: "ok" });
-        });
-        app.use("/colyseus", (0, monitor_1.monitor)());
+        (0, configureServer_1.configureMonitoring)(app);
     },
     beforeListen: () => {
-        /**
-         * Before starting the HTTP listener,
-         * we can do some super-fast initialization.
-         */
-    }
+        // Shared bootstrap keeps all runtime wiring in one place.
+    },
 };
 //# sourceMappingURL=arena.config.js.map

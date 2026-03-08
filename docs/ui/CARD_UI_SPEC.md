@@ -1,22 +1,25 @@
-# Card UI Spec (Contratto)
+# Card UI Spec
 
-## Mini-card (mano / tavolo)
-- Artwork in alto (dominante).
-- Titolo carta (1 riga max, ellipsis se lungo).
-- Riga tipo/sottotipo (1 riga max, ellipsis).
-- Info strip breve (max 2 righe, no paragrafi).
-- Footer sintetico (tipo + valori chiave).
-- Vietato mostrare informazioni debug/non utili (es. template id).
+Data aggiornamento: 2026-03-06
 
-## Full-card (inspect overlay)
-- Artwork grande in alto.
-- Titolo leggibile (max 2 righe).
-- Tipo + metadati principali (costo AP, ecc.) senza debug id.
-- Descrizione completa + note contestuali.
-- Chiusura affidabile (`X` + tap esterno).
+## Mini-card (mano/board)
+- artwork dominante
+- titolo sintetico con fit text
+- tipo/meta essenziali
+- footer breve con info ad alto valore
+- stato giocabile/non giocabile visibile in modo netto
+
+## Inspect overlay
+- artwork grande e ratio-adaptive
+- testo esteso e leggibile
+- chiusura affidabile (`X` + tap esterno)
 
 ## Regole anti-overflow
-- Nessun testo deve uscire dal box.
-- Nessun testo deve sovrapporsi a badge/icone.
-- Se non entra: ellipsis in mini-card, dettaglio nella full-card.
-- Utility condivisa: `fitTextToBox(...)`.
+- testo sempre contenuto nel box
+- overflow gestito con fit + ellipsis
+- niente contenuti debug in UX standard
+
+## Regole interazione
+- tap su mini-card apre inspect
+- drag consentito solo quando l'azione e valida
+- in modal state le mini-card non devono restare interattive

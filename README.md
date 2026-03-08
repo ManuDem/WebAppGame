@@ -6,7 +6,7 @@ Web card game multiplayer con architettura server-authoritative (Colyseus + Phas
 - `client`: Phaser 3 + TypeScript + Vite
 - `server`: Colyseus + Express + TypeScript
 - `shared`: contratti rete, tipi, deck manager, parser effetti
-- `tests`: Jest (suite root + suite server)
+- `tests`: Jest multi-project (`unit:client`, `unit:shared`, `integration:server`)
 
 ## Mappa progetto
 - `client/src/scenes/`
@@ -19,6 +19,8 @@ Web card game multiplayer con architettura server-authoritative (Colyseus + Phas
 - `server/src/State.ts`: schema stato sincronizzato
 - `shared/SharedTypes.ts`: enum, payload, costanti gioco
 - `shared/DeckManager.ts`, `shared/CardEffectParser.ts`, `shared/cards_db.json`
+- `tests/`: test canonici (`tests/unit/*`, `tests/integration/*`, `tests/setup/*`)
+- `artworks/references/`: mockup e immagini di riferimento non runtime
 
 ## Flusso partita attuale
 1. Il giocatore sceglie `Host` o `Partecipa`.
@@ -84,16 +86,22 @@ cd server
 npm run build
 ```
 
-## Verifica tecnica (snapshot 2026-03-04)
+## Verifica tecnica (snapshot 2026-03-06)
 - `server build`: OK
 - `client build`: OK
-- test mirati: OK
-  - comando: `npm test -- --runInBand --forceExit tests/DeckManager.test.ts tests/CardEffectParser.test.ts server/tests/core_loop.test.ts server/tests/reaction_stress.test.ts server/tests/win_conditions.test.ts`
-  - esito: `35/35` test passed
+- suite completa Jest: OK
+  - comando: `npm test`
+- suite unit (client/shared): OK
+  - comando: `npm run test:unit`
+- suite UI contracts browserless (environment-safe): OK
+  - comando: `npm run test:ui`
+- suite integration server: OK
+  - comando: `npm run test:integration`
 
 ## Documentazione utile
 - `docs/index.md`: indice principale documentazione
 - `docs/ARCHITECTURE.md`: mappa architettura + runbook partita
 - `docs/PLAN.md`: milestone, acceptance e verifiche
 - `docs/GDD.md`: design doc (as-is + struttura variante scelta)
-- `CodexGPT.md`: memoria operativa aggiornata
+- `docs/QA.md`: checklist QA operativa (focus overlap/bug grafici)
+- `docs/ui/LAYOUT_SPEC.md`: contratto layout portrait/landscape

@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { ICardData } from '../../../shared/SharedTypes';
+import cardsDbRaw from '../../../shared/cards_db.json';
 import {
     ArtworkManifestEntry,
     buildArtworkPathIndex,
@@ -8,10 +9,16 @@ import {
 
 const CARD_ART_BASE_PATH = '/cards';
 const CARD_ART_TEXTURE_PREFIX = 'card-art-';
-const CARD_ARTWORK_MANIFEST: ArtworkManifestEntry[] = [
-    { templateId: 'emp_01', file: 'emp_01.png' },
-    { templateId: 'emp_07', file: 'emp_07.png' },
-];
+const CARD_ARTWORK_MANIFEST: ArtworkManifestEntry[] = Array.from(
+    new Set(
+        (cardsDbRaw as Array<{ id?: string }>)
+            .map((row) => normalizeArtworkId(String(row?.id ?? '')))
+            .filter(Boolean),
+    ),
+).map((templateId) => ({
+    templateId,
+    file: `${templateId}.png`,
+}));
 
 const manifestPathById = new Map<string, string>();
 const requestedTextureKeys = new Set<string>();
@@ -37,12 +44,10 @@ export function getCardArtworkTextureKey(artworkId: string): string {
     return `${CARD_ART_TEXTURE_PREFIX}${normalizeArtworkId(artworkId)}`;
 }
 
-function getArtworkPathForId(artworkId: string): string {
+function getArtworkPathForId(artworkId: string): string | undefined {
     ensureManifestIndex();
     const normalizedId = normalizeArtworkId(artworkId);
-    const fromManifest = manifestPathById.get(normalizedId);
-    if (fromManifest) return fromManifest;
-    return `${CARD_ART_BASE_PATH}/${normalizedId}.png`;
+    return manifestPathById.get(normalizedId);
 }
 
 function enqueueCallback(textureKey: string, cb: (textureKey: string) => void) {
@@ -106,6 +111,11 @@ export function requestCardArtwork(
 
     if (requestedTextureKeys.has(textureKey)) return;
     requestedTextureKeys.add(textureKey);
+    const artworkPath = getArtworkPathForId(preferredId);
+    if (!artworkPath) {
+        flushCallbacks(textureKey, false);
+        return;
+    }
 
     const onComplete = () => {
         scene.load.off(Phaser.Loader.Events.FILE_LOAD_ERROR, onFileError);
@@ -121,6 +131,6 @@ export function requestCardArtwork(
 
     scene.load.once(`filecomplete-image-${textureKey}`, onComplete);
     scene.load.on(Phaser.Loader.Events.FILE_LOAD_ERROR, onFileError);
-    scene.load.image(textureKey, getArtworkPathForId(preferredId));
+    scene.load.image(textureKey, artworkPath);
     if (!scene.load.isLoading()) scene.load.start();
 }

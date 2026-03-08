@@ -1,4 +1,4 @@
-﻿import { Room, Client, Delayed, ServerError } from "colyseus";
+import { Room, Client, Delayed, ServerError } from "colyseus";
 import {
     OfficeRoomState,
     PlayerState,
@@ -37,6 +37,7 @@ import { computeNextConnectedTurn, validateAndSpendTurnAction } from "../game/tu
 import { evaluatePlayerWin } from "../game/winConditions";
 import { consumePendingDrawTags, resolveReactionQueue } from "../game/reactionResolution";
 import { createItemCardForEquip, equipItemOnHero, resolveHeroEquipTarget } from "../game/itemEquip";
+import { rebindDisconnectedPlayerSession, validateOfficeRoomCode, validateOfficeRoomJoinRequest } from './officeRoomIdentity';
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //  Constants
@@ -50,7 +51,6 @@ const WIN_CRISES = 2;   // Here-to-Slay Lite: 2 Monster risolti (VP score)
 
 interface IMagicResolutionResult {
     success: boolean;
-    restoreCardToHand: boolean;
     message?: string;
 }
 
@@ -113,84 +113,36 @@ export class OfficeRoom extends Room<OfficeRoomState> {
 
     onAuth(client: Client, options: JoinOptions, _request: any) {
         console.log("[AUTH] Incoming auth request from client", client.sessionId, "options:", { ceoName: options?.ceoName, roomCode: options?.roomCode });
-        if (!options?.ceoName) {
-            console.warn("[AUTH] Rejected: missing ceoName");
-            throw new ServerError(400, "Nome CEO mancante.");
-        }
-        const roomCode = this.normalizeRoomCode(options?.roomCode);
-        if (roomCode !== this.roomCode) {
-            console.warn("[AUTH] Rejected: roomCode mismatch", roomCode, "!=", this.roomCode);
-            throw new ServerError(404, "Codice stanza non valido.");
-        }
-        const ceoName = options.ceoName;
-        if (typeof ceoName !== "string") {
-            console.warn("[AUTH] Rejected: ceoName is not a string", ceoName);
-            throw new ServerError(400, "Il nome CEO deve essere una stringa.");
-        }
-        if (ceoName.length < 3 || ceoName.length > 15) {
-            console.warn("[AUTH] Rejected: ceoName invalid length", ceoName);
-            throw new ServerError(400, "Il nome CEO deve essere compreso tra 3 e 15 caratteri.");
-        }
-        if (!/^[a-zA-Z0-9]+$/.test(ceoName)) {
-            console.warn("[AUTH] Rejected: ceoName invalid characters", ceoName);
-            throw new ServerError(400, "Il nome CEO puÃ² contenere solo caratteri alfanumerici (niente spazi o simboli).");
+        const existing = typeof options?.ceoName === 'string'
+            ? this.findPlayerByName(options.ceoName)
+            : null;
+        const validation = validateOfficeRoomJoinRequest({
+            options,
+            expectedRoomCode: this.roomCode,
+            phase: this.state.phase,
+            existingPlayer: existing
+                ? { sessionId: existing.sessionId, isConnected: existing.player.isConnected }
+                : null,
+        });
+        if (!validation.ok) {
+            console.warn("[AUTH] Rejected", validation.message, { ceoName: options?.ceoName, roomCode: options?.roomCode });
+            throw new ServerError(validation.statusCode, validation.message);
         }
 
-        const existing = this.findPlayerByName(ceoName);
-        if (existing && existing.player.isConnected) {
-            console.warn("[AUTH] Rejected: ceoName already connected", ceoName);
-            throw new ServerError(409, "Nome CEO giÃ  in uso in questa stanza.");
-        }
-        if (this.state.phase !== GamePhase.WAITING_FOR_PLAYERS && this.state.phase !== GamePhase.PRE_LOBBY && !existing) {
-            console.warn("[AUTH] Rejected: match already started and no reconnect slot for", ceoName);
-            throw new ServerError(403, "Partita giÃ  in corso. Puoi rientrare solo con un nome giÃ  presente.");
-        }
-
-        console.log("[AUTH] Accepted client", client.sessionId, "ceoName:", ceoName, "rejoinFrom:", existing?.sessionId ?? null);
-        return { ceoName, rejoinFromSessionId: existing?.sessionId ?? null };
+        console.log("[AUTH] Accepted client", client.sessionId, "ceoName:", validation.value.ceoName, "rejoinFrom:", validation.value.rejoinFromSessionId);
+        return validation.value;
     }
-
     onJoin(client: Client, options: JoinOptions, auth?: { ceoName: string; rejoinFromSessionId?: string | null }): void {
         console.log(`ðŸ‘¤ Player connected: ${client.sessionId}`);
         const rejoinFrom = auth?.rejoinFromSessionId ?? null;
 
-        if (rejoinFrom && this.state.players.has(rejoinFrom)) {
-            const player = this.state.players.get(rejoinFrom) as PlayerState;
-            this.state.players.delete(rejoinFrom);
-
-            player.sessionId = client.sessionId;
-            player.isConnected = true;
-
-            this.state.players.set(client.sessionId, player);
-
-            const orderIndex = this.state.playerOrder.indexOf(rejoinFrom);
-            if (orderIndex !== -1) {
-                this.state.playerOrder.splice(orderIndex, 1, client.sessionId);
+        if (rejoinFrom) {
+            const player = rebindDisconnectedPlayerSession(this.state as any, rejoinFrom, client.sessionId);
+            if (player) {
+                console.log("[JOIN] Reconnected by name:", player.username, "oldSession:", rejoinFrom, "newSession:", client.sessionId);
+                return;
             }
-            if (this.state.currentTurnPlayerId === rejoinFrom) {
-                this.state.currentTurnPlayerId = client.sessionId;
-            }
-            if (this.state.pendingAction) {
-                if (this.state.pendingAction.playerId === rejoinFrom) {
-                    this.state.pendingAction.playerId = client.sessionId;
-                }
-                if (this.state.pendingAction.targetPlayerId === rejoinFrom) {
-                    this.state.pendingAction.targetPlayerId = client.sessionId;
-                }
-            }
-            this.state.actionStack = this.state.actionStack.map((action) => ({
-                ...action,
-                playerId: action.playerId === rejoinFrom ? client.sessionId : action.playerId,
-                targetPlayerId: action.targetPlayerId === rejoinFrom ? client.sessionId : action.targetPlayerId,
-            }));
-            if (this.state.hostSessionId === rejoinFrom) {
-                this.state.hostSessionId = client.sessionId;
-            }
-
-            console.log("[JOIN] Reconnected by name:", player.username, "oldSession:", rejoinFrom, "newSession:", client.sessionId);
-            return;
         }
-
         const player = new PlayerState();
         player.sessionId = client.sessionId;
         player.username = auth?.ceoName || options?.ceoName || `CEO_${client.sessionId.substring(0, 4)}`;
@@ -229,6 +181,20 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         }
 
         if (consented) {
+            if (this.shouldPreserveDisconnectedSlot()) {
+                // In match attivo preserviamo lo slot anche su uscita volontaria:
+                // il player (host incluso) puo rientrare con stesso nome.
+                this.cleanupPendingForRemovedPlayer(client.sessionId);
+                const stillThere = this.state.players.get(client.sessionId) as PlayerState | undefined;
+                if (stillThere) {
+                    stillThere.isConnected = false;
+                }
+                if (this.state.currentTurnPlayerId === client.sessionId && this.state.phase === GamePhase.PLAYER_TURN) {
+                    this.advanceTurn();
+                }
+                return;
+            }
+
             this.removePlayerPermanently(client.sessionId);
 
             if (skipTimeout) {
@@ -255,7 +221,21 @@ export class OfficeRoom extends Room<OfficeRoomState> {
                     console.log(`   ðŸ‘ Timely reconnection. Turn skip cancelled.`);
                 }
             } catch (e) {
-                // Timeout di 30s scaduto, cancellare il giocatore definitivamente dallo State
+                if (this.shouldPreserveDisconnectedSlot()) {
+                    // Match in corso: manteniamo lo slot disconnesso per consentire rejoin manuale per nome.
+                    console.log(`   âš ï¸ Timeout expired. Keeping disconnected slot for ${client.sessionId} (manual rejoin allowed).`);
+                    this.cleanupPendingForRemovedPlayer(client.sessionId);
+                    const stillThere = this.state.players.get(client.sessionId) as PlayerState | undefined;
+                    if (stillThere) {
+                        stillThere.isConnected = false;
+                    }
+                    if (this.state.currentTurnPlayerId === client.sessionId && this.state.phase === GamePhase.PLAYER_TURN) {
+                        this.advanceTurn();
+                    }
+                    return;
+                }
+
+                // Lobby/pre-lobby: timeout scaduto => cleanup definitivo.
                 console.log(`   âŒ Timeout expired. Deleting player ${client.sessionId}.`);
                 this.removePlayerPermanently(client.sessionId);
             }
@@ -688,9 +668,29 @@ export class OfficeRoom extends Room<OfficeRoomState> {
     // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private handleSolveCrisis(client: Client, data: ISolveCrisisPayload): void {
-        const { crisisId } = data;
+        const crisisId = String(data?.crisisId ?? "").trim();
+        const heroCardId = String(data?.heroCardId ?? "").trim();
         if (!crisisId) {
             client.send(ServerEvents.ERROR, { code: "MISSING_CRISIS_ID", message: "Specifica il crisisId." });
+            return;
+        }
+        if (!heroCardId) {
+            client.send(ServerEvents.ERROR, {
+                code: "MISSING_ATTACK_HERO",
+                message: "Seleziona un Hero valido per attaccare l'Imprevisto.",
+            });
+            return;
+        }
+
+        const player = this.state.players.get(client.sessionId) as PlayerState | undefined;
+        if (!player) return;
+
+        const heroValidation = this.validateSelectedAttackHero(player, heroCardId);
+        if (!heroValidation.ok || !heroValidation.hero) {
+            client.send(ServerEvents.ERROR, {
+                code: heroValidation.errorCode ?? "INVALID_ATTACK_HERO",
+                message: heroValidation.errorMessage ?? "L'Hero selezionato per l'attacco non esiste nella tua azienda.",
+            });
             return;
         }
 
@@ -713,6 +713,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         pending.actionType = ClientMessages.SOLVE_CRISIS;
         pending.targetCrisisId = crisisId;
         pending.targetCardId = crisis.templateId; // for CardEffectParser resolve
+        pending.targetHeroCardId = heroValidation.hero.id;
         pending.timestamp = Date.now();
 
         this.state.pendingAction = pending;
@@ -723,7 +724,6 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         if (this.reactionTimeout) this.reactionTimeout.clear();
         this.reactionTimeout = this.clock.setTimeout(() => this.resolvePhase(), REACTION_WINDOW_MS);
 
-        const player = this.state.players.get(client.sessionId);
         console.log(`ðŸ’¼ SOLVE_CRISIS by ${client.sessionId}: ${template?.name}. Window open.`);
 
         this.broadcast(ServerEvents.START_REACTION_TIMER, {
@@ -977,15 +977,16 @@ export class OfficeRoom extends Room<OfficeRoomState> {
                     structuralSuccess = true;
                     break;
                 case ClientMessages.SOLVE_CRISIS:
-                    crisisSummary = this.applyCrisisResolution(originalAction.playerId, originalAction.targetCrisisId!);
+                    crisisSummary = this.applyCrisisResolution(
+                        originalAction.playerId,
+                        originalAction.targetCrisisId!,
+                        originalAction.targetHeroCardId,
+                    );
                     structuralSuccess = crisisSummary.success;
                     break;
                 case ClientMessages.PLAY_MAGIC:
                     magicResolution = this.applyMagicResolution(originalAction);
                     structuralSuccess = magicResolution.success;
-                    if (!magicResolution.success && magicResolution.restoreCardToHand) {
-                        this.restorePendingCardToHand(originalAction.id, originalAction.playerId);
-                    }
                     break;
                 default:
                     structuralSuccess = true;
@@ -1061,21 +1062,20 @@ export class OfficeRoom extends Room<OfficeRoomState> {
      */
     private applyMagicResolution(action: IPendingAction): IMagicResolutionResult {
         const player = this.state.players.get(action.playerId);
-        if (!player) return { success: false, restoreCardToHand: false, message: "Azione annullata: giocatore non trovato." };
-        if (!action.targetCardId) return { success: true, restoreCardToHand: false };
+        if (!player) return { success: false, message: "Azione annullata: giocatore non trovato." };
+        if (!action.targetCardId) return { success: true };
 
         const template = this.getTemplate(action.targetCardId);
         if (!template) {
             return {
                 success: false,
-                restoreCardToHand: true,
-                message: "Carta non risolta: template non trovato. Carta restituita in mano.",
+                message: "Carta non risolta: template non trovato.",
             };
         }
 
         const typeValue = String(template.type ?? "").trim().toLowerCase();
         if (typeValue !== "item" && typeValue !== "oggetto") {
-            return { success: true, restoreCardToHand: false };
+            return { success: true };
         }
 
         const equipTarget = resolveHeroEquipTarget({
@@ -1086,8 +1086,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         if (!equipTarget.ok || !equipTarget.targetHero) {
             return {
                 success: false,
-                restoreCardToHand: true,
-                message: "Item annullato: Hero bersaglio non valido. Carta restituita in mano.",
+                message: "Item annullato: Hero bersaglio non valido.",
             };
         }
 
@@ -1096,17 +1095,58 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         if (!equipped) {
             return {
                 success: false,
-                restoreCardToHand: true,
-                message: "Item annullato: equip fallito. Carta restituita in mano.",
+                message: "Item annullato: equip fallito.",
             };
         }
 
-        return { success: true, restoreCardToHand: false };
+        return { success: true };
     }
 
-    private applyCrisisResolution(playerId: string, crisisId: string): ICrisisResolutionSummary {
-        const player = this.state.players.get(playerId);
+    private isHeroRuntimeCard(card: unknown): card is CardState {
+        const typeValue = String((card as any)?.type ?? "").trim().toLowerCase();
+        return typeValue === "hero" || typeValue === "employee";
+    }
+
+    private validateSelectedAttackHero(
+        player: PlayerState,
+        heroCardId: string,
+    ): { ok: boolean; hero?: CardState; errorCode?: string; errorMessage?: string } {
+        const heroes = (player.company as any[]).filter((entry) => this.isHeroRuntimeCard(entry)) as CardState[];
+        if (heroes.length === 0) {
+            return {
+                ok: false,
+                errorCode: "NO_HERO_FOR_ATTACK",
+                errorMessage: "Serve almeno un Hero in azienda per attaccare un Imprevisto.",
+            };
+        }
+        if (!heroCardId) {
+            return {
+                ok: false,
+                errorCode: "MISSING_ATTACK_HERO",
+                errorMessage: "Seleziona un Hero valido per attaccare l'Imprevisto.",
+            };
+        }
+
+        const selected = heroes.find((hero) => String(hero.id) === String(heroCardId));
+        if (!selected) {
+            return {
+                ok: false,
+                errorCode: "INVALID_ATTACK_HERO",
+                errorMessage: "L'Hero selezionato per l'attacco non esiste nella tua azienda.",
+            };
+        }
+
+        return { ok: true, hero: selected };
+    }
+
+    private applyCrisisResolution(playerId: string, crisisId: string, heroCardId?: string): ICrisisResolutionSummary {
+        const player = this.state.players.get(playerId) as PlayerState | undefined;
         if (!player) return { success: false };
+
+        const heroValidation = this.validateSelectedAttackHero(player, String(heroCardId ?? ""));
+        if (!heroValidation.ok || !heroValidation.hero) {
+            return { success: false };
+        }
 
         const crisisArr = this.state.centralCrises as any[];
         const idx = crisisArr.findIndex((c: any) => c.id === crisisId);
@@ -1120,7 +1160,7 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         const rewardCode = typeof template?.effect?.reward === "string" ? template.effect.reward : undefined;
         const penaltyCode = typeof template?.effect?.penalty === "string" ? template.effect.penalty : undefined;
 
-        const modifier = this.getCrisisRollModifier(playerId) + (typeof crisis.modifier === "number" ? crisis.modifier : 0);
+        const modifier = this.getCrisisRollModifier(player, heroValidation.hero) + (typeof crisis.modifier === "number" ? crisis.modifier : 0);
         const roll = rollCrisisAttempt(targetRoll, modifier);
 
         this.broadcast(ServerEvents.DICE_ROLLED, {
@@ -1154,18 +1194,15 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         return { success: false, penaltyCode };
     }
 
-    private getCrisisRollModifier(playerId: string): number {
-        const player = this.state.players.get(playerId);
-        if (!player) return 0;
-
+    private getCrisisRollModifier(player: PlayerState, selectedHero: CardState): number {
         let bonus = 0;
-        const company = player.company as any[];
-        for (const employee of company) {
-            const equippedItems = (employee?.equippedItems ?? []) as any[];
-            for (const item of equippedItems) {
-                if (typeof item?.modifier === "number") {
-                    bonus += item.modifier;
-                }
+        if (typeof selectedHero?.modifier === "number") {
+            bonus += selectedHero.modifier;
+        }
+        const equippedItems = (selectedHero?.equippedItems ?? []) as any[];
+        for (const item of equippedItems) {
+            if (typeof item?.modifier === "number") {
+                bonus += item.modifier;
             }
         }
 
@@ -1338,38 +1375,6 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         };
     }
 
-    private restorePendingCardToHand(pendingId: string, playerId: string): boolean {
-        const player = this.state.players.get(playerId) as PlayerState | undefined;
-        if (!player) return false;
-
-        const hand = player.hand as ICardData[];
-        const cached = this.pendingRemovedCards.get(pendingId);
-        const fallbackTemplateId = (this.state.pendingAction as IPendingAction | null)?.targetCardId;
-        const templateId = cached?.templateId ?? fallbackTemplateId;
-        if (!templateId) return false;
-
-        const runtimeId = cached?.id ?? this.generateId();
-        if (hand.some((card) => String(card.id) === String(runtimeId))) {
-            return false;
-        }
-
-        const restored = this.createCardStateFromDeckCard({
-            id: runtimeId,
-            templateId,
-            type: cached?.type ?? CardType.MAGIC,
-            costPA: cached?.costPA,
-            isFaceUp: false,
-            targetRoll: cached?.targetRoll,
-            modifier: cached?.modifier,
-            subtype: cached?.subtype,
-            shortDesc: cached?.shortDesc,
-        });
-
-        hand.push(restored);
-        this.pendingRemovedCards.delete(pendingId);
-        return true;
-    }
-
     private removePlayerPermanently(sessionId: string): void {
         this.cleanupPendingForRemovedPlayer(sessionId);
 
@@ -1432,6 +1437,12 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         }
     }
 
+    private shouldPreserveDisconnectedSlot(): boolean {
+        // In partita in corso manteniamo gli slot dei player disconnessi:
+        // questo permette rejoin manuale con lo stesso nome anche dopo il timeout di auto-reconnect.
+        return this.state.phase !== GamePhase.WAITING_FOR_PLAYERS && this.state.phase !== GamePhase.PRE_LOBBY;
+    }
+
     // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //  Misc
     // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1471,13 +1482,12 @@ export class OfficeRoom extends Room<OfficeRoomState> {
     }
 
     private normalizeRoomCode(raw: unknown): string {
-        const code = String(raw ?? "").trim();
-        if (!/^\d{4}$/.test(code)) {
-            throw new ServerError(400, "Il codice stanza deve avere 4 cifre.");
+        const validation = validateOfficeRoomCode(raw);
+        if (!validation.ok) {
+            throw new ServerError(validation.statusCode, validation.message);
         }
-        return code;
+        return validation.value;
     }
-
     private findPlayerByName(name: string): { sessionId: string; player: PlayerState } | null {
         const target = name.trim().toLowerCase();
         for (const [sessionId, player] of this.state.players) {
@@ -1488,6 +1498,9 @@ export class OfficeRoom extends Room<OfficeRoomState> {
         return null;
     }
 }
+
+
+
 
 
 

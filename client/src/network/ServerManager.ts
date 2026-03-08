@@ -1,4 +1,4 @@
-﻿import * as Colyseus from 'colyseus.js';
+import * as Colyseus from 'colyseus.js';
 import { ClientMessages, IGameState, IPlayer } from '../../../shared/SharedTypes';
 import {
     PersistedReconnectContext,
@@ -6,7 +6,9 @@ import {
     RECONNECT_STORAGE_KEY,
     getReconnectDelayMs,
     isReconnectContextFresh,
+    readReconnectContext,
 } from './ReconnectPolicy';
+import { resolveServerEndpoint } from './ServerEndpoint';
 
 export type ReconnectStage = 'idle' | 'reconnecting' | 'reconnected' | 'failed';
 
@@ -37,7 +39,7 @@ export class ServerManager {
     public onReconnectStatus?: (status: ReconnectStatus) => void;
 
     constructor() {
-        const endpoint = window.location.hostname === 'localhost' ? 'ws://localhost:2567' : `wss://${window.location.hostname}`;
+        const endpoint = resolveServerEndpoint(window.location, import.meta.env.VITE_WS_URL);
         console.log('[ServerManager] ctor endpoint:', endpoint);
         this.client = new Colyseus.Client(endpoint);
     }
@@ -254,7 +256,6 @@ export class ServerManager {
         }
 
         this.reconnecting = false;
-        this.clearReconnectContext();
         this.emitReconnectStatus({
             stage: 'failed',
             attempt,
@@ -322,16 +323,7 @@ export class ServerManager {
 
     private loadReconnectContext(): PersistedReconnectContext | null {
         const storage = this.getStorage();
-        if (!storage) return null;
-        try {
-            const raw = storage.getItem(RECONNECT_STORAGE_KEY);
-            if (!raw) return null;
-            const parsed = JSON.parse(raw) as PersistedReconnectContext;
-            if (!parsed || typeof parsed !== 'object') return null;
-            return parsed;
-        } catch {
-            return null;
-        }
+        return readReconnectContext(storage);
     }
 
     private clearReconnectContext() {
@@ -378,8 +370,8 @@ export class ServerManager {
         this.room?.send(ClientMessages.PLAY_MAGIC, { cardId, targetPlayerId, targetHeroCardId });
     }
 
-    public solveCrisis(crisisId: string) {
-        this.room?.send(ClientMessages.SOLVE_CRISIS, { crisisId });
+    public solveCrisis(crisisId: string, heroCardId: string) {
+        this.room?.send(ClientMessages.SOLVE_CRISIS, { crisisId, heroCardId });
     }
 
     public endTurn() {
@@ -402,3 +394,4 @@ export class ServerManager {
         this.room?.send(ClientMessages.START_MATCH);
     }
 }
+

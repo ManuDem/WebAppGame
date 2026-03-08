@@ -12,8 +12,9 @@ type ButtonOptions = {
     playClickSfx?: boolean;
 };
 
-const HOVER_SCALE = 1.015;
-const PRESS_SCALE = 0.985;
+// Keep button geometry stable across menus: interaction feedback uses alpha only.
+const HOVER_SCALE = 1;
+const PRESS_SCALE = 1;
 const TWEEN_MS = 90;
 const TWEEN_MS_PRESS = 75;
 const MIN_TOUCH_TARGET = 44;

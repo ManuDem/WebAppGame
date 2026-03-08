@@ -15,7 +15,7 @@ import { APP_FONT_FAMILY } from '../ui/Typography';
 import { createSimpleButtonFx, SimpleButtonController } from '../ui/SimpleButtonFx';
 import { paintRetroButton } from '../ui/RetroButtonPainter';
 import { buildMatchHelpContent } from '../ui/match/MatchHelpContent';
-import { getButtonContractByTier, getSafeAreaByTier, resolveLayoutTier } from '../ui/layout/LayoutTokens';
+import { getButtonContractByTier, getMenuTypographyByTier, getSafeAreaByTier, LayoutTier, resolveLayoutTier } from '../ui/layout/LayoutTokens';
 import { createMockPreLobbyServerManager } from '../qa/MockPreLobbyState';
 import { setUiRootLanguage, setUiRootScreen, syncUiRootViewport } from '../ui/dom/UiRoot';
 
@@ -51,6 +51,7 @@ export class PreLobbyScene extends Phaser.Scene {
     private helpCloseLabel!: Phaser.GameObjects.Text;
     private helpCloseFx?: SimpleButtonController;
     private helpVisible = false;
+    private readonly preLobbyGuideEnabled = false;
 
     private title!: Phaser.GameObjects.Text;
     private subtitle!: Phaser.GameObjects.Text;
@@ -63,7 +64,8 @@ export class PreLobbyScene extends Phaser.Scene {
     private playersBody!: Phaser.GameObjects.Text;
 
     private enteringGame = false;
-    private readonly textResolution = Math.max(2, Math.min((window.devicePixelRatio || 1) * 1.5, 4));
+    private playersBodyRaw = '';
+    private readonly textResolution = 4;
 
     constructor() {
         super({ key: 'PreLobbyScene' });
@@ -113,16 +115,16 @@ export class PreLobbyScene extends Phaser.Scene {
         this.roomCodeText = this.add.text(0, 0, '', {
             fontFamily: FONT_UI,
             fontSize: '20px',
-            color: '#fff2d8',
+            color: '#daf2ff',
             fontStyle: '700',
-            stroke: '#102a3d',
+            stroke: '#123955',
             strokeThickness: 2,
         }).setOrigin(0.5);
 
         this.statusText = this.add.text(0, 0, '', {
             fontFamily: FONT_UI,
             fontSize: '14px',
-            color: '#dbeaf7',
+            color: '#cbe3f8',
             fontStyle: '600',
             align: 'center',
         }).setOrigin(0.5);
@@ -130,7 +132,7 @@ export class PreLobbyScene extends Phaser.Scene {
         this.feedbackText = this.add.text(0, 0, '', {
             fontFamily: FONT_UI,
             fontSize: '13px',
-            color: '#ffd7a8',
+            color: '#ffd8a6',
             fontStyle: '700',
             align: 'center',
         }).setOrigin(0.5);
@@ -138,7 +140,7 @@ export class PreLobbyScene extends Phaser.Scene {
         this.rulesTitle = this.add.text(0, 0, t(this.lang, 'pre_lobby_rules_title'), {
             fontFamily: FONT_UI,
             fontSize: '15px',
-            color: '#ffefcb',
+            color: '#d8ecff',
             fontStyle: '700',
             letterSpacing: 0.8,
         }).setOrigin(0.5);
@@ -155,12 +157,13 @@ export class PreLobbyScene extends Phaser.Scene {
         this.playersTitle = this.add.text(0, 0, t(this.lang, 'pre_lobby_players_title'), {
             fontFamily: FONT_UI,
             fontSize: '15px',
-            color: '#ffefcb',
+            color: '#d8ecff',
             fontStyle: '700',
             letterSpacing: 0.8,
         }).setOrigin(0.5);
 
-        this.playersBody = this.add.text(0, 0, t(this.lang, 'pre_lobby_syncing'), {
+        this.playersBodyRaw = t(this.lang, 'pre_lobby_syncing');
+        this.playersBody = this.add.text(0, 0, this.playersBodyRaw, {
             fontFamily: FONT_UI,
             fontSize: '14px',
             color: '#d8e8f7',
@@ -201,6 +204,9 @@ export class PreLobbyScene extends Phaser.Scene {
             [this.helpButtonGfx, this.helpButtonText],
             { onClick: () => this.showHelpOverlay() },
         );
+        if (!this.preLobbyGuideEnabled && this.helpButtonHit.input) {
+            this.helpButtonHit.input.enabled = false;
+        }
 
         this.helpOverlay = this.add.rectangle(0, 0, 10, 10, 0x000000, 0.72)
             .setDepth(200)
@@ -242,6 +248,9 @@ export class PreLobbyScene extends Phaser.Scene {
             [this.helpCloseBtn, this.helpCloseLabel],
             { onClick: () => this.hideHelpOverlay() },
         );
+        if (!this.preLobbyGuideEnabled && this.helpCloseHit.input) {
+            this.helpCloseHit.input.enabled = false;
+        }
 
         this.applyTextResolution();
         this.scale.on('resize', this.handleResize, this);
@@ -349,9 +358,10 @@ export class PreLobbyScene extends Phaser.Scene {
                 .map((p) => {
                     const meTag = p.sessionId === myId ? ` ${this.tr('game_you')}` : '';
                     if (compactList) {
-                        const markerShort = p.isReady ? this.tr('game_status_ready') : this.tr('game_status_waiting_short');
-                        const netShort = p.isConnected ? this.tr('game_status_online_short') : this.tr('game_status_offline_short');
-                        return `- ${p.username}${meTag} | ${markerShort} | ${netShort}`;
+                        const compactStatus = p.isConnected
+                            ? (p.isReady ? this.tr('game_status_ready') : this.tr('game_status_waiting_short'))
+                            : this.tr('game_status_offline_short');
+                        return `${p.username}${meTag} | ${compactStatus}`;
                     }
                     const marker = p.isReady ? this.tr('game_status_ready') : this.tr('game_status_not_ready');
                     const net = p.isConnected ? this.tr('game_status_online') : this.tr('game_status_offline');
@@ -359,6 +369,7 @@ export class PreLobbyScene extends Phaser.Scene {
                 })
                 .join('\n')
             : this.tr('game_lobby_no_players');
+        this.playersBodyRaw = list;
         this.playersBody.setText(list);
 
         const canReady = Boolean(me && !me.isReady);
@@ -376,6 +387,7 @@ export class PreLobbyScene extends Phaser.Scene {
         this.actionButtonText.setText(label);
         if (this.actionButtonHit.input) this.actionButtonHit.input.enabled = buttonEnabled;
         this.drawActionButton(buttonEnabled);
+        this.handleResize(this.scale.gameSize);
     }
 
     private handleActionClick() {
@@ -433,10 +445,15 @@ export class PreLobbyScene extends Phaser.Scene {
         const tier = resolveLayoutTier(w, h);
         const safe = getSafeAreaByTier(tier);
         const buttonContract = getButtonContractByTier(tier);
+        const menuType = getMenuTypographyByTier(tier);
         const isLandscape = tier === 'C' || tier === 'E';
+        const useCompactRules = this.useCompactRulesCopy(tier);
+        const compactLandscape = tier === 'C';
+        const panelBaseW = tier === 'A' ? 336 : tier === 'B' ? 360 : tier === 'C' ? 560 : tier === 'D' ? 620 : 700;
+        const panelBaseH = tier === 'A' ? 520 : tier === 'B' ? 560 : tier === 'C' ? 316 : tier === 'D' ? 620 : 440;
         const cx = w * 0.5;
 
-        drawPokemonBackdrop(this.bg, w, h, 0.62);
+        drawPokemonBackdrop(this.bg, w, h, 0.61);
         this.cloudLayer.setSize(w, h);
         this.ditherLayer.setSize(w, h);
         syncUiRootViewport(w, h);
@@ -445,126 +462,240 @@ export class PreLobbyScene extends Phaser.Scene {
         applyBrandTypography(this.title, this.subtitle, header);
         placeBrandHeader(this.title, this.subtitle, cx, header);
 
-        const panelW = Phaser.Math.Clamp(
-            tier === 'C'
-                ? w * 0.58
-                : (isLandscape ? w * 0.82 : w * 0.92),
-            320,
-            tier === 'C' ? 620 : 980,
-        );
+        const maxPanelW = Math.max(260, w - safe.left - safe.right - 8);
+        const panelW = Math.min(panelBaseW, maxPanelW);
         const panelTop = Math.max(safe.top + 8, header.bottomY + 10);
         const availablePanelH = Math.max(220, h - panelTop - safe.bottom);
-        const desiredPanelH = tier === 'C'
-            ? 300
-            : Phaser.Math.Clamp(h * (isLandscape ? 0.78 : 0.82), isLandscape ? 230 : 320, 780);
-        const panelH = Phaser.Math.Clamp(
-            desiredPanelH,
-            Math.min(isLandscape ? 220 : 300, availablePanelH),
-            availablePanelH,
-        );
+        const panelH = Math.max(Math.min(panelBaseH, availablePanelH), Math.min(availablePanelH, 300));
         const px = cx - panelW * 0.5;
         const py = Math.max(panelTop, h - panelH - safe.bottom);
 
         this.panel.clear();
-        this.panel.fillStyle(0x2a4257, 0.92);
+        this.panel.fillStyle(0x213f58, 0.93);
         this.panel.fillRoundedRect(px, py, panelW, panelH, 20);
-        this.panel.lineStyle(1.4, 0xf3deb3, 0.95);
+        this.panel.fillStyle(0x8fd8ff, 0.07);
+        this.panel.fillRoundedRect(px + 4, py + 4, panelW - 8, Math.max(24, panelH * 0.2), { tl: 16, tr: 16, bl: 0, br: 0 });
+        this.panel.lineStyle(1.4, 0xbfe3ff, 0.95);
         this.panel.strokeRoundedRect(px, py, panelW, panelH, 20);
         this.panel.lineStyle(1, 0xffffff, 0.08);
         this.panel.strokeRoundedRect(px + 4, py + 4, panelW - 8, panelH - 8, 16);
 
-        const topY = py + Phaser.Math.Clamp(panelH * 0.08, 24, 52);
+        const topY = py + 34;
         this.roomCodeText
             .setPosition(cx, topY)
-            .setFontSize(`${Phaser.Math.Clamp(minSide * 0.038, 20, 34)}px`);
+            .setFontSize(`${menuType.roomCode}px`);
 
         this.statusText
-            .setPosition(cx, topY + Phaser.Math.Clamp(panelH * 0.1, 36, 54))
+            .setPosition(cx, topY + (compactLandscape ? 40 : 44))
             .setWordWrapWidth(panelW * 0.9, true)
-            .setFontSize(`${Phaser.Math.Clamp(minSide * 0.018, 12, 17)}px`);
+            .setFontSize(`${menuType.body}px`);
 
-        const contentTop = topY + Phaser.Math.Clamp(panelH * 0.17, 48, 90);
-        const contentBottom = py + panelH * 0.84;
-        const contentH = Math.max(150, contentBottom - contentTop);
+        const buttonBaseW = tier === 'A' ? 252 : tier === 'B' ? 272 : tier === 'C' ? 286 : 320;
+        const buttonW = Math.max(220, Math.min(buttonBaseW, panelW - 36));
+        const buttonH = Math.max(compactLandscape ? 40 : 44, buttonContract.primaryHeight - (compactLandscape ? 6 : 0));
+        const footerGap = compactLandscape ? 8 : 12;
+        const feedbackBlockH = Math.max(compactLandscape ? 14 : 18, Math.round(menuType.caption * (compactLandscape ? 1.4 : 1.8)));
+        const contentTop = topY + (compactLandscape ? 66 : 78);
+        const contentBottom = py + panelH - (buttonH + feedbackBlockH + footerGap * 2);
+        const contentH = Math.max(isLandscape ? 86 : 128, contentBottom - contentTop);
+        const buttonY = contentBottom + footerGap + buttonH * 0.5;
+
+        this.rulesTitle.setFontSize(`${menuType.sectionTitle}px`);
+        this.playersTitle.setFontSize(`${menuType.sectionTitle}px`);
+        const rulesCopy = this.getRulesCopy(tier);
+        this.rulesBody.setText(rulesCopy);
 
         if (isLandscape) {
-            const gap = Phaser.Math.Clamp(panelW * 0.03, 16, 28);
-            const leftW = (panelW - gap * 3) * 0.52;
+            const gap = compactLandscape ? 10 : 20;
+            const leftW = (panelW - gap * 3) * (compactLandscape ? 0.42 : 0.52);
             const rightW = panelW - gap * 3 - leftW;
-            const boxH = contentH;
-
+            const boxH = Math.max(compactLandscape ? 98 : 84, contentH);
             const leftX = px + gap;
             const rightX = leftX + leftW + gap;
+
             this.drawSubPanel(this.rulesBox, leftX, contentTop, leftW, boxH);
             this.drawSubPanel(this.playersBox, rightX, contentTop, rightW, boxH);
 
             this.rulesTitle.setPosition(leftX + leftW * 0.5, contentTop + 20);
-            this.rulesBody
-                .setPosition(leftX + leftW * 0.5, contentTop + 42)
-                .setWordWrapWidth(leftW - 28, true)
-                .setFontSize(`${Phaser.Math.Clamp(minSide * 0.017, 12, 15)}px`);
+            this.rulesBody.setPosition(leftX + leftW * 0.5, contentTop + 42);
+            this.fitTextBlock(
+                this.rulesBody,
+                rulesCopy,
+                leftW - 28,
+                boxH - 62,
+                useCompactRules ? Math.max(10, menuType.caption - (compactLandscape ? 1 : 0)) : menuType.body,
+                compactLandscape ? 9 : Math.max(10, menuType.caption - 1),
+                compactLandscape ? 2 : 5,
+            );
 
             this.playersTitle.setPosition(rightX + rightW * 0.5, contentTop + 20);
-            this.playersBody
-                .setPosition(rightX + rightW * 0.5, contentTop + 42)
-                .setWordWrapWidth(rightW - 28, true)
-                .setFontSize(`${Phaser.Math.Clamp(minSide * 0.0165, 11, 14)}px`);
+            this.playersBody.setPosition(rightX + rightW * 0.5, contentTop + 42);
+            this.fitTextBlock(
+                this.playersBody,
+                this.playersBodyRaw || String(this.playersBody.text ?? ''),
+                rightW - 28,
+                boxH - 62,
+                compactLandscape ? Math.max(10, menuType.caption - 1) : menuType.caption,
+                compactLandscape ? 9 : Math.max(10, menuType.caption - 1),
+                compactLandscape ? 2 : 4,
+            );
         } else {
-            const gap = Phaser.Math.Clamp(panelH * 0.03, 12, 18);
+            const gap = tier === 'A' ? 10 : 12;
             const boxW = panelW - 24;
-            const rulesH = contentH * 0.45;
-            const playersH = contentH - rulesH - gap;
+            const minRulesH = useCompactRules ? 82 : 132;
+            const minPlayersH = tier === 'A' ? 80 : 92;
+            const rulesTargetH = Math.round(contentH * (useCompactRules ? 0.34 : 0.46));
+            const maxRulesH = Math.max(minRulesH, contentH - minPlayersH - gap);
+            const rulesH = Math.max(minRulesH, Math.min(rulesTargetH, maxRulesH));
+            const playersH = Math.max(minPlayersH, contentH - rulesH - gap);
             const x = px + 12;
+            const playersY = contentTop + rulesH + gap;
 
             this.drawSubPanel(this.rulesBox, x, contentTop, boxW, rulesH);
-            this.drawSubPanel(this.playersBox, x, contentTop + rulesH + gap, boxW, playersH);
+            this.drawSubPanel(this.playersBox, x, playersY, boxW, playersH);
 
             this.rulesTitle.setPosition(x + boxW * 0.5, contentTop + 18);
-            this.rulesBody
-                .setPosition(x + boxW * 0.5, contentTop + 38)
-                .setWordWrapWidth(boxW - 24, true)
-                .setFontSize(`${Phaser.Math.Clamp(minSide * 0.0165, 11, 14)}px`);
+            this.rulesBody.setPosition(x + boxW * 0.5, contentTop + 38);
+            this.fitTextBlock(
+                this.rulesBody,
+                rulesCopy,
+                boxW - 24,
+                rulesH - 54,
+                menuType.caption,
+                10,
+                4,
+            );
 
-            this.playersTitle.setPosition(x + boxW * 0.5, contentTop + rulesH + gap + 18);
-            this.playersBody
-                .setPosition(x + boxW * 0.5, contentTop + rulesH + gap + 38)
-                .setWordWrapWidth(boxW - 24, true)
-                .setFontSize(`${Phaser.Math.Clamp(minSide * 0.016, 10, 13)}px`);
+            this.playersTitle.setPosition(x + boxW * 0.5, playersY + 18);
+            this.playersBody.setPosition(x + boxW * 0.5, playersY + 38);
+            this.fitTextBlock(
+                this.playersBody,
+                this.playersBodyRaw || String(this.playersBody.text ?? ''),
+                boxW - 24,
+                playersH - 54,
+                menuType.caption,
+                10,
+                4,
+            );
         }
 
-        const buttonW = Phaser.Math.Clamp(panelW * 0.58, 220, 420);
-        const buttonH = Math.max(44, buttonContract.primaryHeight);
-        const buttonY = py + panelH * 0.89;
         this.actionButtonHit.setPosition(cx, buttonY).setSize(buttonW, buttonH);
         this.actionButtonGfx.setPosition(cx, buttonY);
         this.actionButtonText
             .setPosition(cx, buttonY)
-            .setFontSize(`${Phaser.Math.Clamp(minSide * 0.024, 15, 22)}px`);
+            .setFontSize(`${menuType.button}px`);
 
         this.feedbackText
-            .setPosition(cx, py + panelH * 0.96)
+            .setPosition(cx, py + panelH - Math.max(16, feedbackBlockH * 0.45))
             .setWordWrapWidth(panelW * 0.9, true)
-            .setFontSize(`${Phaser.Math.Clamp(minSide * 0.0155, 11, 14)}px`);
+            .setFontSize(`${menuType.caption}px`);
 
-        const helpSize = Phaser.Math.Clamp(minSide * 0.08, 34, 44);
-        this.helpButtonHit
-            .setPosition(px + panelW - helpSize * 0.5 - 10, topY - 2)
-            .setSize(helpSize, helpSize);
-        this.helpButtonGfx.setPosition(this.helpButtonHit.x, this.helpButtonHit.y);
-        this.helpButtonText
-            .setPosition(this.helpButtonHit.x, this.helpButtonHit.y - 1)
-            .setFontSize(`${Phaser.Math.Clamp(helpSize * 0.5, 16, 22)}px`);
-        this.drawHelpButton(true);
-        this.layoutHelpOverlay();
+        if (this.preLobbyGuideEnabled) {
+            const helpSize = minSide < 420 ? 36 : 40;
+            this.helpButtonHit
+                .setPosition(px + panelW - helpSize * 0.5 - 10, topY - 2)
+                .setSize(helpSize, helpSize)
+                .setVisible(true);
+            this.helpButtonGfx.setPosition(this.helpButtonHit.x, this.helpButtonHit.y).setVisible(true);
+            this.helpButtonText
+                .setPosition(this.helpButtonHit.x, this.helpButtonHit.y - 1)
+                .setFontSize(`${menuType.button}px`)
+                .setVisible(true);
+            this.drawHelpButton(true);
+            this.layoutHelpOverlay();
+        } else {
+            if (this.helpVisible) this.hideHelpOverlay();
+            this.helpButtonHit.setVisible(false);
+            this.helpButtonGfx.setVisible(false);
+            this.helpButtonText.setVisible(false);
+            this.helpOverlay.setVisible(false);
+            this.helpPanel.setVisible(false);
+            this.helpTitle.setVisible(false);
+            this.helpBody.setVisible(false);
+            this.helpCloseBtn.setVisible(false);
+            this.helpCloseHit.setVisible(false);
+            this.helpCloseLabel.setVisible(false);
+            if (this.helpButtonHit.input) this.helpButtonHit.input.enabled = false;
+            if (this.helpCloseHit.input) this.helpCloseHit.input.enabled = false;
+        }
 
         this.drawActionButton(Boolean(this.actionButtonHit.input?.enabled));
     }
 
+    private useCompactRulesCopy(tier: LayoutTier): boolean {
+        return tier === 'A' || tier === 'B' || tier === 'C';
+    }
+
+    private getRulesCopy(tier: LayoutTier): string {
+        if (tier === 'C') return this.tr('game_rules_micro');
+        return this.useCompactRulesCopy(tier)
+            ? this.tr('game_rules_brief')
+            : this.tr('pre_lobby_rules_body');
+    }
+
+    private fitTextBlock(
+        textObj: Phaser.GameObjects.Text,
+        rawText: string,
+        maxWidth: number,
+        maxHeight: number,
+        preferredFontSize: number,
+        minFontSize: number,
+        baseLineSpacing: number,
+    ) {
+        const width = Math.max(72, Math.floor(maxWidth));
+        const height = Math.max(18, Math.floor(maxHeight));
+        const fullText = String(rawText ?? '').trim();
+
+        textObj.setWordWrapWidth(width, true);
+        if (!fullText) {
+            textObj.setText('');
+            return;
+        }
+
+        for (let fontSize = preferredFontSize; fontSize >= minFontSize; fontSize -= 1) {
+            const spacing = Math.max(0, Math.round(baseLineSpacing * (fontSize / Math.max(preferredFontSize, 1))));
+            textObj
+                .setFontSize(`${fontSize}px`)
+                .setLineSpacing(spacing)
+                .setText(fullText);
+            if (textObj.getBounds().height <= height + 0.5) return;
+        }
+
+        const lines = fullText.split('\n');
+        const fallbackSpacing = Math.max(0, Math.round(baseLineSpacing * 0.65));
+        textObj
+            .setFontSize(`${minFontSize}px`)
+            .setLineSpacing(fallbackSpacing)
+            .setText(fullText);
+        if (textObj.getBounds().height <= height + 0.5) return;
+
+        let visibleLines = [...lines];
+        while (visibleLines.length > 1) {
+            textObj.setText(visibleLines.join('\n'));
+            if (textObj.getBounds().height <= height + 0.5) return;
+
+            visibleLines.pop();
+            const lastIndex = visibleLines.length - 1;
+            const lastLine = String(visibleLines[lastIndex] ?? '').replace(/\.{3}$/, '').trimEnd();
+            visibleLines[lastIndex] = lastLine ? `${lastLine}...` : '...';
+        }
+
+        let singleLine = String(visibleLines[0] ?? '').replace(/\.{3}$/, '').trimEnd();
+        while (singleLine.length > 1) {
+            textObj.setText(`${singleLine}...`);
+            if (textObj.getBounds().height <= height + 0.5) return;
+            singleLine = singleLine.slice(0, -1).trimEnd();
+        }
+        textObj.setText(singleLine ? `${singleLine}...` : '...');
+    }
+
     private drawSubPanel(target: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number) {
         target.clear();
-        target.fillStyle(0x1d2d3c, 0.88);
+        target.fillStyle(0x193247, 0.9);
         target.fillRoundedRect(x, y, w, h, 14);
-        target.lineStyle(1.1, 0xb8cfdf, 0.64);
+        target.fillStyle(0x8fd8ff, 0.05);
+        target.fillRoundedRect(x + 3, y + 3, w - 6, Math.max(16, h * 0.18), { tl: 11, tr: 11, bl: 0, br: 0 });
+        target.lineStyle(1.1, 0xb9d9ef, 0.68);
         target.strokeRoundedRect(x, y, w, h, 14);
     }
 
@@ -575,8 +706,8 @@ export class PreLobbyScene extends Phaser.Scene {
             this.actionButtonGfx,
             { width: w, height: h, radius: 12, borderWidth: 1.2 },
             {
-                base: active ? 0x4f7d6a : 0x425b52,
-                border: active ? 0xd0f6c9 : 0xa9c6bc,
+                base: active ? 0x3d8f6c : 0x47667c,
+                border: active ? 0xcff6dd : 0xbbd9ec,
                 glossAlpha: active ? 0.13 : 0.07,
             },
         );
@@ -601,6 +732,7 @@ export class PreLobbyScene extends Phaser.Scene {
     private layoutHelpOverlay() {
         const w = this.scale.width;
         const h = this.scale.height;
+        const menuType = getMenuTypographyByTier(resolveLayoutTier(w, h));
         const cx = w * 0.5;
         const cy = h * 0.5;
         const panelW = Phaser.Math.Clamp(w * (w > h ? 0.72 : 0.92), 300, 860);
@@ -629,19 +761,19 @@ export class PreLobbyScene extends Phaser.Scene {
         this.helpCloseHit.setPosition(closeX, closeY).setSize(closeSize + 14, closeSize + 14);
         this.helpCloseLabel
             .setPosition(closeX, closeY - 1)
-            .setFontSize(`${Phaser.Math.Clamp(closeSize * 0.56, 18, 24)}px`);
+            .setFontSize(`${menuType.sectionTitle}px`);
 
         const helpContent = buildMatchHelpContent(this.tr.bind(this));
         this.helpTitle
             .setText(helpContent.title)
             .setPosition(cx, panelY + 14)
             .setWordWrapWidth(panelW - 56)
-            .setFontSize(`${Phaser.Math.Clamp(panelW * 0.036, 18, 30)}px`);
+            .setFontSize(`${menuType.sectionTitle + 1}px`);
         this.helpBody
             .setText(`${helpContent.sections.map((section) => `${section.title}\n${section.body}`).join('\n\n')}\n\n${helpContent.closeHint}`)
             .setPosition(cx, panelY + 62)
             .setWordWrapWidth(panelW - 44)
-            .setFontSize(`${Phaser.Math.Clamp(panelW * 0.018, 12, 17)}px`);
+            .setFontSize(`${menuType.body}px`);
 
         if (!this.helpVisible) {
             this.helpPanel.setVisible(false);
@@ -654,6 +786,7 @@ export class PreLobbyScene extends Phaser.Scene {
     }
 
     private showHelpOverlay() {
+        if (!this.preLobbyGuideEnabled) return;
         if (this.helpVisible) return;
         this.helpVisible = true;
         this.layoutHelpOverlay();
@@ -732,3 +865,8 @@ export class PreLobbyScene extends Phaser.Scene {
         ].forEach((txt) => txt.setResolution(this.textResolution));
     }
 }
+
+
+
+
+

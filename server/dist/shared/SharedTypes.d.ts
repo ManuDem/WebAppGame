@@ -82,6 +82,7 @@ export interface IPlayEmployeePayload {
 /** Payload inviato dal Client con SOLVE_CRISIS */
 export interface ISolveCrisisPayload {
     crisisId: string;
+    heroCardId: string;
 }
 /** Payload inviato dal Client con PLAY_MAGIC */
 export interface IPlayMagicPayload {

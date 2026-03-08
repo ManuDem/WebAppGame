@@ -1,4 +1,4 @@
-﻿import Phaser from 'phaser';
+import Phaser from 'phaser';
 import { CardGameObject } from '../gameobjects/CardGameObject';
 import { ReconnectStatus, ServerManager } from '../network/ServerManager';
 import { VisualEventQueue } from '../systems/VisualEventQueue';
@@ -27,6 +27,8 @@ import { buildCardRegistryPlan } from '../systems/CardObjectRegistry';
 import { computeMatchLayout, drawMatchLayoutDebug, LayoutRect, MatchLayout } from '../ui/layout/MatchLayout';
 import { buildActionPanelModel, buildHudModel, compactPlayerName } from '../ui/match/MatchUiPresenter';
 import { buildMatchContextHint, buildMatchHelpContent } from '../ui/match/MatchHelpContent';
+import { buildDiceLogLine, buildDiceToastText } from '../ui/match/MatchDiceText';
+import { buildMatchUiDomModel } from '../ui/match/MatchUiDomModel';
 import { createMockServerManager, isQaMatchModeEnabled } from '../qa/MockMatchState';
 import { getButtonContractByTier } from '../ui/layout/LayoutTokens';
 import { ensureUiRoot, removeUiRootChildById, setUiRootLanguage, setUiRootScreen, syncUiRootViewport } from '../ui/dom/UiRoot';
@@ -82,7 +84,7 @@ export class GameScene extends Phaser.Scene {
     private centerDropH = 0;
     private lang: SupportedLanguage = DEFAULT_LANGUAGE;
     private roomCode = '';
-    private readonly textResolution = Math.max(2, Math.min((window.devicePixelRatio || 1) * 1.5, 4));
+    private readonly textResolution = 4;
     private isLandscapeLayout = false;
 
     private bg!: Phaser.GameObjects.Graphics;
@@ -239,6 +241,8 @@ export class GameScene extends Phaser.Scene {
     private targetSelectorOverlay?: Phaser.GameObjects.Rectangle;
     private targetSelectorElements: Phaser.GameObjects.GameObject[] = [];
     private targetSelectorFx: SimpleButtonController[] = [];
+    private targetSelectorSourceCard?: CardGameObject;
+    private targetSelectorOnCancel?: () => void;
     private helpOverlay!: Phaser.GameObjects.Rectangle;
     private helpPanel!: Phaser.GameObjects.Graphics;
     private helpTitle!: Phaser.GameObjects.Text;
@@ -247,6 +251,9 @@ export class GameScene extends Phaser.Scene {
     private helpCloseHit!: Phaser.GameObjects.Rectangle;
     private helpCloseLabel!: Phaser.GameObjects.Text;
     private helpVisible = false;
+    private helpOverlayMode: 'help' | 'action' = 'help';
+    private helpPanelBounds?: LayoutRect;
+    private cardInspectPanelBounds?: LayoutRect;
 
     constructor() {
         super({ key: 'GameScene' });
@@ -299,10 +306,13 @@ export class GameScene extends Phaser.Scene {
         this.applyLocalizedLabels();
         this.wireButtons();
         this.wireDropHandlers();
+        this.input.setTopOnly(true);
+        this.input.keyboard?.on('keydown-ESC', this.handleEscapeKey, this);
 
         this.scale.on('resize', this.handleResize, this);
         this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
             this.scale.off('resize', this.handleResize, this);
+            this.input.keyboard?.off('keydown-ESC', this.handleEscapeKey, this);
             this.visualQueue.clear();
             this.hideReactionOverlay();
             this.hideCardInspect();
@@ -405,8 +415,42 @@ export class GameScene extends Phaser.Scene {
         texts.forEach((text) => text?.setResolution(this.textResolution));
     }
 
+    private isPointerInsideRect(pointer: Phaser.Input.Pointer, bounds?: LayoutRect): boolean {
+        if (!bounds) return false;
+        return pointer.x >= bounds.x
+            && pointer.x <= bounds.x + bounds.w
+            && pointer.y >= bounds.y
+            && pointer.y <= bounds.y + bounds.h;
+    }
+
     private hasPendingPlayInFlight() {
         return Boolean(this.pendingPlayedCard?.active || this.pendingPlayState.pendingCardId);
+    }
+
+    private isModalOverlayOpen() {
+        return this.helpVisible
+            || this.cardInspectVisible
+            || this.cardInspectAnimating
+            || Boolean(this.targetSelectorOverlay?.active)
+            || Boolean(this.targetSelectorOverlay?.visible);
+    }
+
+    private handleEscapeKey() {
+        if (this.reconnectActive) return;
+        if (this.helpVisible) {
+            this.hideHelpOverlay();
+            return;
+        }
+        if (this.cardInspectVisible || this.cardInspectAnimating) {
+            this.hideCardInspect();
+            return;
+        }
+        if (this.targetSelectorOverlay?.active || this.targetSelectorOverlay?.visible) {
+            if (this.targetSelectorSourceCard?.active) {
+                this.snapBack(this.targetSelectorSourceCard, this.tr('game_cancelled'));
+            }
+            this.hideTargetSelector();
+        }
     }
 
     private createAnimatedBackground() {
@@ -496,6 +540,9 @@ export class GameScene extends Phaser.Scene {
             NO_HERO_FOR_ITEM: 'game_error_no_hero_for_item',
             INVALID_HERO_TARGET: 'game_error_invalid_hero_target',
             MISSING_HERO_TARGET: 'game_error_missing_hero_target',
+            NO_HERO_FOR_ATTACK: 'game_error_no_hero_for_attack',
+            INVALID_ATTACK_HERO: 'game_error_invalid_attack_hero',
+            MISSING_ATTACK_HERO: 'game_error_missing_attack_hero',
             GAME_OVER: 'game_error_game_over',
             NO_PA: 'game_error_no_pa',
         };
@@ -510,9 +557,24 @@ export class GameScene extends Phaser.Scene {
         return this.tr(reasonKey);
     }
 
+    private refreshInteractivityFromCurrentState() {
+        const room = this.serverManager?.room;
+        if (!room) return;
+        const state = room.state as IGameState | undefined;
+        if (!state) return;
+        const me = (state.players as unknown as Map<string, IPlayer>).get(room.sessionId);
+        if (!me) return;
+        this.updateControls(state, me, room.sessionId);
+        this.refreshMatchDomUi();
+    }
+
     private tryDrawCard() {
         if (this.reconnectActive) {
             this.floatText(this.tr('game_reconnect_action_blocked'), '#ff9aa7');
+            return;
+        }
+        if (this.isModalOverlayOpen()) {
+            this.floatText(this.tr('game_action_denied'), '#ff9aa7');
             return;
         }
         if (this.hasPendingPlayInFlight()) {
@@ -549,6 +611,10 @@ export class GameScene extends Phaser.Scene {
             this.floatText(this.tr('game_reconnect_action_blocked'), '#ff9aa7');
             return;
         }
+        if (this.isModalOverlayOpen()) {
+            this.floatText(this.tr('game_action_denied'), '#ff9aa7');
+            return;
+        }
         if (this.hasPendingPlayInFlight()) {
             const reason = this.localizeActionBlockReason('game_reason_action_pending');
             this.floatText(this.tr('game_end_turn_blocked', { reason }), '#ff9aa7');
@@ -581,6 +647,10 @@ export class GameScene extends Phaser.Scene {
             this.floatText(this.tr('game_reconnect_action_blocked'), '#ff9aa7');
             return;
         }
+        if (this.isModalOverlayOpen()) {
+            this.floatText(this.tr('game_action_denied'), '#ff9aa7');
+            return;
+        }
         if (this.hasPendingPlayInFlight()) {
             const reason = this.localizeActionBlockReason('game_reason_action_pending');
             this.floatText(this.tr('game_attack_blocked', { reason }), '#ff9aa7');
@@ -605,10 +675,15 @@ export class GameScene extends Phaser.Scene {
             this.showCardInspect(crisis);
             return;
         }
+        const heroes = ((me.company ?? []) as ICardData[]).filter((entry) => this.isHeroCard(entry));
+        if (heroes.length === 0) {
+            const reason = this.localizeActionBlockReason('game_reason_no_hero');
+            this.floatText(this.tr('game_attack_blocked', { reason }), '#ff9aa7');
+            this.showCardInspect(crisis);
+            return;
+        }
 
-        this.serverManager.solveCrisis(String(crisis.id));
-        this.floatText(this.tr('game_attack_sent', { cost: attack.cost }), '#9ff3c2');
-        this.appendGameLog(this.tr('game_attack_sent_log', { name: getCardDisplayName(crisis, this.lang, this.tr.bind(this)) }));
+        this.showAttackHeroSelector(crisis, attack.cost, heroes);
     }
 
     private createUiObjects() {
@@ -940,7 +1015,11 @@ export class GameScene extends Phaser.Scene {
             .setDepth(540)
             .setVisible(false)
             .setInteractive({ useHandCursor: true });
-        this.cardInspectOverlay.on('pointerdown', () => this.hideCardInspect());
+        if (this.cardInspectOverlay.input) this.cardInspectOverlay.input.enabled = false;
+        this.cardInspectOverlay.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+            if (this.isPointerInsideRect(pointer, this.cardInspectPanelBounds)) return;
+            this.hideCardInspect();
+        });
 
         this.cardInspectPanel = this.add.graphics().setDepth(541).setVisible(false);
         this.cardInspectArtwork = this.add.graphics().setDepth(541).setVisible(false);
@@ -1001,7 +1080,11 @@ export class GameScene extends Phaser.Scene {
             .setDepth(532)
             .setVisible(false)
             .setInteractive({ useHandCursor: true });
-        this.helpOverlay.on('pointerdown', () => this.hideHelpOverlay());
+        if (this.helpOverlay.input) this.helpOverlay.input.enabled = false;
+        this.helpOverlay.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+            if (this.isPointerInsideRect(pointer, this.helpPanelBounds)) return;
+            this.hideHelpOverlay();
+        });
         this.helpPanel = this.add.graphics().setDepth(533).setVisible(false);
         this.helpTitle = this.add.text(0, 0, '', {
             fontFamily: FONT_UI,
@@ -1214,6 +1297,10 @@ export class GameScene extends Phaser.Scene {
                 this.snapBack(card, this.tr('game_reconnect_action_blocked'));
                 return;
             }
+            if (this.isModalOverlayOpen()) {
+                this.snapBack(card, this.tr('game_action_denied'));
+                return;
+            }
 
             if (this.hasPendingPlayInFlight() && this.pendingPlayedCard !== card) {
                 this.snapBack(card, this.tr('game_action_pending_wait'));
@@ -1297,13 +1384,23 @@ export class GameScene extends Phaser.Scene {
     }
 
     private drawBackground() {
-        drawPokemonBackdrop(this.bg, this.screenW, this.screenH, 0.58);
+        drawPokemonBackdrop(this.bg, this.screenW, this.screenH, 0.62);
 
         const content = this.matchLayout.content;
         const topBar = this.matchLayout.topBar;
         const board = this.matchLayout.board;
         const hand = this.matchLayout.hand;
-        this.bg.fillStyle(0xf6e2b9, 0.14);
+
+        this.bg.fillStyle(0x061425, 0.2);
+        this.bg.fillRoundedRect(content.x, content.y, content.w, content.h, 18);
+
+        this.bg.fillStyle(0x88d8ff, 0.06);
+        this.bg.fillEllipse(board.x + board.w * 0.5, board.y + board.h * 0.48, board.w * 0.62, board.h * 0.52);
+
+        this.bg.fillStyle(0xa8f2dc, 0.05);
+        this.bg.fillEllipse(hand.x + hand.w * 0.5, hand.y + hand.h * 0.52, hand.w * 0.78, hand.h * 0.78);
+
+        this.bg.fillStyle(0xf6e2b9, 0.11);
         this.bg.fillRect(content.x + 12, topBar.y + topBar.h + 1, content.w - 24, 2);
         if (this.matchLayout.sidebar) {
             this.bg.fillRect(this.matchLayout.sidebar.x - 1, board.y + 6, 2, board.h - 12);
@@ -1342,28 +1439,43 @@ export class GameScene extends Phaser.Scene {
         this.apIcon.setVisible(this.showApIcon);
 
         this.topPanel.clear();
-        this.topPanel.fillStyle(0x262b37, 0.86);
+        this.topPanel.fillStyle(0x12263a, 0.9);
         this.topPanel.fillRoundedRect(topRect.x + 4, topRect.y + 4, topRect.w - 8, topRect.h - 8, 16);
-        this.topPanel.lineStyle(1.1, 0x978369, 0.9);
+        this.topPanel.fillStyle(0x8fdcff, 0.08);
+        this.topPanel.fillRoundedRect(topRect.x + 6, topRect.y + 6, topRect.w - 12, 22, { tl: 12, tr: 12, bl: 0, br: 0 });
+        this.topPanel.lineStyle(1.1, 0xa5c9e8, 0.86);
         this.topPanel.strokeRoundedRect(topRect.x + 4, topRect.y + 4, topRect.w - 8, topRect.h - 8, 16);
 
+        const boardInsetX = this.isLandscapeLayout ? (compactLandscape ? 12 : 14) : 6;
+        const boardInsetY = this.isLandscapeLayout ? (compactLandscape ? 8 : 10) : 4;
+        const boardPanelX = boardRect.x + boardInsetX;
+        const boardPanelY = boardRect.y + boardInsetY;
+        const boardPanelW = Math.max(120, boardRect.w - boardInsetX * 2);
+        const boardPanelH = Math.max(120, boardRect.h - boardInsetY * 2);
+
         this.centerPanel.clear();
-        this.centerPanel.fillStyle(0x1b2130, 0.84);
-        this.centerPanel.fillRoundedRect(boardRect.x + 4, boardRect.y + 2, boardRect.w - 8, boardRect.h - 4, 16);
-        this.centerPanel.lineStyle(1.1, 0x7188a8, 0.84);
-        this.centerPanel.strokeRoundedRect(boardRect.x + 4, boardRect.y + 2, boardRect.w - 8, boardRect.h - 4, 16);
+        this.centerPanel.fillStyle(0x102235, 0.86);
+        this.centerPanel.fillRoundedRect(boardPanelX, boardPanelY, boardPanelW, boardPanelH, 16);
+        this.centerPanel.fillStyle(0x8fdcff, 0.05);
+        this.centerPanel.fillRoundedRect(boardPanelX + 2, boardPanelY + 2, boardPanelW - 4, 26, { tl: 11, tr: 11, bl: 0, br: 0 });
+        this.centerPanel.lineStyle(1.1, 0x87b2d8, 0.82);
+        this.centerPanel.strokeRoundedRect(boardPanelX, boardPanelY, boardPanelW, boardPanelH, 16);
 
         if (sidebarRect) {
-            this.centerPanel.fillStyle(0x1d2636, 0.88);
+            this.centerPanel.fillStyle(0x162a40, 0.9);
             this.centerPanel.fillRoundedRect(sidebarRect.x + 2, sidebarRect.y + 2, sidebarRect.w - 4, sidebarRect.h - 4, 14);
-            this.centerPanel.lineStyle(1, 0x7a8fad, 0.78);
+            this.centerPanel.fillStyle(0x9be2ff, 0.05);
+            this.centerPanel.fillRoundedRect(sidebarRect.x + 4, sidebarRect.y + 4, sidebarRect.w - 8, 22, { tl: 10, tr: 10, bl: 0, br: 0 });
+            this.centerPanel.lineStyle(1, 0x95c1e7, 0.76);
             this.centerPanel.strokeRoundedRect(sidebarRect.x + 2, sidebarRect.y + 2, sidebarRect.w - 4, sidebarRect.h - 4, 14);
         }
 
         this.bottomPanel.clear();
-        this.bottomPanel.fillStyle(0x202736, 0.92);
+        this.bottomPanel.fillStyle(0x0e2338, 0.9);
         this.bottomPanel.fillRoundedRect(handRect.x + 2, handRect.y + 2, handRect.w - 4, handRect.h - 4, 14);
-        this.bottomPanel.lineStyle(1.1, 0x7e96b6, 0.8);
+        this.bottomPanel.fillStyle(0x89f0d8, 0.05);
+        this.bottomPanel.fillRoundedRect(handRect.x + 4, handRect.y + 4, handRect.w - 8, 20, { tl: 10, tr: 10, bl: 0, br: 0 });
+        this.bottomPanel.lineStyle(1.1, 0x8cc2ec, 0.8);
         this.bottomPanel.strokeRoundedRect(handRect.x + 2, handRect.y + 2, handRect.w - 4, handRect.h - 4, 14);
 
         const topInfoY = compactLandscape
@@ -1424,20 +1536,28 @@ export class GameScene extends Phaser.Scene {
         this.centerTitle
             .setPosition(this.uiX + this.uiW * 0.5, centerTitleY)
             .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.014, 12, 17)}px`);
-        this.centerTitle.setVisible(!compactPortrait && !compactLandscape);
+        this.centerTitle.setVisible(this.isLandscapeLayout && !compactLandscape);
         this.turnText.setVisible(false);
 
         this.centerDropW = this.isLandscapeLayout
-            ? Phaser.Math.Clamp(boardRect.w * (compactLandscape ? 0.64 : 0.58), 220, 620)
-            : Phaser.Math.Clamp(boardRect.w * 0.86, 280, 580);
+            ? Phaser.Math.Clamp(boardRect.w * (compactLandscape ? 0.58 : 0.52), 220, 620)
+            : Phaser.Math.Clamp(boardRect.w * 0.68, 210, 460);
         this.centerDropH = this.isLandscapeLayout
-            ? Phaser.Math.Clamp(boardRect.h * (compactLandscape ? 0.46 : 0.36), 98, compactLandscape ? 198 : 176)
-            : Phaser.Math.Clamp(boardRect.h * 0.42, 124, 230);
+            ? Phaser.Math.Clamp(boardRect.h * (compactLandscape ? 0.42 : 0.34), 92, compactLandscape ? 176 : 164)
+            : Phaser.Math.Clamp(boardRect.h * 0.26, 76, 150);
         this.centerDropX = boardRect.x + boardRect.w * 0.5;
-        this.centerDropY = boardRect.y + boardRect.h * (this.isLandscapeLayout ? (compactLandscape ? 0.55 : 0.58) : 0.56);
+        this.centerDropY = boardRect.y + boardRect.h * (this.isLandscapeLayout ? (compactLandscape ? 0.55 : 0.58) : 0.54);
 
         this.tableGuide.clear();
-        this.tableGuide.lineStyle(2, 0xd1d9ec, 0.35);
+        this.tableGuide.fillStyle(0x8edcff, 0.05);
+        this.tableGuide.fillRoundedRect(
+            this.centerDropX - this.centerDropW * 0.5,
+            this.centerDropY - this.centerDropH * 0.5,
+            this.centerDropW,
+            this.centerDropH,
+            16,
+        );
+        this.tableGuide.lineStyle(1.6, 0xa4c9ea, this.isLandscapeLayout ? 0.42 : 0.28);
         this.tableGuide.strokeRoundedRect(
             this.centerDropX - this.centerDropW * 0.5,
             this.centerDropY - this.centerDropH * 0.5,
@@ -1453,8 +1573,8 @@ export class GameScene extends Phaser.Scene {
         this.companyTitle
             .setPosition(boardRect.x + boardRect.w * 0.5, boardRect.y + boardRect.h - Phaser.Math.Clamp(boardRect.h * (compactLandscape ? 0.1 : 0.13), 20, 34))
             .setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.011, 11, 14)}px`);
-        this.crisisTitle.setVisible((!compactPortrait || boardRect.h > 250) && !compactLandscape);
-        this.companyTitle.setVisible((!compactPortrait || boardRect.h > 250) && !compactLandscape);
+        this.crisisTitle.setVisible(this.isLandscapeLayout && !compactLandscape);
+        this.companyTitle.setVisible(this.isLandscapeLayout && !compactLandscape);
 
         const controls = this.matchLayout.controls;
         const controlsY = controls.y + controls.h * 0.5;
@@ -1915,12 +2035,37 @@ export class GameScene extends Phaser.Scene {
     }
 
     private layoutOverlay() {
-        const cx = this.screenW * 0.5;
-        const cy = this.screenH * 0.5;
+        const compactReaction = this.isCompactLandscapeLayout();
+        const overlayRect = this.matchLayout.sidebar ? this.matchLayout.board : this.matchLayout.content;
+        const cx = overlayRect.x + overlayRect.w * 0.5;
+        const cy = overlayRect.y + overlayRect.h * 0.5;
+        const titleMaxW = Phaser.Math.Clamp(overlayRect.w * (compactReaction ? 0.76 : 0.8), 180, overlayRect.w - (compactReaction ? 28 : 40));
+        const subtitleMaxW = Phaser.Math.Clamp(overlayRect.w * (compactReaction ? 0.68 : 0.72), 160, overlayRect.w - (compactReaction ? 32 : 56));
+        const titleMaxH = compactReaction ? 58 : 72;
+        const subtitleMaxH = compactReaction ? 32 : 42;
+        const titleFont = Phaser.Math.Clamp((compactReaction ? overlayRect.w : this.uiW) * (compactReaction ? 0.045 : 0.035), compactReaction ? 18 : 22, 54);
+        const subtitleFont = Phaser.Math.Clamp((compactReaction ? overlayRect.w : this.uiW) * (compactReaction ? 0.022 : 0.013), 10, 18);
 
-        this.reactionOverlay.setPosition(cx, cy).setSize(this.screenW, this.screenH);
-        this.reactionTitle.setPosition(cx, cy - 34).setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.035, 30, 54)}px`);
-        this.reactionSubtitle.setPosition(cx, cy + 6).setFontSize(`${Phaser.Math.Clamp(this.uiW * 0.013, 13, 18)}px`);
+        this.reactionOverlay.setPosition(this.screenW * 0.5, this.screenH * 0.5).setSize(this.screenW, this.screenH);
+        this.reactionTitle
+            .setPosition(cx, cy - (compactReaction ? 46 : 34))
+            .setLetterSpacing(compactReaction ? 1 : 2)
+            .setFontSize(`${titleFont}px`)
+            .setWordWrapWidth(titleMaxW, true);
+        fitTextToBox(this.reactionTitle, this.reactionTitle.text, titleMaxW, titleMaxH, {
+            maxLines: compactReaction ? 2 : 1,
+            ellipsis: true,
+        });
+
+        this.reactionSubtitle
+            .setPosition(cx, cy + (compactReaction ? 10 : 6))
+            .setFontSize(`${subtitleFont}px`)
+            .setWordWrapWidth(subtitleMaxW, true);
+        fitTextToBox(this.reactionSubtitle, this.reactionSubtitle.text, subtitleMaxW, subtitleMaxH, {
+            maxLines: compactReaction ? 2 : 1,
+            ellipsis: true,
+        });
+
         this.redrawReactionBar();
         this.layoutHelpOverlay();
         this.layoutCardInspectOverlay();
@@ -1967,13 +2112,21 @@ export class GameScene extends Phaser.Scene {
             onEndTurn: () => this.tryEndTurn(),
             onDetails: () => this.showActionDetailsOverlay(),
             onToggleLog: () => this.toggleGameLog(),
-            onHelp: () => this.showHelpOverlay(),
+            onHelp: () => this.openPrimaryInfoOverlay(),
             onEmote: () => this.sendQuickEmote(),
         });
         this.matchDom.setVisible(true);
         if (this.matchLayout) {
             this.matchDom.applyLayout(this.matchLayout);
         }
+    }
+
+    private openPrimaryInfoOverlay() {
+        if (this.helpVisible) {
+            this.hideHelpOverlay();
+            return;
+        }
+        this.showActionDetailsOverlay();
     }
 
     private layoutReconnectDomOverlay() {
@@ -2038,26 +2191,64 @@ export class GameScene extends Phaser.Scene {
     private layoutHelpOverlay() {
         const cx = this.screenW * 0.5;
         const cy = this.screenH * 0.5;
-        const panelW = Phaser.Math.Clamp(this.screenW * (this.isLandscapeLayout ? 0.72 : 0.94), 300, 860);
-        const panelH = Phaser.Math.Clamp(this.screenH * (this.isLandscapeLayout ? 0.82 : 0.9), 280, 760);
-        const panelX = cx - panelW * 0.5;
-        const panelY = cy - panelH * 0.5;
+        const mode = this.helpOverlayMode;
+        const actionMode = mode === 'action';
+        const content = this.matchLayout?.content ?? { x: 0, y: 0, w: this.screenW, h: this.screenH };
+        const boardRect = this.matchLayout?.board;
+        const sidebar = this.matchLayout?.sidebar;
+        const anchorToBoard = Boolean(this.isLandscapeLayout && boardRect && sidebar);
+        const targetRect = anchorToBoard && boardRect ? boardRect : content;
+        const panelW = Phaser.Math.Clamp(
+            targetRect.w * (
+                this.isLandscapeLayout
+                    ? (anchorToBoard ? (actionMode ? 0.92 : 0.88) : (actionMode ? 0.52 : 0.62))
+                    : (actionMode ? 0.94 : 0.96)
+            ),
+            248,
+            Math.min(actionMode ? 640 : 760, targetRect.w - 6),
+        );
+        const bodyText = String(this.helpBody?.text ?? '');
+        const rawLines = bodyText
+            .split('\n')
+            .map((line) => line.trim())
+            .filter((line) => line.length > 0);
+        const approxCharsPerLine = Math.max(18, Math.floor(panelW / (actionMode ? 10.6 : 9.8)));
+        const wrappedLineEstimate = rawLines.reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / approxCharsPerLine)), 0);
+        const lineHeight = actionMode ? 18 : 19;
+        const estimatedBodyH = Phaser.Math.Clamp(
+            wrappedLineEstimate * lineHeight + 8,
+            actionMode ? 76 : 132,
+            actionMode
+                ? Math.max(120, targetRect.h * 0.46)
+                : Math.max(180, targetRect.h * (this.isLandscapeLayout ? 0.58 : 0.62)),
+        );
+        const desiredPanelH = estimatedBodyH + (actionMode ? 106 : 126);
+        const panelH = Phaser.Math.Clamp(
+            desiredPanelH,
+            actionMode ? 196 : 250,
+            Math.min(actionMode ? 420 : 700, targetRect.h - 8),
+        );
+        const panelX = targetRect.x + (targetRect.w - panelW) * 0.5;
+        const panelY = targetRect.y + (targetRect.h - panelH) * 0.5;
+        const panelRadius = actionMode ? 16 : 20;
+        const panelHeaderH = actionMode ? 40 : 44;
+        this.helpPanelBounds = { x: panelX, y: panelY, w: panelW, h: panelH };
 
         this.helpOverlay.setPosition(cx, cy).setSize(this.screenW, this.screenH);
 
         this.helpPanel.clear();
-        this.helpPanel.fillStyle(0x1b2b3d, 0.97);
-        this.helpPanel.fillRoundedRect(panelX, panelY, panelW, panelH, 20);
-        this.helpPanel.fillStyle(0xffffff, 0.08);
-        this.helpPanel.fillRoundedRect(panelX + 3, panelY + 3, panelW - 6, 40, { tl: 16, tr: 16, bl: 0, br: 0 });
+        this.helpPanel.fillStyle(0x1b2b3d, actionMode ? 0.985 : 0.97);
+        this.helpPanel.fillRoundedRect(panelX, panelY, panelW, panelH, panelRadius);
+        this.helpPanel.fillStyle(0xffffff, 0.09);
+        this.helpPanel.fillRoundedRect(panelX + 3, panelY + 3, panelW - 6, panelHeaderH, { tl: panelRadius - 4, tr: panelRadius - 4, bl: 0, br: 0 });
         this.helpPanel.lineStyle(2, 0xbad5ee, 0.92);
-        this.helpPanel.strokeRoundedRect(panelX, panelY, panelW, panelH, 20);
+        this.helpPanel.strokeRoundedRect(panelX, panelY, panelW, panelH, panelRadius);
         this.helpPanel.lineStyle(1, 0x92acc2, 0.22);
-        this.helpPanel.strokeRoundedRect(panelX + 4, panelY + 4, panelW - 8, panelH - 8, 16);
+        this.helpPanel.strokeRoundedRect(panelX + 4, panelY + 4, panelW - 8, panelH - 8, panelRadius - 4);
 
-        const closeSize = Phaser.Math.Clamp(panelW * 0.05, 30, 40);
-        const closeCx = panelX + panelW - closeSize * 0.5 - 14;
-        const closeCy = panelY + closeSize * 0.5 + 12;
+        const closeSize = Phaser.Math.Clamp(panelW * 0.062, 36, 46);
+        const closeCx = panelX + panelW - closeSize * 0.5 - 10;
+        const closeCy = panelY + closeSize * 0.5 + 9;
         this.helpCloseBtn.clear();
         this.helpCloseBtn.fillStyle(0x2d4257, 0.98);
         this.helpCloseBtn.fillCircle(closeCx, closeCy, closeSize * 0.5);
@@ -2065,28 +2256,30 @@ export class GameScene extends Phaser.Scene {
         this.helpCloseBtn.strokeCircle(closeCx, closeCy, closeSize * 0.5);
         this.helpCloseHit
             .setPosition(closeCx, closeCy)
-            .setSize(closeSize + 14, closeSize + 14);
+            .setSize(closeSize + 16, closeSize + 16);
         this.helpCloseLabel
             .setPosition(closeCx, closeCy - 1)
             .setFontSize(`${Phaser.Math.Clamp(closeSize * 0.56, 18, 24)}px`);
 
+        const titleWrap = Math.max(160, panelW - closeSize - 54);
         this.helpTitle
-            .setPosition(cx, panelY + 16)
-            .setWordWrapWidth(panelW - 60)
-            .setFontSize(`${Phaser.Math.Clamp(panelW * 0.036, 18, 30)}px`);
-        fitTextToBox(this.helpTitle, this.helpTitle.text, panelW - 60, 46, {
+            .setPosition(panelX + panelW * 0.5, panelY + 10)
+            .setWordWrapWidth(titleWrap)
+            .setFontSize(`${Phaser.Math.Clamp(panelW * (actionMode ? 0.041 : 0.034), 16, 28)}px`);
+        fitTextToBox(this.helpTitle, this.helpTitle.text, titleWrap, actionMode ? 34 : 46, {
             maxLines: 2,
             ellipsis: true,
         });
 
-        const bodyY = panelY + 66;
-        const bodyMaxH = panelH - 82;
+        const bodyY = panelY + panelHeaderH + 12;
+        const bodyMaxH = Math.max(92, panelH - (bodyY - panelY) - 12);
+        const bodyWrap = Math.max(180, panelW - 30);
         this.helpBody
-            .setPosition(cx, bodyY)
-            .setWordWrapWidth(panelW - 44)
-            .setFontSize(`${Phaser.Math.Clamp(panelW * 0.019, 12, 17)}px`);
-        fitTextToBox(this.helpBody, this.helpBody.text, panelW - 44, bodyMaxH, {
-            maxLines: Math.max(6, Math.floor(bodyMaxH / Phaser.Math.Clamp(panelW * 0.021, 18, 28))),
+            .setPosition(panelX + panelW * 0.5, bodyY)
+            .setWordWrapWidth(bodyWrap)
+            .setFontSize(`${Phaser.Math.Clamp(panelW * (actionMode ? 0.023 : 0.018), 12, 16)}px`);
+        fitTextToBox(this.helpBody, this.helpBody.text, bodyWrap, bodyMaxH, {
+            maxLines: Math.max(4, Math.floor(bodyMaxH / lineHeight)),
             ellipsis: true,
         });
 
@@ -2112,6 +2305,7 @@ export class GameScene extends Phaser.Scene {
         const panelH = Phaser.Math.Clamp(this.screenH * 0.88, 320, maxPanelH);
         const panelX = cx - panelW * 0.5;
         const panelY = cy - panelH * 0.5;
+        this.cardInspectPanelBounds = { x: panelX, y: panelY, w: panelW, h: panelH };
 
         this.cardInspectOverlay.setPosition(cx, cy).setSize(this.screenW, this.screenH);
 
@@ -2310,10 +2504,13 @@ export class GameScene extends Phaser.Scene {
     }
 
     private redrawReactionBar() {
-        const barW = Phaser.Math.Clamp(this.uiW * 0.4, 220, 460);
+        const compactReaction = this.isCompactLandscapeLayout();
+        const overlayRect = this.matchLayout.sidebar ? this.matchLayout.board : this.matchLayout.content;
+        const barW = Phaser.Math.Clamp(overlayRect.w * (compactReaction ? 0.48 : 0.4), 150, Math.min(460, overlayRect.w - 28));
         const barH = Phaser.Math.Clamp(this.screenH * 0.017, 8, 14);
-        const x = this.screenW * 0.5 - barW * 0.5;
-        const y = this.screenH * 0.5 + 38;
+        const x = overlayRect.x + overlayRect.w * 0.5 - barW * 0.5;
+        const subtitleBounds = this.reactionSubtitle.getBounds();
+        const y = Math.min(overlayRect.y + overlayRect.h - barH - 18, subtitleBounds.y + subtitleBounds.height + (compactReaction ? 8 : 18));
 
         this.reactionTrack.clear();
         this.reactionTrack.fillStyle(0x162433, 0.95);
@@ -2369,6 +2566,8 @@ export class GameScene extends Phaser.Scene {
     private showCardInspect(card: ICardData) {
         if (this.helpVisible) this.hideHelpOverlay();
         this.matchDom?.setInteractionEnabled(false);
+        this.matchDom?.setVisible(false);
+        this.hideTargetSelector();
         if (this.cardInspectCloseTween) {
             this.cardInspectCloseTween.stop();
             this.cardInspectCloseTween = undefined;
@@ -2388,6 +2587,7 @@ export class GameScene extends Phaser.Scene {
         this.cardInspectVisible = true;
         this.cardInspectAnimating = true;
         this.cardInspectOverlay.setVisible(true).setAlpha(0);
+        if (this.cardInspectOverlay.input) this.cardInspectOverlay.input.enabled = true;
         this.cardInspectPanel.setVisible(true);
         this.cardInspectArtwork.setVisible(true);
         this.cardInspectArtworkMaskShape.setVisible(true);
@@ -2467,6 +2667,7 @@ export class GameScene extends Phaser.Scene {
             this.cardInspectOpenTween.stop();
             this.cardInspectOpenTween = undefined;
         }
+        if (this.cardInspectOverlay.input) this.cardInspectOverlay.input.enabled = false;
 
         this.cardInspectVisible = false;
         this.cardInspectCloseHit.setVisible(false);
@@ -2515,10 +2716,14 @@ export class GameScene extends Phaser.Scene {
                 this.cardInspectBody.setVisible(false).setAlpha(1);
                 this.cardInspectHint.setVisible(false).setAlpha(1);
                 this.inspectedCard = undefined;
+                this.cardInspectPanelBounds = undefined;
+                if (this.cardInspectOverlay.input) this.cardInspectOverlay.input.enabled = false;
                 this.cardInspectAnimating = false;
                 if (!this.helpVisible) {
+                    this.matchDom?.setVisible(true);
                     this.matchDom?.setInteractionEnabled(true);
                 }
+                this.refreshInteractivityFromCurrentState();
             },
         });
 
@@ -2562,13 +2767,25 @@ export class GameScene extends Phaser.Scene {
         this.showHelpOverlay({
             title: this.tr('game_action_details_title'),
             body: bodyLines.join('\n\n'),
+            mode: 'action',
         });
     }
 
-    private showHelpOverlay(custom?: { title: string; body: string }) {
-        if (this.helpVisible) return;
+    private showHelpOverlay(custom?: { title: string; body: string; mode?: 'help' | 'action' }) {
+        this.tweens.killTweensOf([
+            this.helpOverlay,
+            this.helpPanel,
+            this.helpTitle,
+            this.helpBody,
+            this.helpCloseBtn,
+            this.helpCloseHit,
+            this.helpCloseLabel,
+        ]);
+        const wasVisible = this.helpVisible;
         this.helpVisible = true;
+        this.helpOverlayMode = custom?.mode ?? 'help';
         this.matchDom?.setInteractionEnabled(false);
+        this.matchDom?.setVisible(false);
         this.hideTargetSelector();
         if (this.cardInspectVisible) this.hideCardInspect();
 
@@ -2582,63 +2799,67 @@ export class GameScene extends Phaser.Scene {
         }
         this.layoutHelpOverlay();
 
-        this.helpOverlay.setVisible(true).setAlpha(0);
-        this.helpPanel.setVisible(true).setAlpha(0);
-        this.helpTitle.setVisible(true).setAlpha(0);
-        this.helpBody.setVisible(true).setAlpha(0);
-        this.helpCloseBtn.setVisible(true).setAlpha(0);
-        this.helpCloseHit.setVisible(true).setAlpha(0);
-        this.helpCloseLabel.setVisible(true).setAlpha(0);
+        this.helpOverlay.setVisible(true);
+        if (this.helpOverlay.input) this.helpOverlay.input.enabled = true;
+        this.helpPanel.setVisible(true);
+        this.helpTitle.setVisible(true);
+        this.helpBody.setVisible(true);
+        this.helpCloseBtn.setVisible(true);
+        this.helpCloseHit.setVisible(true);
+        this.helpCloseLabel.setVisible(true);
         if (this.helpCloseHit.input) this.helpCloseHit.input.enabled = true;
 
-        this.tweens.add({
-            targets: [
-                this.helpOverlay,
-                this.helpPanel,
-                this.helpTitle,
-                this.helpBody,
-                this.helpCloseBtn,
-                this.helpCloseHit,
-                this.helpCloseLabel,
-            ],
-            alpha: 1,
-            duration: 160,
-            ease: 'Sine.Out',
-        });
+        if (wasVisible) {
+            this.helpOverlay.setAlpha(1);
+            this.helpPanel.setAlpha(1);
+            this.helpTitle.setAlpha(1);
+            this.helpBody.setAlpha(1);
+            this.helpCloseBtn.setAlpha(1);
+            this.helpCloseHit.setAlpha(1);
+            this.helpCloseLabel.setAlpha(1);
+            this.refreshInteractivityFromCurrentState();
+            return;
+        }
+
+        this.helpOverlay.setAlpha(1);
+        this.helpPanel.setAlpha(1);
+        this.helpTitle.setAlpha(1);
+        this.helpBody.setAlpha(1);
+        this.helpCloseBtn.setAlpha(1);
+        this.helpCloseHit.setAlpha(1);
+        this.helpCloseLabel.setAlpha(1);
+        this.refreshInteractivityFromCurrentState();
     }
 
     private hideHelpOverlay() {
         if (!this.helpVisible) return;
+        this.tweens.killTweensOf([
+            this.helpOverlay,
+            this.helpPanel,
+            this.helpTitle,
+            this.helpBody,
+            this.helpCloseBtn,
+            this.helpCloseHit,
+            this.helpCloseLabel,
+        ]);
         this.helpVisible = false;
+        if (this.helpOverlay.input) this.helpOverlay.input.enabled = false;
         if (this.helpCloseHit.input) this.helpCloseHit.input.enabled = false;
-
-        this.tweens.add({
-            targets: [
-                this.helpOverlay,
-                this.helpPanel,
-                this.helpTitle,
-                this.helpBody,
-                this.helpCloseBtn,
-                this.helpCloseHit,
-                this.helpCloseLabel,
-            ],
-            alpha: 0,
-            duration: 140,
-            ease: 'Sine.In',
-            onComplete: () => {
-                if (this.helpVisible) return;
-                this.helpOverlay.setVisible(false).setAlpha(1);
-                this.helpPanel.setVisible(false).setAlpha(1);
-                this.helpTitle.setVisible(false).setAlpha(1);
-                this.helpBody.setVisible(false).setAlpha(1);
-                this.helpCloseBtn.setVisible(false).setAlpha(1);
-                this.helpCloseHit.setVisible(false).setAlpha(1);
-                this.helpCloseLabel.setVisible(false).setAlpha(1);
-                if (!this.cardInspectVisible && !this.cardInspectAnimating) {
-                    this.matchDom?.setInteractionEnabled(true);
-                }
-            },
-        });
+        this.helpOverlayMode = 'help';
+        this.helpOverlay.setVisible(false).setAlpha(1);
+        if (this.helpOverlay.input) this.helpOverlay.input.enabled = false;
+        this.helpPanel.setVisible(false).setAlpha(1);
+        this.helpTitle.setVisible(false).setAlpha(1);
+        this.helpBody.setVisible(false).setAlpha(1);
+        this.helpCloseBtn.setVisible(false).setAlpha(1);
+        this.helpCloseHit.setVisible(false).setAlpha(1);
+        this.helpCloseLabel.setVisible(false).setAlpha(1);
+        this.helpPanelBounds = undefined;
+        if (!this.cardInspectVisible && !this.cardInspectAnimating) {
+            this.matchDom?.setVisible(true);
+            this.matchDom?.setInteractionEnabled(true);
+        }
+        this.refreshInteractivityFromCurrentState();
     }
 
     private handleStateChange(state: IGameState) {
@@ -2914,6 +3135,7 @@ export class GameScene extends Phaser.Scene {
     private updateControls(state: IGameState, me: IPlayer, myId: string) {
         const baseState = evaluateMatchActionState({ state, me, myId });
         const pendingAction = this.hasPendingPlayInFlight();
+        const modalOpen = this.isModalOverlayOpen();
         const actionState: MatchActionState = pendingAction
             ? {
                 ...baseState,
@@ -2943,15 +3165,22 @@ export class GameScene extends Phaser.Scene {
         if (!actionState.canDraw) this.deckButtonFx?.reset();
         if (!actionState.canEndTurn) this.endButtonFx?.reset();
 
-        const canReact = !pendingAction && state.phase === GamePhase.REACTION_WINDOW && state.pendingAction?.playerId !== myId;
-        const canPlayTurn = !pendingAction && actionState.isMyTurn && state.phase === GamePhase.PLAYER_TURN;
+        const canReact = !pendingAction && !modalOpen && state.phase === GamePhase.REACTION_WINDOW && state.pendingAction?.playerId !== myId;
+        const canPlayTurn = !pendingAction && !modalOpen && actionState.isMyTurn && state.phase === GamePhase.PLAYER_TURN;
 
         this.handCards.forEach((card) => {
             const canPlayThisCard = canPlayTurn || (canReact && this.isReactionCard(card.cardData));
+            if (modalOpen) {
+                if (card.input) card.input.enabled = false;
+                card.setPlayableVisual(false);
+                this.input.setDraggable(card as unknown as Phaser.GameObjects.GameObject, false);
+                return;
+            }
             if (!card.input) {
                 card.setInteractive({ useHandCursor: true });
             }
             if (card.input) card.input.enabled = true;
+            card.setPlayableVisual(canPlayThisCard);
             this.input.setDraggable(card as unknown as Phaser.GameObjects.GameObject, canPlayThisCard);
         });
 
@@ -3011,7 +3240,7 @@ export class GameScene extends Phaser.Scene {
             });
         }
 
-        if (this.targetSelectorOverlay?.visible && state.currentTurnPlayerId !== myId) {
+        if ((this.targetSelectorOverlay?.active || this.targetSelectorOverlay?.visible) && state.currentTurnPlayerId !== myId) {
             this.hideTargetSelector();
         }
     }
@@ -3023,15 +3252,15 @@ export class GameScene extends Phaser.Scene {
             const hit = view.actionHit;
             const w = Phaser.Math.Clamp(hit.width, 52, 96);
             const h = Phaser.Math.Clamp(hit.height, 34, 48);
-            const compactCta = w < 76;
+            const compactCta = w < 88 || h < 40;
             view.actionBg.clear();
             paintRetroButton(
                 view.actionBg,
                 { width: w, height: h, radius: 10, borderWidth: 1.1 },
                 {
-                    base: evalAttack.canAttack ? 0x3c7a57 : 0x334455,
-                    border: evalAttack.canAttack ? 0xc4f4d8 : 0x7f97b0,
-                    glossAlpha: evalAttack.canAttack ? 0.2 : 0.08,
+                    base: evalAttack.canAttack ? 0x3b8f63 : 0x32455b,
+                    border: evalAttack.canAttack ? 0xd5f7e3 : 0x8ca6c3,
+                    glossAlpha: evalAttack.canAttack ? 0.24 : 0.09,
                 },
             );
             view.actionBg.setPosition(hit.x, hit.y);
@@ -3053,11 +3282,11 @@ export class GameScene extends Phaser.Scene {
         const state = room.state as IGameState | undefined;
         if (!state) return;
         const me = (state.players as unknown as Map<string, IPlayer>).get(room.sessionId);
-        if (!me) return;
-        if (!this.matchLayout) return;
+        if (!me || !this.matchLayout) return;
 
         const waiting = this.isPreLobbyPhase(state.phase);
-        this.matchDom.setVisible(!waiting);
+        const selectorOpen = Boolean(this.targetSelectorOverlay?.active) || Boolean(this.targetSelectorOverlay?.visible);
+        this.matchDom.setVisible(!waiting && !this.helpVisible && !this.cardInspectVisible && !this.cardInspectAnimating && !selectorOpen);
         if (waiting) return;
 
         const players = Array.from((state.players as unknown as Map<string, IPlayer>).values());
@@ -3081,75 +3310,26 @@ export class GameScene extends Phaser.Scene {
             }
             : actionStateBase;
 
-        const panelModel = buildActionPanelModel(
-            actionState,
-            String(active?.username ?? this.tr('game_unknown_player')),
-            this.tr.bind(this),
-            this.localizeActionBlockReason.bind(this),
-        );
-        const controlsWidth = this.matchLayout?.controls?.w ?? 300;
-        const compactDomText = this.isCompactLandscapeLayout()
-            || controlsWidth < 300
-            || this.matchLayout.tier === 'A'
-            || this.matchLayout.tier === 'B';
-        const portraitTier = this.matchLayout.tier === 'A' || this.matchLayout.tier === 'B';
-        const contextHint = buildMatchContextHint({
-            phase: state.phase,
-            actionState,
-            pendingAction: this.hasPendingPlayInFlight(),
-            tr: this.tr.bind(this),
-            localizeReason: this.localizeActionBlockReason.bind(this),
-        });
-        const deckCount = Number(state.deckCount ?? 0);
-        const discardCount = this.estimateDiscardCount(state);
-        const hud = buildHudModel({
+        this.matchDom.update(buildMatchUiDomModel({
+            state,
             me,
             opponents,
             activePlayer: active,
             myId: room.sessionId,
-            deckCount,
-            discardCount,
-            reactionActive: state.phase === GamePhase.REACTION_WINDOW,
-            phase: String(state.phase ?? '').replace(/_/g, ' '),
-            compact: compactHud,
+            actionState,
+            roomCode: this.roomCode,
+            reconnectActive: this.reconnectActive,
+            gameLogExpanded: this.gameLogExpanded,
+            gameLogEntries: this.gameLogEntries,
+            controlsWidth: this.matchLayout.controls.w,
+            layoutTier: this.matchLayout.tier,
+            compactLandscape: this.isCompactLandscapeLayout(),
+            compactHud,
+            discardCount: this.estimateDiscardCount(state),
             tr: this.tr.bind(this),
-        });
-        const compactStats = this.tr('game_hud_stats_micro', {
-            ap: Math.max(0, Number(me.actionPoints ?? 0)),
-            score: Math.max(0, Number(me.score ?? 0)),
-        });
-
-        const canDrawNow = !this.reconnectActive && actionState.canDraw;
-        const canEndNow = !this.reconnectActive && actionState.canEndTurn;
-        this.matchDom.update({
-            roomCode: this.tr('game_room_code', { code: this.roomCode || '----' }),
-            opponents: portraitTier
-                ? ''
-                : compactHud
-                ? this.tr('game_hud_opponents', { value: this.tr('game_opponents_count', { count: opponents.length }) })
-                : hud.opponentsLabel,
-            turn: hud.turnLabel,
-            stats: portraitTier ? compactStats : hud.statsLabel,
-            phase: portraitTier ? '' : hud.phaseLabel,
-            reaction: portraitTier ? '' : hud.reactionLabel,
-            actionHint: compactDomText
-                ? this.tr('game_action_compact_hint')
-                : panelModel.hint,
-            actionDetail: compactDomText ? '' : panelModel.detail.replace(/\n/g, ' | '),
-            actionContext: compactDomText ? '' : contextHint,
-            canDraw: canDrawNow,
-            canEndTurn: canEndNow,
-            showEmote: !portraitTier && controlsWidth >= 210 && !this.isCompactLandscapeLayout(),
-            drawLabel: this.tr('game_deck'),
-            endLabel: this.tr('game_end_turn'),
-            detailsLabel: this.tr('game_details_button'),
-            helpLabel: this.tr('game_help_button_short'),
-            emoteLabel: this.tr('game_emote_button'),
-            logTitle: this.tr('game_log_title'),
-            logToggle: this.gameLogExpanded ? this.tr('game_log_less') : this.tr('game_log_more'),
-            logEntries: portraitTier ? [] : this.gameLogEntries,
-            logExpanded: this.gameLogExpanded,
-        });
+            localizeReason: this.localizeActionBlockReason.bind(this),
+            pendingAction: this.hasPendingPlayInFlight(),
+        }));
     }
 
     private drawHelpButton(active: boolean) {
@@ -3195,6 +3375,10 @@ export class GameScene extends Phaser.Scene {
     private sendQuickEmote() {
         if (this.reconnectActive) {
             this.floatText(this.tr('game_reconnect_action_blocked'), '#ff9aa7');
+            return;
+        }
+        if (this.isModalOverlayOpen()) {
+            this.floatText(this.tr('game_action_denied'), '#ff9aa7');
             return;
         }
         const emotes = ['thumbs_up', 'fire', 'laugh'];
@@ -3398,29 +3582,31 @@ export class GameScene extends Phaser.Scene {
         const boardTop = boardRect.y + 8;
         const boardBottom = boardRect.y + boardRect.h - 8;
         const bandTop = boardTop + boardRect.h * (this.isLandscapeLayout ? (compactLandscape ? 0.04 : 0.07) : 0.06);
-        const bandBottom = boardTop + boardRect.h * (this.isLandscapeLayout ? (compactLandscape ? 0.5 : 0.54) : 0.5);
+        const bandBottom = boardTop + boardRect.h * (this.isLandscapeLayout ? (compactLandscape ? 0.5 : 0.54) : 0.44);
         const y = Phaser.Math.Clamp(
             (bandTop + bandBottom) * 0.5,
             bandTop + 12,
             bandBottom - 12,
         );
 
-        const available = boardRect.w * (this.isLandscapeLayout ? (compactLandscape ? 0.74 : 0.8) : 0.86);
+        const available = boardRect.w * (this.isLandscapeLayout ? (compactLandscape ? 0.74 : 0.8) : 0.92);
         const slotW = available / Math.max(1, crises.length);
         const targetScale = this.matchLayout.cardSizes.boardW / 126;
         const maxScaleByWidth = (slotW * 0.82) / 126;
         const maxScaleByHeight = ((bandBottom - bandTop) * 0.78) / 178;
+        const portraitMaxScale = 0.4;
+        const portraitMinScale = 0.26;
         const scale = Phaser.Math.Clamp(
             Math.min(
                 targetScale,
                 maxScaleByWidth,
                 maxScaleByHeight,
-                this.isLandscapeLayout ? (compactLandscape ? 0.48 : 0.58) : 0.68,
+                this.isLandscapeLayout ? (compactLandscape ? 0.48 : 0.58) : portraitMaxScale,
             ),
-            this.isLandscapeLayout ? (compactLandscape ? 0.31 : 0.35) : 0.44,
-            this.isLandscapeLayout ? (compactLandscape ? 0.48 : 0.58) : 0.68,
+            this.isLandscapeLayout ? (compactLandscape ? 0.31 : 0.35) : portraitMinScale,
+            this.isLandscapeLayout ? (compactLandscape ? 0.48 : 0.58) : portraitMaxScale,
         );
-        const spacing = Math.max(slotW, 96 * scale);
+        const spacing = Math.max(slotW, 84 * scale);
         const total = (crises.length - 1) * spacing;
         const startX = boardRect.x + boardRect.w * 0.5 - total * 0.5;
 
@@ -3432,13 +3618,16 @@ export class GameScene extends Phaser.Scene {
             card.setDepth(35 + i);
             card.disableInteractive();
 
-            const slotBg = this.add.graphics().setDepth(34 + i);
-            const slotW = Math.max(90, card.displayWidth * 1.04);
-            const slotH = Math.max(120, card.displayHeight * 1.08);
-            slotBg.fillStyle(0x203247, 0.58);
-            slotBg.fillRoundedRect(x - slotW * 0.5, y - slotH * 0.5, slotW, slotH, 12);
-            slotBg.lineStyle(1.2, 0x91bad8, 0.6);
-            slotBg.strokeRoundedRect(x - slotW * 0.5, y - slotH * 0.5, slotW, slotH, 12);
+            let slotBg: Phaser.GameObjects.Graphics | undefined;
+            if (this.isLandscapeLayout) {
+                slotBg = this.add.graphics().setDepth(34 + i);
+                const slotW = Math.max(90, card.displayWidth * 1.04);
+                const slotH = Math.max(110, card.displayHeight * 1.06);
+                slotBg.fillStyle(0x203247, 0.32);
+                slotBg.fillRoundedRect(x - slotW * 0.5, y - slotH * 0.5, slotW, slotH, 12);
+                slotBg.lineStyle(1.1, 0x91bad8, 0.4);
+                slotBg.strokeRoundedRect(x - slotW * 0.5, y - slotH * 0.5, slotW, slotH, 12);
+            }
 
             const zoneW = Math.max(72, card.displayWidth * 0.92);
             const zoneH = Math.max(96, card.displayHeight * 1.02);
@@ -3480,10 +3669,10 @@ export class GameScene extends Phaser.Scene {
             }).setOrigin(0.5).setDepth(44).setResolution(this.textResolution);
             const actionW = Phaser.Math.Clamp(
                 spacing - 10,
-                compactLandscape ? 54 : 60,
-                compactLandscape ? 82 : 96,
+                compactLandscape ? 54 : (this.isLandscapeLayout ? 60 : 66),
+                compactLandscape ? 82 : (this.isLandscapeLayout ? 96 : 106),
             );
-            const actionH = compactLandscape ? 38 : 44;
+            const actionH = compactLandscape ? 38 : (this.isLandscapeLayout ? 44 : 32);
             const actionHit = this.add.rectangle(0, 0, actionW, actionH, 0x000000, 0)
                 .setDepth(45)
                 .setInteractive({ useHandCursor: true });
@@ -3527,29 +3716,31 @@ export class GameScene extends Phaser.Scene {
         const boardRect = this.matchLayout.board;
         const boardTop = boardRect.y + 8;
         const boardBottom = boardRect.y + boardRect.h - 8;
-        const bandTop = boardTop + boardRect.h * (this.isLandscapeLayout ? (compactLandscape ? 0.58 : 0.6) : 0.56);
-        const bandBottom = boardBottom - (compactLandscape ? 8 : 10);
+        const bandTop = boardTop + boardRect.h * (this.isLandscapeLayout ? (compactLandscape ? 0.58 : 0.6) : 0.66);
+        const bandBottom = boardBottom - (compactLandscape ? 8 : 6);
         const y = Phaser.Math.Clamp(
             (bandTop + bandBottom) * 0.5,
             bandTop + 10,
             bandBottom - 10,
         );
-        const available = boardRect.w * (this.isLandscapeLayout ? (compactLandscape ? 0.68 : 0.72) : 0.8);
+        const available = boardRect.w * (this.isLandscapeLayout ? (compactLandscape ? 0.68 : 0.72) : 0.92);
         const slotW = available / Math.max(1, cards.length);
         const targetScale = this.matchLayout.cardSizes.boardW / 126;
         const maxScaleByWidth = (slotW * 0.84) / 126;
         const maxScaleByHeight = ((bandBottom - bandTop) * 0.8) / 178;
+        const portraitMaxScale = 0.38;
+        const portraitMinScale = 0.24;
         const scale = Phaser.Math.Clamp(
             Math.min(
                 targetScale,
                 maxScaleByWidth,
                 maxScaleByHeight,
-                this.isLandscapeLayout ? (compactLandscape ? 0.48 : 0.56) : 0.72,
+                this.isLandscapeLayout ? (compactLandscape ? 0.48 : 0.56) : portraitMaxScale,
             ),
-            this.isLandscapeLayout ? (compactLandscape ? 0.31 : 0.36) : 0.5,
-            this.isLandscapeLayout ? (compactLandscape ? 0.48 : 0.56) : 0.72,
+            this.isLandscapeLayout ? (compactLandscape ? 0.31 : 0.36) : portraitMinScale,
+            this.isLandscapeLayout ? (compactLandscape ? 0.48 : 0.56) : portraitMaxScale,
         );
-        const spacing = Math.max(slotW, 96 * scale);
+        const spacing = Math.max(slotW, 82 * scale);
         const total = (cards.length - 1) * spacing;
         const startX = boardRect.x + boardRect.w * 0.5 - total * 0.5;
 
@@ -3586,48 +3777,98 @@ export class GameScene extends Phaser.Scene {
         const targetCardW = this.matchLayout.cardSizes.handW;
         const targetCardH = this.matchLayout.cardSizes.handH;
         const baseCardW = 126;
-        const scale = Phaser.Math.Clamp(targetCardW / baseCardW, 0.24, 0.82);
+        const portraitMode = !this.isLandscapeLayout;
 
-        const horizontalStride = Math.max(24, targetCardW * (compactLandscape ? 0.74 : 0.8));
-        const cardsPerRowCapacity = Math.max(1, Math.floor((area.w - targetCardW) / horizontalStride) + 1);
-        const useTwoRows = cardCount > cardsPerRowCapacity && area.h >= (targetCardH * 1.75);
-        const cardsPerRow = useTwoRows ? Math.ceil(cardCount / 2) : cardCount;
+        let placements: Array<{ x: number; y: number; row: number; col: number }> = [];
+        let scale = Phaser.Math.Clamp(targetCardW / baseCardW, 0.24, 0.82);
 
-        const rowSpan = Math.max(0, cardsPerRow - 1);
-        const spacing = rowSpan > 0
-            ? Math.min(horizontalStride, Math.max(22, (area.w - targetCardW) / rowSpan))
-            : 0;
+        if (portraitMode) {
+            const hPad = 8;
+            const vPad = 8;
+            const maxColumns = 3;
+            const preferredRows = cardCount <= 3 ? 1 : (cardCount <= 9 ? 2 : 3);
+            const columns = Math.min(maxColumns, Math.max(1, Math.ceil(cardCount / preferredRows)));
+            const rows = Math.max(1, Math.ceil(cardCount / columns));
+            const gapX = Phaser.Math.Clamp(area.w * 0.014, 4, 6);
+            const gapY = rows > 1 ? Phaser.Math.Clamp(area.h * 0.03, 8, 12) : 0;
+            const innerW = Math.max(80, area.w - hPad * 2);
+            const innerH = Math.max(96, area.h - vPad * 2);
+            const cardWByCols = (innerW - gapX * Math.max(0, columns - 1)) / columns;
+            const cardHByRows = (innerH - gapY * Math.max(0, rows - 1)) / rows;
+            const scaleByWidth = cardWByCols / baseCardW;
+            const scaleByHeight = cardHByRows / 184;
+            scale = Phaser.Math.Clamp(
+                Math.min(targetCardW / baseCardW, scaleByWidth, scaleByHeight),
+                0.32,
+                0.66,
+            );
+            const cardW = baseCardW * scale;
+            const cardH = 184 * scale;
+            const gridH = rows * cardH + Math.max(0, rows - 1) * gapY;
+            const firstRowCenterY = area.y + vPad + (innerH - gridH) * 0.5 + cardH * 0.5;
 
-        const firstRowY = area.y + (useTwoRows ? (targetCardH * 0.5 + 6) : area.h * 0.5);
-        const rowGap = useTwoRows
-            ? Phaser.Math.Clamp(targetCardH * (compactLandscape ? 0.78 : 0.84), 32, 76)
-            : 0;
+            for (let i = 0; i < cardCount; i += 1) {
+                const row = Math.floor(i / columns);
+                const indexInRow = i - row * columns;
+                const rowCount = row === rows - 1
+                    ? (cardCount - row * columns)
+                    : columns;
+                const rowWidth = rowCount * cardW + Math.max(0, rowCount - 1) * gapX;
+                const rowStartX = area.x + area.w * 0.5 - rowWidth * 0.5 + cardW * 0.5;
+                const x = rowStartX + indexInRow * (cardW + gapX);
+                const y = firstRowCenterY + row * (cardH + gapY);
+                placements.push({ x, y, row, col: indexInRow });
+            }
+        } else {
+            const horizontalStride = Math.max(24, targetCardW * (compactLandscape ? 0.74 : 0.8));
+            const cardsPerRowCapacity = Math.max(1, Math.floor((area.w - targetCardW) / horizontalStride) + 1);
+            const useTwoRows = cardCount > cardsPerRowCapacity && area.h >= (targetCardH * 1.75);
+            const cardsPerRow = useTwoRows ? Math.ceil(cardCount / 2) : cardCount;
+
+            const rowSpan = Math.max(0, cardsPerRow - 1);
+            const spacing = rowSpan > 0
+                ? Math.min(horizontalStride, Math.max(22, (area.w - targetCardW) / rowSpan))
+                : 0;
+
+            const firstRowY = area.y + (useTwoRows ? (targetCardH * 0.5 + 6) : area.h * 0.5);
+            const rowGap = useTwoRows
+                ? Phaser.Math.Clamp(targetCardH * (compactLandscape ? 0.78 : 0.84), 32, 76)
+                : 0;
+
+            for (let i = 0; i < cardCount; i += 1) {
+                const row = useTwoRows && i >= cardsPerRow ? 1 : 0;
+                const indexInRow = row === 0 ? i : i - cardsPerRow;
+                const rowCount = useTwoRows
+                    ? (row === 0 ? Math.min(cardsPerRow, cardCount) : cardCount - cardsPerRow)
+                    : cardCount;
+                const rowSpread = Math.max(0, rowCount - 1);
+                const rowStartX = area.x + area.w * 0.5 - (rowSpread * spacing) * 0.5;
+                const rowMid = rowSpread * 0.5;
+
+                const x = rowStartX + indexInRow * spacing;
+                const cardHalfH = targetCardH * 0.5;
+                const yRaw = firstRowY
+                    + row * rowGap
+                    + Math.abs(indexInRow - rowMid) * (compactLandscape ? 1.2 : 1.7);
+                const y = Phaser.Math.Clamp(
+                    yRaw,
+                    area.y + cardHalfH + 2,
+                    area.y + area.h - cardHalfH - 2,
+                );
+                placements.push({ x, y, row, col: indexInRow });
+            }
+        }
 
         cards.forEach((data, i) => {
-            const row = useTwoRows && i >= cardsPerRow ? 1 : 0;
-            const indexInRow = row === 0 ? i : i - cardsPerRow;
-            const rowCount = useTwoRows
-                ? (row === 0 ? Math.min(cardsPerRow, cardCount) : cardCount - cardsPerRow)
-                : cardCount;
-            const rowSpread = Math.max(0, rowCount - 1);
-            const rowStartX = area.x + area.w * 0.5 - (rowSpread * spacing) * 0.5;
-            const rowMid = rowSpread * 0.5;
-
-            const x = rowStartX + indexInRow * spacing;
-            const cardHalfH = (targetCardH) * 0.5;
-            const yRaw = firstRowY
-                + row * rowGap
-                + Math.abs(indexInRow - rowMid) * (this.isLandscapeLayout ? (compactLandscape ? 1.2 : 1.7) : 2.8);
-            const y = Phaser.Math.Clamp(
-                yRaw,
-                area.y + cardHalfH + 2,
-                area.y + area.h - cardHalfH - 2,
-            );
+            const placement = placements[i];
+            if (!placement) return;
+            const x = placement.x;
+            const y = placement.y;
 
             const card = this.createCardObject(x, y, data);
             this.add.existing(card);
             card.setScale(scale);
-            card.setHome(x, y, 120 + i + row * 8);
+            card.setHome(x, y, 120 + i + placement.row * 8);
 
             card.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
                 card.setData('inspectDownX', pointer.x);
@@ -3884,23 +4125,7 @@ export class GameScene extends Phaser.Scene {
 
     private showDiceToast(event: IDiceRolledEvent) {
         const actor = this.resolvePlayerName(event.playerId);
-        const modifier = Number.isFinite(Number(event.modifier))
-            ? Number(event.modifier)
-            : Number(event.total ?? 0) - Number(event.roll1 ?? 0) - Number(event.roll2 ?? 0);
-        const modifierText = modifier > 0 ? `+${modifier}` : (modifier < 0 ? `${modifier}` : '');
-        const targetValue = Number.isFinite(Number(event.targetRoll)) ? Number(event.targetRoll) : '-';
-
-        const headerLine = this.tr('game_dice_result_line_ext', {
-            player: actor,
-            roll1: event.roll1 ?? 0,
-            roll2: event.roll2 ?? 0,
-            modifierText,
-            total: event.total ?? 0,
-            target: targetValue,
-            status: event.success ? this.tr('game_dice_success') : this.tr('game_dice_fail'),
-        });
-        const outcomeLine = this.buildDiceOutcomeLine(event);
-        const line = outcomeLine ? `${headerLine}\n${outcomeLine}` : headerLine;
+        const line = buildDiceToastText(event, actor, this.tr.bind(this));
 
         this.diceToastText.setText(line).setVisible(true);
         this.diceToastPanel.setVisible(true);
@@ -4058,20 +4283,7 @@ export class GameScene extends Phaser.Scene {
                     const payload = message as IDiceRolledEvent;
                     this.showDiceToast(payload);
                     const actor = this.resolvePlayerName(payload.playerId);
-                    const modifier = Number.isFinite(Number(payload.modifier))
-                        ? Number(payload.modifier)
-                        : Number(payload.total ?? 0) - Number(payload.roll1 ?? 0) - Number(payload.roll2 ?? 0);
-                    const modifierText = modifier > 0 ? `+${modifier}` : (modifier < 0 ? `${modifier}` : '');
-                    const targetValue = Number.isFinite(Number(payload.targetRoll)) ? Number(payload.targetRoll) : '-';
-                    this.appendGameLog(this.tr('game_log_dice_ext', {
-                        player: actor,
-                        roll1: payload.roll1 ?? 0,
-                        roll2: payload.roll2 ?? 0,
-                        modifierText,
-                        total: payload.total ?? 0,
-                        target: targetValue,
-                        status: payload.success ? this.tr('game_dice_success') : this.tr('game_dice_fail'),
-                    }));
+                    this.appendGameLog(buildDiceLogLine(payload, actor, this.tr.bind(this)));
                     const outcomeLine = this.buildDiceOutcomeLine(payload);
                     if (outcomeLine) this.appendGameLog(outcomeLine);
                     this.time.delayedCall(260, resolve);
@@ -4209,9 +4421,9 @@ export class GameScene extends Phaser.Scene {
         });
     }
 
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬
     //  VICTORY SCREEN
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬
     private showVictoryScreen(event: { winnerId?: string; winnerName?: string; finalScore?: number }) {
         this.visualQueue.enqueue(() => new Promise((_resolve) => {
             const winnerName = String(event.winnerName ?? this.tr('game_unknown_player'));
@@ -4303,7 +4515,7 @@ export class GameScene extends Phaser.Scene {
                 this.burst(cx, cy - 8, 40);
             }
 
-            // Don't resolve â€” game is over, UI stays frozen
+            // Don't resolve ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â game is over, UI stays frozen
         }));
     }
 
@@ -4327,77 +4539,19 @@ export class GameScene extends Phaser.Scene {
         window.location.assign(window.location.pathname);
     }
 
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬
     //  TARGET SELECTOR (for Trick cards)
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    private showTargetSelector(card: CardGameObject) {
-        if (this.reconnectActive) {
-            this.snapBack(card, this.tr('game_reconnect_action_blocked'));
-            return;
-        }
+    // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬
+    private openTargetSelectionOverlay(
+        titleText: string,
+        selectionRows: Array<{ label: string; onPick: () => void }>,
+        onCancel?: () => void,
+    ) {
         this.hideTargetSelector();
-        if (this.hasPendingPlayInFlight() && this.pendingPlayedCard !== card) {
-            this.snapBack(card, this.tr('game_action_pending_wait'));
-            return;
-        }
-
-        const state = this.serverManager.room?.state as IGameState | undefined;
-        const myId = this.serverManager.room?.sessionId;
-        if (!state || !myId) {
-            this.snapBack(card, this.tr('game_no_connection'));
-            return;
-        }
-
-        const selectionRows: Array<{ label: string; onPick: () => void }> = [];
-        let titleText = this.tr('game_choose_target');
-
-        if (this.isItemCard(card.cardData)) {
-            titleText = this.tr('game_choose_hero_target');
-            const me = (state.players as unknown as Map<string, IPlayer>).get(myId);
-            const heroes = ((me?.company ?? []) as ICardData[]).filter((entry) => this.isHeroCard(entry));
-
-            if (heroes.length === 0) {
-                this.snapBack(card, this.tr('game_error_no_hero_for_item'));
-                return;
-            }
-
-            if (heroes.length === 1) {
-                const single = heroes[0];
-                if (!single?.id) {
-                    this.snapBack(card, this.tr('game_error_invalid_hero_target'));
-                    return;
-                }
-                this.serverManager.playMagic(card.cardData.id, undefined, single.id);
-                this.stashPending(card);
-                return;
-            }
-
-            heroes.forEach((hero) => {
-                const itemCount = Number((hero as any)?.equippedItems?.length ?? 0);
-                const suffix = itemCount > 0 ? ` (${this.tr('card_eq_badge', { count: itemCount })})` : '';
-                selectionRows.push({
-                    label: `${getCardDisplayName(hero, this.lang, this.tr.bind(this))}${suffix}`,
-                    onPick: () => this.serverManager.playMagic(card.cardData.id, undefined, hero.id),
-                });
-            });
-        } else {
-            const opponents: IPlayer[] = [];
-            (state.players as unknown as Map<string, IPlayer>).forEach((p, sid) => {
-                if (sid !== myId) opponents.push(p);
-            });
-
-            if (opponents.length === 0) {
-                this.snapBack(card, this.tr('game_waiting_opponents'));
-                return;
-            }
-
-            opponents.forEach((opp) => {
-                selectionRows.push({
-                    label: opp.username,
-                    onPick: () => this.serverManager.playMagic(card.cardData.id, opp.sessionId),
-                });
-            });
-        }
+        this.matchDom?.setInteractionEnabled(false);
+        this.matchDom?.setVisible(false);
+        this.targetSelectorOnCancel = onCancel;
+        this.refreshInteractivityFromCurrentState();
 
         const cx = this.screenW * 0.5;
         const cy = this.screenH * 0.5;
@@ -4405,7 +4559,7 @@ export class GameScene extends Phaser.Scene {
         this.targetSelectorOverlay = this.add.rectangle(cx, cy, this.screenW, this.screenH, 0x000000, 0.6)
             .setDepth(550).setInteractive();
         this.targetSelectorOverlay.on('pointerdown', () => {
-            this.snapBack(card, this.tr('game_cancelled'));
+            this.targetSelectorOnCancel?.();
             this.hideTargetSelector();
         });
         this.targetSelectorElements.push(this.targetSelectorOverlay);
@@ -4456,7 +4610,6 @@ export class GameScene extends Phaser.Scene {
             const fx = createSimpleButtonFx(this, hit, [bg, label], {
                 onClick: () => {
                     row.onPick();
-                    this.stashPending(card);
                     this.hideTargetSelector();
                 },
             });
@@ -4490,7 +4643,7 @@ export class GameScene extends Phaser.Scene {
             .setDepth(553).setInteractive({ useHandCursor: true });
         const cancelFx = createSimpleButtonFx(this, cancelHit, [cancelBg, cancelLabel], {
             onClick: () => {
-                this.snapBack(card, this.tr('game_cancelled'));
+                this.targetSelectorOnCancel?.();
                 this.hideTargetSelector();
             },
         });
@@ -4519,6 +4672,114 @@ export class GameScene extends Phaser.Scene {
         });
     }
 
+    private showTargetSelector(card: CardGameObject) {
+        if (this.reconnectActive) {
+            this.snapBack(card, this.tr('game_reconnect_action_blocked'));
+            return;
+        }
+        if (this.hasPendingPlayInFlight() && this.pendingPlayedCard !== card) {
+            this.snapBack(card, this.tr('game_action_pending_wait'));
+            return;
+        }
+
+        const state = this.serverManager.room?.state as IGameState | undefined;
+        const myId = this.serverManager.room?.sessionId;
+        if (!state || !myId) {
+            this.snapBack(card, this.tr('game_no_connection'));
+            return;
+        }
+
+        this.targetSelectorSourceCard = card;
+        const selectionRows: Array<{ label: string; onPick: () => void }> = [];
+        let titleText = this.tr('game_choose_target');
+
+        if (this.isItemCard(card.cardData)) {
+            titleText = this.tr('game_choose_hero_target');
+            const me = (state.players as unknown as Map<string, IPlayer>).get(myId);
+            const heroes = ((me?.company ?? []) as ICardData[]).filter((entry) => this.isHeroCard(entry));
+
+            if (heroes.length === 0) {
+                this.snapBack(card, this.tr('game_error_no_hero_for_item'));
+                return;
+            }
+
+            if (heroes.length === 1) {
+                const single = heroes[0];
+                if (!single?.id) {
+                    this.snapBack(card, this.tr('game_error_invalid_hero_target'));
+                    return;
+                }
+                this.serverManager.playMagic(card.cardData.id, undefined, single.id);
+                this.stashPending(card);
+                return;
+            }
+
+            heroes.forEach((hero) => {
+                const itemCount = Number((hero as any)?.equippedItems?.length ?? 0);
+                const suffix = itemCount > 0 ? ` (${this.tr('card_eq_badge', { count: itemCount })})` : '';
+                selectionRows.push({
+                    label: `${getCardDisplayName(hero, this.lang, this.tr.bind(this))}${suffix}`,
+                    onPick: () => {
+                        this.serverManager.playMagic(card.cardData.id, undefined, hero.id);
+                        this.stashPending(card);
+                    },
+                });
+            });
+        } else {
+            const opponents: IPlayer[] = [];
+            (state.players as unknown as Map<string, IPlayer>).forEach((p, sid) => {
+                if (sid !== myId) opponents.push(p);
+            });
+
+            if (opponents.length === 0) {
+                this.snapBack(card, this.tr('game_waiting_opponents'));
+                return;
+            }
+
+            opponents.forEach((opp) => {
+                selectionRows.push({
+                    label: opp.username,
+                    onPick: () => {
+                        this.serverManager.playMagic(card.cardData.id, opp.sessionId);
+                        this.stashPending(card);
+                    },
+                });
+            });
+        }
+
+        this.openTargetSelectionOverlay(
+            titleText,
+            selectionRows,
+            () => this.snapBack(card, this.tr('game_cancelled')),
+        );
+    }
+
+    private showAttackHeroSelector(crisis: ICardData, attackCost: number, heroes: ICardData[]) {
+        const validHeroes = heroes.filter((hero) => Boolean(hero?.id));
+        if (validHeroes.length === 0) {
+            this.floatText(this.tr('game_error_no_hero_for_attack'), '#ff9aa7');
+            return;
+        }
+
+        const crisisName = getCardDisplayName(crisis, this.lang, this.tr.bind(this));
+        const rows = validHeroes.map((hero) => {
+            const itemCount = Number((hero as any)?.equippedItems?.length ?? 0);
+            const suffix = itemCount > 0 ? ` (${this.tr('card_eq_badge', { count: itemCount })})` : '';
+            const heroName = `${getCardDisplayName(hero, this.lang, this.tr.bind(this))}${suffix}`;
+            return {
+                label: heroName,
+                onPick: () => {
+                    this.serverManager.solveCrisis(String(crisis.id), String(hero.id));
+                    this.floatText(this.tr('game_attack_sent', { cost: attackCost }), '#9ff3c2');
+                    this.appendGameLog(this.tr('game_attack_sent_log_with_hero', { name: crisisName, hero: heroName }));
+                },
+            };
+        });
+
+        this.targetSelectorSourceCard = undefined;
+        this.openTargetSelectionOverlay(this.tr('game_choose_attack_hero'), rows);
+    }
+
     private hideTargetSelector() {
         this.targetSelectorFx.forEach((fx) => fx.destroy());
         this.targetSelectorFx = [];
@@ -4528,6 +4789,15 @@ export class GameScene extends Phaser.Scene {
         });
         this.targetSelectorElements = [];
         this.targetSelectorOverlay = undefined;
+        this.targetSelectorSourceCard = undefined;
+        this.targetSelectorOnCancel = undefined;
+        if (!this.helpVisible && !this.cardInspectVisible && !this.cardInspectAnimating) {
+            this.matchDom?.setInteractionEnabled(true);
+        }
+        this.refreshInteractivityFromCurrentState();
     }
 }
+
+
+
 

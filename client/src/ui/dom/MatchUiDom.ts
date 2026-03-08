@@ -1,5 +1,6 @@
 import { APP_FONT_FAMILY } from '../Typography';
 import type { MatchLayout } from '../layout/MatchLayout';
+import type { MatchUiDomModel } from '../match/MatchUiDomModel';
 import { ensureUiRoot } from './UiRoot';
 
 type MatchUiDomCallbacks = {
@@ -11,29 +12,6 @@ type MatchUiDomCallbacks = {
     onEmote: () => void;
 };
 
-type MatchUiDomModel = {
-    roomCode: string;
-    opponents: string;
-    turn: string;
-    stats: string;
-    phase: string;
-    reaction: string;
-    actionHint: string;
-    actionDetail: string;
-    actionContext: string;
-    canDraw: boolean;
-    canEndTurn: boolean;
-    showEmote: boolean;
-    drawLabel: string;
-    endLabel: string;
-    detailsLabel: string;
-    helpLabel: string;
-    emoteLabel: string;
-    logTitle: string;
-    logToggle: string;
-    logEntries: string[];
-    logExpanded: boolean;
-};
 
 export class MatchUiDom {
     private readonly callbacks: MatchUiDomCallbacks;
@@ -77,7 +55,7 @@ export class MatchUiDom {
 
         this.root = document.createElement('div');
         this.root.id = 'game-match-shell';
-        this.root.className = 'match-ui-shell';
+        this.root.className = 'match-ui-shell match-ui-theme-valor';
         this.root.dataset.lang = String(lang).toLowerCase();
 
         this.boardSpacer = document.createElement('div');
@@ -130,15 +108,15 @@ export class MatchUiDom {
         this.actionsRow = document.createElement('div');
         this.actionsRow.className = 'match-ui-actions-row';
 
-        this.drawButton = this.createButton('match-ui-btn match-ui-btn-primary');
+        this.drawButton = this.createButton('match-ui-btn match-ui-btn-primary match-ui-btn-draw');
         this.drawButton.addEventListener('click', () => this.callbacks.onDraw());
-        this.endButton = this.createButton('match-ui-btn match-ui-btn-primary');
+        this.endButton = this.createButton('match-ui-btn match-ui-btn-primary match-ui-btn-end');
         this.endButton.addEventListener('click', () => this.callbacks.onEndTurn());
-        this.detailsButton = this.createButton('match-ui-btn match-ui-btn-secondary');
+        this.detailsButton = this.createButton('match-ui-btn match-ui-btn-secondary match-ui-btn-details');
         this.detailsButton.addEventListener('click', () => this.callbacks.onDetails());
-        this.helpButton = this.createButton('match-ui-btn match-ui-btn-secondary');
+        this.helpButton = this.createButton('match-ui-btn match-ui-btn-secondary match-ui-btn-help');
         this.helpButton.addEventListener('click', () => this.callbacks.onHelp());
-        this.emoteButton = this.createButton('match-ui-btn match-ui-btn-secondary');
+        this.emoteButton = this.createButton('match-ui-btn match-ui-btn-secondary match-ui-btn-emote');
         this.emoteButton.addEventListener('click', () => this.callbacks.onEmote());
 
         this.actionsRow.appendChild(this.drawButton);
@@ -160,7 +138,7 @@ export class MatchUiDom {
         logHeader.className = 'match-ui-log-header';
         this.logHeaderTitle = document.createElement('p');
         this.logHeaderTitle.className = 'match-ui-log-title';
-        this.logToggleButton = this.createButton('match-ui-btn match-ui-btn-secondary match-ui-log-toggle');
+        this.logToggleButton = this.createButton('match-ui-btn match-ui-btn-secondary match-ui-log-toggle match-ui-btn-log');
         this.logToggleButton.addEventListener('click', () => this.callbacks.onToggleLog());
         logHeader.appendChild(this.logHeaderTitle);
         logHeader.appendChild(this.logToggleButton);
@@ -204,11 +182,12 @@ export class MatchUiDom {
         this.root.style.height = `${Math.round(layout.screenH)}px`;
         this.root.style.setProperty('--match-gap', `${Math.round(layout.gap)}px`);
         this.currentTier = layout.tier;
+        this.root.dataset.tier = String(layout.tier).toLowerCase();
         this.root.classList.toggle('match-ui-landscape-low', layout.tier === 'C');
         this.root.classList.toggle('match-ui-portrait', layout.tier === 'A' || layout.tier === 'B');
         this.root.classList.toggle('match-ui-compact', layout.compactLandscape || layout.compactPortrait);
-        const showLogPanel = !(layout.tier === 'A' || layout.tier === 'B');
-        const showTopBar = !(layout.tier === 'A' || layout.tier === 'B');
+        const showLogPanel = false;
+        const showTopBar = false;
         this.topBar.style.display = showTopBar ? 'flex' : 'none';
         this.logPanel.style.display = showLogPanel ? 'grid' : 'none';
 
@@ -231,15 +210,18 @@ export class MatchUiDom {
     }
 
     update(model: MatchUiDomModel): void {
-        const showTopText = !(this.currentTier === 'A' || this.currentTier === 'B');
+        const portraitTier = this.currentTier === 'A' || this.currentTier === 'B';
+        const showTopText = model.roomCode.trim().length > 0 || model.opponents.trim().length > 0;
         this.topRoom.textContent = model.roomCode;
         this.topOpponents.textContent = model.opponents;
         this.topRoom.style.display = showTopText && model.roomCode.trim().length > 0 ? 'block' : 'none';
-        this.topOpponents.style.display = showTopText && model.opponents.trim().length > 0 ? 'block' : 'none';
+        this.topOpponents.style.display = showTopText && !portraitTier && model.opponents.trim().length > 0 ? 'block' : 'none';
         this.hudTurn.textContent = model.turn;
         this.hudStats.textContent = model.stats;
         this.hudPhase.textContent = model.phase;
         this.hudReaction.textContent = model.reaction;
+        this.root.classList.toggle('match-ui-reaction-active', model.reactionActive);
+        this.root.classList.toggle('match-ui-turn-active', model.myTurn);
         this.hudPhase.style.display = model.phase.trim().length > 0 ? 'block' : 'none';
         this.hudReaction.style.display = model.reaction.trim().length > 0 ? 'block' : 'none';
 
@@ -255,13 +237,18 @@ export class MatchUiDom {
         this.helpButton.textContent = model.helpLabel;
         this.emoteButton.textContent = model.emoteLabel;
 
+        const showDetailsButton = false;
+        const showEmoteButton = false;
+
         this.drawButton.disabled = !model.canDraw;
         this.endButton.disabled = !model.canEndTurn;
-        this.detailsButton.disabled = !this.interactionEnabled;
+        this.detailsButton.disabled = !this.interactionEnabled || !showDetailsButton;
         this.helpButton.disabled = !this.interactionEnabled;
         this.logToggleButton.disabled = !this.interactionEnabled;
-        this.emoteButton.style.display = model.showEmote ? 'inline-flex' : 'none';
-        this.actionsRow.classList.toggle('match-ui-actions-row-no-emote', !model.showEmote);
+        this.detailsButton.style.display = showDetailsButton ? 'inline-flex' : 'none';
+        this.emoteButton.style.display = showEmoteButton ? 'inline-flex' : 'none';
+        this.actionsRow.classList.toggle('match-ui-actions-row-no-emote', !showEmoteButton);
+        this.actionsRow.classList.toggle('match-ui-actions-row-no-details', !showDetailsButton);
 
         this.logHeaderTitle.textContent = model.logTitle;
         this.logToggleButton.textContent = model.logToggle;
@@ -288,3 +275,4 @@ export class MatchUiDom {
         this.root.remove();
     }
 }
+

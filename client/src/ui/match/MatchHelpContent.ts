@@ -1,4 +1,4 @@
-import { GamePhase } from '../../../../shared/SharedTypes';
+﻿import { GamePhase } from '../../../../shared/SharedTypes';
 import { ActionBlockReasonKey, MatchActionState } from './MatchActionState';
 
 type TranslateFn = (key: string, vars?: Record<string, string | number>) => string;
@@ -56,8 +56,8 @@ export function buildMatchContextHint(input: MatchContextHintInput): string {
 
     if (pendingAction) return tr('game_hint_pending_action');
     if (phase === GamePhase.REACTION_WINDOW) return tr('game_hint_reaction_window');
-    if (!actionState.isMyTurn) return tr('game_hint_wait_turn');
     if (phase !== GamePhase.PLAYER_TURN) return tr('game_hint_wait_phase');
+    if (!actionState.isMyTurn) return tr('game_hint_wait_turn');
 
     if (actionState.canAttackMonster) {
         return tr('game_hint_attack_available', { cost: actionState.attackCost });

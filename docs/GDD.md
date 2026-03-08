@@ -1,184 +1,47 @@
-# GDD - LUCrAre: SEMPRE (M1 + M2)
+# GDD - Here to Slay Lite (Implementazione Corrente)
 
-Documento di design operativo aggiornato al codice attuale (server authoritative Colyseus).
+Data aggiornamento: 2026-03-06
 
-## 1. As-is dal codice (implementato oggi)
+## Visione
+LUCrAre: SEMPRE e un multiplayer web server-authoritative ispirato a Here to Slay, in variante "Lite" orientata a leggibilita mobile e robustezza di stato.
 
-Riferimenti principali:
-- `server/src/rooms/OfficeRoom.ts`
-- `server/src/game/*`
-- `shared/SharedTypes.ts`
-- `shared/cards_db.json`
+## Regole implementate (as-is)
+- Match: `2-10` giocatori
+- Mano iniziale: `3` carte
+- AP per turno: `3`
+- Draw costa `1` AP
+- Reaction window: `5000 ms`
+- Deck runtime: `24` carte template
 
-### 1.1 Setup, lobby e avvio
-- Stanza con codice a 4 cifre.
-- Accesso con nome CEO (3-15 alfanumerico).
-- Partita avviabile da host con almeno 2 giocatori connessi e pronti.
-- Mano iniziale: 3 carte.
-- AP di turno: 3.
+Tassonomia carte (5+2):
+- Main deck: `Hero`, `Item`, `Magic`, `Modifier`, `Challenge`
+- Setup: `Monster`, `Party Leader`
 
-### 1.2 Core loop turno
-- Fase standard: `PLAYER_TURN`.
-- Azioni che consumano AP validate lato server.
-- `DRAW_CARD` costa 1 AP e pesca dal deck server-side.
-- Fine turno con passaggio al prossimo giocatore connesso.
+Vittoria:
+- `4` Hero in company (con moltiplicatore eventualmente applicato)
+- oppure `2` Monster risolti (VP)
 
-### 1.3 Modello carte (5+2)
-- Main deck: `Hero`, `Item`, `Magic`, `Modifier`, `Challenge`.
-- Setup/board: `Monster`, `Party Leader`.
+## Flusso turno
+1. Draw / Play Hero / Play Magic-Item / Attack Monster / End Turn
+2. Trigger eventuale reaction window
+3. Risoluzione server-authoritative
+4. Aggiornamento client con feedback log + HUD
 
-### 1.4 Reaction window e risoluzione
-- Azioni con finestra reazione: assunzione Hero, risoluzione Monster, Magic.
-- `REACTION_WINDOW` di 5000 ms.
-- Risoluzione coda via `CardEffectParser.resolveQueue` + mutazioni strutturali server.
-- `Challenge`/`Modifier` sono giocabili solo in reaction window.
+## Vincoli UX di prodotto
+- CTA Monster esplicita (`ATTACCA`), niente attacco via drop ambiguo.
+- Overlay informativi e di targeting con priorita alta e input blocking.
+- Focus assoluto su usabilita phone portrait + landscape basso.
 
-### 1.5 Monster flow
-- Board Monster mantiene 3 slot (refill immediato dopo risoluzione riuscita).
-- Tiro crisi: 2d6 + modificatori.
-- Successo: rimozione Monster + reward VP.
-- Fallimento: applicazione penalty.
+## Gap rispetto a Here to Slay completo
+Questi punti sono intenzionalmente fuori dal core attuale o parziali:
+1. Condizione vittoria per classi complete non implementata (si usa win lite 4 Hero/2 Monster).
+2. Card pool ridotto (24 template), non equivalente al set completo del board game.
+3. Effetti carta coprono un sottoinsieme controllato del design originale.
+4. Party Leader e class identity semplificate rispetto al gioco completo.
+5. Espansioni/varianti avanzate non incluse.
 
-### 1.6 Win conditions
-- Vittoria con 4 Hero in company (conteggio pesato con `win_multiplier_X`).
-- Oppure vittoria con 2 VP da Monster risolti.
-
-## 2. Variante semplificata scelta (finale)
-
-Obiettivo: mantenere feeling Here To Slay ma con regole più leggibili e robuste lato multiplayer.
-
-### 2.1 Decisioni approvate e applicate
-- A) `Challenge` e `Modifier` restano **reaction-only**; `Magic` resta azione attiva.
-- B) `Item` equipaggiato su **Hero specifico**; fallback player-level solo temporaneo (compatibilità client/dati).
-- C) Board Monster sempre a 3 con refill immediato.
-
-### 2.2 Loop semplificato target
-- Turno di un giocatore: 3 AP.
-- Azioni principali: pescare, giocare Hero, giocare Magic/Item, tentare Monster, chiudere turno.
-- Reazioni solo nella finestra dedicata, con risoluzione deterministica server.
-
-### 2.3 Regole Item semplificate
-- Item giocato come azione di turno.
-- Target primario: Hero del proprietario.
-- Equip persistente sull'Hero (`equippedItems`) per modificatori passivi ai tiri.
-- Fallback temporaneo mantenuto per compatibilità quando il target Hero non è esplicito.
-
-## 3. Impatto tecnico della variante sui file
-
-### 3.1 Nuovi moduli gameplay (testabilità)
-- `server/src/game/turnFlow.ts`
-  - validazione/spesa AP
-  - calcolo prossimo turno connesso
-- `server/src/game/winConditions.ts`
-  - calcolo conteggio Hero pesato
-  - valutazione vittoria
-- `server/src/game/monsterBoard.ts`
-  - bag Monster
-  - draw template Monster
-  - roll 2d6 + modifier
-- `server/src/game/reactionResolution.ts`
-  - orchestrazione resolve queue
-  - consumo tag `pending_draw_X`
-- `server/src/game/itemEquip.ts`
-  - risoluzione target Hero per equip
-  - creazione item equipaggiato
-
-### 3.2 Refactor orchestrazione room
-- `server/src/rooms/OfficeRoom.ts`
-  - mantiene responsabilità networking/orchestrazione
-  - delega logica core ai moduli `server/src/game/*`
-  - applica A/B/C in modo server-authoritative
-
-### 3.3 Contratti condivisi aggiornati
-- `shared/SharedTypes.ts`
-  - aggiunto `targetHeroCardId` su `IPlayMagicPayload` e `IPendingAction`
-- `server/src/State.ts`
-  - aggiunto `targetHeroCardId` in `PendingActionState`
-
-### 3.4 Surfacing client minimo
-- `client/src/network/ServerManager.ts`
-  - `playMagic(cardId, targetPlayerId?, targetHeroCardId?)`
-- `client/src/scenes/GameScene.ts`
-  - selettore target differenziato per Item (selezione Hero)
-  - blocco implicito play fuori finestra per reaction cards
-- `client/src/i18n.ts`
-  - nuove stringhe per selezione Hero e errori Item target
-
-## 4. Rischi e follow-up (fuori scope M1+M2)
-
-- Bilanciamento Item: alcune effect DSL restano ancora player-level e non hero-scoped puro.
-- UX completa carte/overlay/pixel-art resta in milestone successive.
-- Legacy suite failing non incluse nella smoke stabile restano da trattare in milestone QA finale.
-
-## 5. Decision log
-
-- 2026-03-04: approvate A/B/C.
-- 2026-03-04: M1+M2 implementate in server gameplay modules + test dedicati.
-
-## 6. Aggiornamento user-facing M3/M4 (2026-03-04)
-
-- Le carte nel client ora supportano artwork PNG reale tramite chiave esplicita (`artworkKey`/`artworkId`/`artKey`) oppure `templateId`.
-- Pipeline robusta con fallback: se il PNG non esiste, resta attivo l'artwork procedurale senza bloccare il gameplay.
-- Le mini-card privilegiano testo breve (`shortDesc` quando disponibile) per ridurre rumore visivo.
-- Overlay inspect carta usa artwork reale quando disponibile e mostra in modo completo:
-  - tipo/template
-  - descrizione
-  - target roll/modifier/subtype
-  - numero item equipaggiati sul Hero
-- UX targeting item completata lato client:
-  - 0 Hero validi: feedback esplicito e azione annullata
-  - 1 Hero valido: auto-target
-  - N Hero validi: selettore esplicito
-- Il payload carta espone anche `shortDesc` opzionale per supportare UI compatta in modo retrocompatibile.
-
-## 7. Aggiornamento gameplay authoritative M12 (2026-03-04)
-
-### 7.1 Coerenza definitiva Monster flow (client/server)
-- Modello finale adottato: il tentativo Monster e una azione esplicita sullo slot Monster (`SOLVE_CRISIS` con `crisisId`).
-- Lato client e stata rimossa l'affordance primaria di attacco Monster via drop carta.
-- Lato server la validazione resta centralizzata (turno/fase/AP/target).
-
-### 7.2 Reazioni: costo AP
-- Decisione finale applicata: `PLAY_REACTION` non consuma AP.
-- Vincoli attivi:
-  - solo durante `REACTION_WINDOW`
-  - solo avversari rispetto all'azione originale
-  - solo carte reaction/modifier/challenge valide
-
-### 7.3 Item equip su Hero specifico
-- Decisione finale applicata: target Hero obbligatorio per Item.
-- Rimossa ambiguita di fallback player-level nei flussi gameplay principali.
-- Se target mancante/non valido: errore esplicito, nessun consumo incoerente carta/AP.
-
-### 7.4 Dado e risoluzione Monster piu leggibili
-- Contratto evento esteso: `IDiceRolledEvent` ora include anche:
-  - `modifier`
-  - `targetRoll`
-- Client aggiornato per mostrare chiaramente:
-  - risultato 2d6
-  - bonus/malus totale
-  - soglia richiesta
-  - esito successo/fallimento
-
-### 7.5 Disconnect/reconnect edge-case hardening
-- Se un player esce in modo permanente durante pending/reaction:
-  - cleanup di `pendingAction`, `actionStack`, `reactionEndTime`
-  - annullamento timer reaction aperto
-  - nessun blocco fase residuo
-- `advanceTurn` senza giocatori connessi porta a `WAITING_FOR_PLAYERS`.
-
-## 8. Aggiornamento gameplay bugfix M16 (2026-03-05)
-
-### 8.1 Effetti non fantasma
-- `protect`: ora e uno scudo one-shot realmente consumato quando blocca effetti ostili targeted (`steal_pa`, `steal_card`, `discard`, `trade_random`).
-- `discount_cost`: ora riduce davvero il costo AP delle magie e viene consumato al primo utilizzo valido (compatibilita magic/trick legacy inclusa).
-
-### 8.2 Integrita carte rubate
-- `steal_played_card` preserva in modo robusto il tipo runtime corretto della carta rubata (non degrada a challenge/reaction per fallback errati).
-
-### 8.3 Item resolve safety
-- Se un Item diventa invalido in resolve (target Hero non piu valido), la carta viene ripristinata in mano e non viene persa.
-
-### 8.4 Dice outcome piu leggibile
-- `DICE_ROLLED` esteso con `rewardCode` / `penaltyCode`.
-- Client mostra outcome localizzato (reward/penalty) in toast e log persistente.
+## Direzione roadmap
+Priorita immediata non e aggiungere nuove meccaniche, ma:
+1. chiudere bug grafici/funzionali di partita,
+2. stabilizzare layout mobile,
+3. consolidare copertura test anti-regressione UI.

@@ -19,10 +19,15 @@ Prefissi template usati nel progetto:
 
 Risoluzione runtime:
 1. il client usa `card.templateId`
-2. prova a caricare `/cards/<templateId>.png`
-3. se il file manca, usa il fallback procedurale
+2. usa manifest canonico derivato da `shared/cards_db.json`
+3. carica `/cards/<templateId>.png` per ogni template noto
+4. se un template non risulta nel manifest, usa fallback procedurale
 
 Pipeline consigliata:
 - usa `artworks/` come sorgente grezza
 - copia/rinomina in `client/public/cards/<templateId>.png`
 - evita alias runtime quando possibile (piu robusto per QA e build)
+
+Stato attuale:
+- copertura runtime completa `24/24` template
+- alcuni file sono placeholder tecnici in attesa di artwork definitivo

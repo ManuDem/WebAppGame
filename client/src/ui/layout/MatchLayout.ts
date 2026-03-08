@@ -57,84 +57,93 @@ function clampRect(value: LayoutRect, bounds: LayoutRect): LayoutRect {
 function getCardSizesForTier(tier: LayoutTier): MatchCardSizeContract {
     switch (tier) {
         case 'A':
-            return { handW: 86, handH: 120, boardW: 80, boardH: 112 };
+            return { handW: 80, handH: 120, boardW: 76, boardH: 108 };
         case 'B':
-            return { handW: 88, handH: 122, boardW: 82, boardH: 114 };
+            return { handW: 86, handH: 124, boardW: 80, boardH: 112 };
         case 'C':
-            return { handW: 72, handH: 100, boardW: 74, boardH: 102 };
+            return { handW: 90, handH: 126, boardW: 90, boardH: 126 };
         case 'D':
         case 'E':
         default:
-            return { handW: 90, handH: 126, boardW: 84, boardH: 118 };
+            return { handW: 112, handH: 156, boardW: 102, boardH: 142 };
     }
 }
 
 function getTierGap(tier: LayoutTier): number {
     if (tier === 'C') return 8;
-    if (tier === 'A' || tier === 'B') return 10;
-    return 12;
+    if (tier === 'A' || tier === 'B') return 8;
+    return 14;
 }
 
 function getTopBarHeight(tier: LayoutTier): number {
-    switch (tier) {
-        case 'A': return 78;
-        case 'B': return 84;
-        case 'C': return 52;
-        case 'D': return 62;
-        case 'E':
-        default:
-            return 64;
-    }
+    void tier;
+    return 0;
 }
 
 function computePortraitLayout(
     content: LayoutRect,
-    topBar: LayoutRect,
+    _topBar: LayoutRect,
     tier: 'A' | 'B',
     gap: number,
 ): Pick<MatchLayout, 'board' | 'hud' | 'controls' | 'log' | 'hand' | 'handCards'> {
-    const boardTarget = tier === 'A'
-        ? clamp(Math.max(content.h * 0.38, 240), 240, 320)
-        : clamp(Math.max(content.h * 0.4, 250), 250, 360);
-    const controlsTarget = tier === 'A' ? 64 : 68;
-    const handTarget = tier === 'A' ? 150 : 158;
-
-    const afterTopY = topBar.y + topBar.h + gap;
-    const available = Math.max(180, content.y + content.h - afterTopY);
-    const minBoard = tier === 'A' ? 214 : 224;
-    const minControls = tier === 'A' ? 56 : 60;
-    const minHand = tier === 'A' ? 122 : 130;
-
-    let boardH = boardTarget;
-    let controlsH = controlsTarget;
-    let handH = handTarget;
-
-    const totalRequired = boardH + controlsH + handH + (gap * 2);
-    if (totalRequired > available) {
-        let overflow = totalRequired - available;
-        const boardShrink = Math.min(overflow, Math.max(0, boardH - minBoard));
-        boardH -= boardShrink;
-        overflow -= boardShrink;
-
-        const handShrink = Math.min(overflow, Math.max(0, handH - minHand));
-        handH -= handShrink;
-        overflow -= handShrink;
-
-        const controlsShrink = Math.min(overflow, Math.max(0, controlsH - minControls));
-        controlsH -= controlsShrink;
-        overflow -= controlsShrink;
-
-        if (overflow > 0) {
-            handH = Math.max(minHand - overflow, 96);
+    const spec = tier === 'A'
+        ? {
+            hud: 62,
+            controls: 94,
+            minHud: 54,
+            minControls: 82,
+            minBoard: 148,
+            maxBoard: 214,
+            minHand: 190,
         }
+        : {
+            hud: 68,
+            controls: 98,
+            minHud: 58,
+            minControls: 86,
+            minBoard: 166,
+            maxBoard: 246,
+            minHand: 204,
+        };
+
+    const available = Math.max(200, content.h);
+    let hudH = spec.hud;
+    let controlsH = spec.controls;
+    let boardAndHand = available - hudH - controlsH - (gap * 3);
+
+    const minimumBoardAndHand = spec.minBoard + spec.minHand;
+    if (boardAndHand < minimumBoardAndHand) {
+        let deficit = minimumBoardAndHand - boardAndHand;
+        const controlsShrink = Math.min(deficit, Math.max(0, controlsH - spec.minControls));
+        controlsH -= controlsShrink;
+        deficit -= controlsShrink;
+
+        const hudShrink = Math.min(deficit, Math.max(0, hudH - spec.minHud));
+        hudH -= hudShrink;
+        deficit -= hudShrink;
+
+        boardAndHand = available - hudH - controlsH - (gap * 3);
     }
 
-    const board = rect(content.x, afterTopY, content.w, boardH);
+    let boardH = clamp(Math.round(boardAndHand * 0.43), 136, spec.maxBoard);
+    let handH = Math.max(136, boardAndHand - boardH);
+    if (handH < spec.minHand) {
+        const shift = Math.min(spec.minHand - handH, Math.max(0, boardH - 136));
+        boardH -= shift;
+        handH += shift;
+    }
+
+    const hud = rect(content.x, content.y, content.w, hudH);
+    const board = rect(content.x, hud.y + hud.h + gap, content.w, boardH);
     const controls = rect(content.x, board.y + board.h + gap, content.w, controlsH);
-    const hand = rect(content.x, controls.y + controls.h + gap, content.w, Math.max(96, content.y + content.h - (controls.y + controls.h + gap)));
-    const handCards = clampRect(rect(hand.x + 8, hand.y + 6, hand.w - 16, hand.h - 12), hand);
-    const hud = clampRect(rect(topBar.x + 6, topBar.y + 6, topBar.w - 12, topBar.h - 12), topBar);
-    const log = rect(topBar.x + topBar.w - 1, topBar.y + topBar.h - 1, 0, 0);
+    const hand = rect(
+        content.x,
+        controls.y + controls.h + gap,
+        content.w,
+        Math.max(136, content.y + content.h - (controls.y + controls.h + gap)),
+    );
+    const handCards = clampRect(rect(hand.x + 8, hand.y + 8, hand.w - 16, hand.h - 16), hand);
+    const log = rect(content.x + content.w - 1, controls.y + controls.h, 0, 0);
     return { board, hud, controls, log, hand, handCards };
 }
 
@@ -146,56 +155,51 @@ function computeSidebarLayout(
 ): Pick<MatchLayout, 'board' | 'sidebar' | 'hud' | 'controls' | 'log' | 'hand' | 'handCards'> {
     const afterTopY = topBar.y + topBar.h + gap;
     const rawAvailableH = Math.max(120, content.y + content.h - afterTopY);
-    const targetMainH = tier === 'C'
-        ? clamp(Math.floor(content.h * 0.78), 308, Math.min(360, rawAvailableH))
-        : rawAvailableH;
-    const availableH = Math.max(120, Math.min(rawAvailableH, targetMainH));
-    const mainY = afterTopY + Math.floor(Math.max(0, rawAvailableH - availableH) * 0.5);
+    const availableH = rawAvailableH;
+    const mainY = afterTopY;
 
     const maxMainW = tier === 'C'
         ? Math.min(content.w, 1180)
         : (tier === 'D' ? Math.min(content.w, 1240) : Math.min(content.w, 1320));
     const mainX = content.x + Math.floor((content.w - maxMainW) * 0.5);
-    const boardPct = tier === 'C' ? 0.64 : tier === 'D' ? 0.66 : 0.68;
-    const boardW = Math.max(220, Math.floor((maxMainW - gap) * boardPct));
-    const sidebarW = Math.max(160, maxMainW - boardW - gap);
+    const boardRatio = tier === 'C' ? 0.6 : 0.62;
+    let boardW = Math.round(maxMainW * boardRatio);
+    boardW = clamp(boardW, Math.round(maxMainW * 0.54), Math.max(220, maxMainW - gap - 220));
+    let sidebarW = Math.max(220, maxMainW - gap - boardW);
+    if (boardW + gap + sidebarW > maxMainW) {
+        sidebarW = Math.max(220, maxMainW - gap - boardW);
+    }
 
     const board = rect(mainX, mainY, boardW, availableH);
     const sidebar = rect(board.x + board.w + gap, mainY, sidebarW, availableH);
 
-    const hudTarget = tier === 'C' ? 54 : 64;
-    const controlsTarget = tier === 'C' ? 70 : 82;
-    const logTarget = tier === 'C' ? 64 : 84;
-    const minHand = tier === 'C' ? 96 : 110;
+    const hudTarget = tier === 'C' ? 72 : (tier === 'D' ? 82 : 88);
+    const controlsTarget = tier === 'C' ? 114 : (tier === 'D' ? 122 : 128);
+    const minHand = tier === 'C' ? 138 : (tier === 'D' ? 156 : 170);
 
     let hudH = hudTarget;
     let controlsH = controlsTarget;
-    let logH = logTarget;
-    const staticTotal = hudH + controlsH + logH + (gap * 3);
+    const staticTotal = hudH + controlsH + (gap * 2);
     let handH = sidebar.h - staticTotal;
 
     if (handH < minHand) {
         let deficit = minHand - handH;
-        const hudShrink = Math.min(deficit, Math.max(0, hudH - 44));
-        hudH -= hudShrink;
-        deficit -= hudShrink;
-
-        const logShrink = Math.min(deficit, Math.max(0, logH - 48));
-        logH -= logShrink;
-        deficit -= logShrink;
-
-        const controlsShrink = Math.min(deficit, Math.max(0, controlsH - 56));
+        const controlsShrink = Math.min(deficit, Math.max(0, controlsH - (tier === 'C' ? 96 : (tier === 'D' ? 102 : 108))));
         controlsH -= controlsShrink;
         deficit -= controlsShrink;
 
-        handH = Math.max(minHand - deficit, 82);
+        const hudShrink = Math.min(deficit, Math.max(0, hudH - (tier === 'C' ? 58 : (tier === 'D' ? 64 : 68))));
+        hudH -= hudShrink;
+        deficit -= hudShrink;
+
+        handH = Math.max(minHand - deficit, 112);
     }
 
     const hud = clampRect(rect(sidebar.x, sidebar.y, sidebar.w, hudH), sidebar);
     const controls = clampRect(rect(sidebar.x, hud.y + hud.h + gap, sidebar.w, controlsH), sidebar);
-    const log = clampRect(rect(sidebar.x, controls.y + controls.h + gap, sidebar.w, logH), sidebar);
-    const hand = clampRect(rect(sidebar.x, log.y + log.h + gap, sidebar.w, sidebar.y + sidebar.h - (log.y + log.h + gap)), sidebar);
-    const handCards = clampRect(rect(hand.x + 6, hand.y + 6, hand.w - 12, hand.h - 12), hand);
+    const log = rect(sidebar.x + sidebar.w - 1, controls.y + controls.h, 0, 0);
+    const hand = clampRect(rect(sidebar.x, controls.y + controls.h + gap, sidebar.w, sidebar.y + sidebar.h - (controls.y + controls.h + gap)), sidebar);
+    const handCards = clampRect(rect(hand.x + 8, hand.y + 7, hand.w - 16, hand.h - 14), hand);
 
     return { board, sidebar, hud, controls, log, hand, handCards };
 }
@@ -224,7 +228,7 @@ export function computeMatchLayout(screenW: number, screenH: number): MatchLayou
         topBar.x = content.x + Math.floor((content.w - topBarMaxW) * 0.5);
         topBar.w = topBarMaxW;
         if (tier === 'C') {
-            const blockTargetH = topBar.h + gap + clamp(Math.floor(content.h * 0.78), 308, Math.min(360, Math.max(120, content.h - topBar.h - gap)));
+            const blockTargetH = topBar.h + gap + clamp(330, 292, Math.min(356, Math.max(120, content.h - topBar.h - gap)));
             const freeV = Math.max(0, content.h - blockTargetH);
             topBar.y = content.y + Math.floor(freeV * 0.5);
         }

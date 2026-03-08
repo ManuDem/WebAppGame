@@ -121,6 +121,7 @@ export interface IPlayEmployeePayload {
 /** Payload inviato dal Client con SOLVE_CRISIS */
 export interface ISolveCrisisPayload {
     crisisId: string;       // ID runtime della carta crisi sulla plancia centrale
+    heroCardId: string;     // ID runtime dell'Hero scelto per tentare la risoluzione
 }
 
 /** Payload inviato dal Client con PLAY_MAGIC */

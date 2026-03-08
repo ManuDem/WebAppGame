@@ -1,45 +1,22 @@
-# I18N Audit (IT/EN)
+# I18N Audit (Sintesi Attiva)
 
-Data audit: 2026-03-05
+Data aggiornamento: 2026-03-06
 
-## Scope controllato
-- `client/src/i18n.ts`
-- `client/src/scenes/*` (Boot/Login/PreLobby/Game)
-- `client/src/ui/*`
-- `client/src/ui/cards/*`
-- `client/src/ui/match/*`
-- `client/src/qa/MockMatchState.ts`
-- `shared/cards_i18n.json`
-- `shared/CardTextCatalog.ts`
+## Stato
+- Lingue supportate: `it`, `en`
+- Catalogo centralizzato in `client/src/i18n.ts`
+- Mock/QA allineati alle stesse chiavi
 
-## Stato per area
+## Regole
+1. Nessuna stringa UX hardcoded nelle scene.
+2. Ogni nuova chiave deve avere entrambe le traduzioni.
+3. Messaggi di errore gameplay devono essere localizzati.
 
-| Area | Stato | Note |
-|---|---|---|
-| Schermate iniziali (Boot/Login/PreLobby) | completo | Label principali e feedback via `t(lang, key)`. |
-| Match HUD / action panel / log / help | completo | Stringhe user-facing centralizzate in `client/src/i18n.ts`. |
-| Reason messages / blocked reasons | completo | Chiavi dedicate IT/EN allineate. |
-| Mock match (`qaMatch`) | completo | Rimossi copy hardcoded locali; ora usa `t(...)`. |
-| Tipi carta e testi mini/full card | completo | `CardPresentationModel` + `CardTextCatalog`. |
-| Contenuti carte `name/shortDesc/description` | completo | Copertura IT/EN via `shared/cards_i18n.json` per tutte le template del DB. |
+## Aree critiche da ricontrollare ad ogni release
+- Login/PreLobby CTA
+- Match HUD/Action panel/Log
+- Overlay Help/Inspect/Reconnect
+- Feedback blocco azioni (draw/end/attack/reaction)
 
-## Hardcoded trovati e classificati
-
-| Stringa | File | Stato |
-|---|---|---|
-| `?` (pulsante help) | scene match/prelobby | intenzionale (icona). |
-| `X` (chiusura overlay) | scene match/prelobby | intenzionale (icona). |
-| `0%` progress boot | `BootScene` | intenzionale (valore numerico). |
-
-Nessuna stringa hardcoded user-facing critica residua nelle aree toccate.
-
-## Decisioni applicate
-- Localizzazione carte centralizzata in `shared/CardTextCatalog.ts` con fallback robusto.
-- Mock mode QA allineato alla lingua corrente, inclusi errori simulati e nomi player mock.
-- Nuove chiavi aggiunte per CTA compact e messaggi mock (`qa_mock_*`).
-
-## Verifiche consigliate
-- `npm test -- --runInBand --forceExit tests/I18nCoverage.test.ts tests/CardTextCatalog.test.ts tests/MockMatchStateI18n.test.ts`
-- QA visuale IT/EN:
-  - `cd client && npm run qa:capture:responsive`
-  - `cd client && npm run qa:capture:match`
+## Esito corrente
+Copertura funzionale adeguata; mantenere guard test su regressioni hardcoded.

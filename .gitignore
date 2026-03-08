@@ -2,6 +2,13 @@ node_modules/
 client/node_modules/
 server/node_modules/
 
+.playwright/
+.playwright-cli/
+
+output/playwright/*.pid
+output/playwright/*.yml
+output/playwright/*.log
+
 dist/
 client/dist/
 server/dist/
@@ -22,6 +29,9 @@ debug_integration.txt
 debug_server_tests.txt
 server/jest_out.txt
 server/jest_results.json
+client/tsc*.txt
+server/tests_output*.log
+server/tests_err*.log
 
 *.exe
 
@@ -50,3 +60,8 @@ tests/**/*.js
 tests/**/*.js.map
 tests/**/*.d.ts
 tests/**/*.d.ts.map
+
+client/vite.config.js
+client/vite.config.js.map
+client/vite.config.d.ts
+client/vite.config.d.ts.map

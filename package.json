@@ -1,6 +1,23 @@
 {
   "scripts": {
-    "test": "jest --config jest.config.js"
+    "build": "npm run build:server && npm run build:client",
+    "build:client": "npm --prefix client run build",
+    "build:server": "npm --prefix server run build",
+    "test": "jest --config jest.config.js",
+    "test:smoke": "jest --config jest.config.js --selectProjects unit:client:contracts unit:client:logic unit:server unit:shared integration:server:smoke",
+    "test:unit": "jest --config jest.config.js --selectProjects unit:client:contracts unit:client:logic unit:server unit:shared",
+    "test:unit:server": "jest --config jest.config.js --selectProjects unit:server",
+    "test:ui": "npm run test:ui:contracts",
+    "test:ui:contracts": "jest --config jest.config.js --selectProjects unit:client:contracts",
+    "test:integration": "jest --config jest.config.js --selectProjects integration:server:smoke integration:server:reaction",
+    "test:integration:smoke": "jest --config jest.config.js --selectProjects integration:server:smoke",
+    "test:integration:reaction": "jest --config jest.config.js --selectProjects integration:server:reaction",
+    "test:integration:debug": "node -e \"process.env.TEST_DEBUG_LOGS='1'; process.exit(require('child_process').spawnSync('npm.cmd', ['run','test:integration'], { stdio: 'inherit', shell: true }).status ?? 1)\"",
+    "test:audits": "jest --config jest.config.js --selectProjects unit:client:logic integration:server:reaction",
+    "test:ci": "jest --config jest.config.js --detectOpenHandles",
+    "typecheck": "npm run typecheck:server && npm run typecheck:client",
+    "typecheck:client": "npx.cmd tsc --noEmit -p client/tsconfig.json",
+    "typecheck:server": "npx.cmd tsc --noEmit -p server/tsconfig.json"
   },
   "devDependencies": {
     "@babel/preset-env": "^7.29.0",
